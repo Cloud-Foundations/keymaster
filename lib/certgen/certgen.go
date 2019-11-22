@@ -185,7 +185,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA: true,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
@@ -318,7 +318,7 @@ func GenUserX509Cert(userName string, userPub interface{},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
 		BasicConstraintsValid: true,
-		IsCA:                  false,
+		IsCA: false,
 	}
 	if groupListExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,

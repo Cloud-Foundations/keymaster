@@ -145,7 +145,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 		IssuingCertificateURL: crlURL,
 		OCSPServer:            OCPServer,
 		BasicConstraintsValid: true,
-		IsCA:                  false,
+		IsCA: false,
 	}
 	if ipDelegationExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,

@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
