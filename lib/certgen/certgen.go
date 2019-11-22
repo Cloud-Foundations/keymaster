@@ -269,7 +269,7 @@ func getGroupListExtension(groups []string) (*pkix.Extension, error) {
 		return nil, err
 	}
 	groupListExtension := pkix.Extension{
-		// See github.com/Symantec/Dominator/lib/constants.GroupListOID
+		// See github.com/Cloud-Foundations/Dominator/lib/constants.GroupListOID
 		Id:    []int{1, 3, 6, 1, 4, 1, 9586, 100, 7, 2},
 		Value: encodedValue,
 	}

@@ -6,13 +6,13 @@ import (
 	"path"
 	"text/template"
 
-	"github.com/Symantec/Dominator/lib/log/serverlogger"
-	"github.com/Symantec/keymaster/eventmon/eventrecorder"
-	"github.com/Symantec/keymaster/eventmon/httpd"
-	"github.com/Symantec/keymaster/eventmon/monitord"
-	"github.com/Symantec/keymaster/lib/constants"
-	"github.com/Symantec/keymaster/proto/eventmon"
-	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
+	"github.com/Cloud-Foundations/keymaster/eventmon/eventrecorder"
+	"github.com/Cloud-Foundations/keymaster/eventmon/httpd"
+	"github.com/Cloud-Foundations/keymaster/eventmon/monitord"
+	"github.com/Cloud-Foundations/keymaster/lib/constants"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
+	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 )
 
 var (

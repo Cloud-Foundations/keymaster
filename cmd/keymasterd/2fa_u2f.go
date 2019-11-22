@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/instrumentedwriter"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"github.com/Symantec/keymaster/proto/eventmon"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"github.com/tstranex/u2f"
 )
 

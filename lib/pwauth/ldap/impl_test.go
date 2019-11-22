@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
 
 	"github.com/vjeantet/ldapserver"
 )

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"gopkg.in/yaml.v2"
 )
 

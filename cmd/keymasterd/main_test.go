@@ -19,10 +19,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
-	"github.com/Symantec/keymaster/lib/instrumentedwriter"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
 // copied from lib/certgen/cergen_test.go

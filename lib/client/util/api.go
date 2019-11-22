@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os/user"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/client/net"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/lib/client/net"
 )
 
 // GetUserCreds prompts the user for thier password and returns it.

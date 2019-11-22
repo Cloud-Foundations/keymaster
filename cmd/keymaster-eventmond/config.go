@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"text/template"
 
-	"github.com/Symantec/keymaster/lib/constants"
+	"github.com/Cloud-Foundations/keymaster/lib/constants"
 	"gopkg.in/yaml.v2"
 )
 

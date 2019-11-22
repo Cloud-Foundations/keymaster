@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/proto/eventmon"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 
 const (

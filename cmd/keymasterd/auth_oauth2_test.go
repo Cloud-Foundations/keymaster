@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 )

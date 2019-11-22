@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/client/util"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/keymaster/lib/client/util"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
 const rootCAPem = `-----BEGIN CERTIFICATE-----

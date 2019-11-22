@@ -3,7 +3,7 @@ package command
 import (
 	"testing"
 
-	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 func TestTrueCommand(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"testing"
 	//"time"
 
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"gopkg.in/square/go-jose.v2/jwt"
 	//"golang.org/x/net/context"
 	//"golang.org/x/oauth2"

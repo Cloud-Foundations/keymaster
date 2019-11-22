@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/Symantec/Dominator/lib/html"
+	"github.com/Cloud-Foundations/Dominator/lib/html"
 )
 
 func (s state) statusHandler(w http.ResponseWriter, req *http.Request) {
