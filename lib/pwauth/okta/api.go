@@ -1,14 +1,33 @@
 package okta
 
 import (
+	"sync"
+	"time"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"github.com/Cloud-Foundations/keymaster/lib/simplestorage"
 )
 
-type PasswordAuthenticator struct {
-	authnURL string
-	logger   log.Logger
+type authCacheData struct {
+	Response PrimaryResponseType
+	Expires  time.Time
 }
+
+type PasswordAuthenticator struct {
+	authnURL   string
+	logger     log.Logger
+	Mutex      sync.Mutex
+	recentAuth map[string]authCacheData
+}
+
+type PushResponse int
+
+const (
+	PushResponseRejected PushResponse = iota
+	PushResponseApproved
+	PushResponseWaiting
+	PushResonseTimeout
+)
 
 // New creates a new PasswordAuthenticator using Okta as the backend. The Okta
 // Public Application API is used, so rate limits apply.
@@ -29,5 +48,21 @@ func (pa *PasswordAuthenticator) PasswordAuthenticate(username string,
 }
 
 func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore) error {
+	return nil
+}
+
+// VerifyOTP
+func (pa *PasswordAuthenticator) ValidateUserOTP(authUser string, otpValue int) (bool, error) {
+	return pa.validateUserOTP(authUser, otpValue)
+}
+
+// Initialize and verify Push
+func (pa *PasswordAuthenticator) ValidateUserPush(authUser string) (PushResponse, error) {
+	return pa.validateUserPush(authUser)
+}
+
+// SetAuthnURL. For testing only, update the internal authURL so that the backend can be tested
+func (pa *PasswordAuthenticator) SetAuthnURL(authnURL string) error {
+	pa.authnURL = authnURL
 	return nil
 }
