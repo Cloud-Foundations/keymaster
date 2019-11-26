@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
 )
 
 func newAuthenticator(command string, args []string, logger log.Logger) (

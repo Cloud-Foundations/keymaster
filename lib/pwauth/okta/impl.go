@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
 	"net/http"
 	"time"
+
+	"github.com/Cloud-Foundations/Dominator/lib/log"
 )
 
 const (

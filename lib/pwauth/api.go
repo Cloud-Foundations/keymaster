@@ -1,7 +1,7 @@
 package pwauth
 
 import (
-	"github.com/Symantec/keymaster/lib/simplestorage"
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage"
 )
 
 // PasswordAuthenticator is an interface type that defines how to authenticate a

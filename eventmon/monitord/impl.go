@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/Dominator/lib/log/prefixlogger"
-	"github.com/Symantec/Dominator/lib/verstr"
-	"github.com/Symantec/keymaster/proto/eventmon"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log/prefixlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/verstr"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"golang.org/x/crypto/ssh"
 )
 

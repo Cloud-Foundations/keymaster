@@ -10,7 +10,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Symantec/Dominator/lib/log/cmdlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/howeyc/gopass"
 )
 

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/instrumentedwriter"
-	"github.com/Symantec/keymaster/lib/pwauth/okta"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/okta"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
 const okta2FAauthPath = "/api/v0/okta2FAAuth"

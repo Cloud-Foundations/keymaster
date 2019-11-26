@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/authutil"
-	"github.com/Symantec/keymaster/lib/simplestorage"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/lib/authutil"
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage"
 )
 
 const defaultCacheDuration = time.Hour * 96

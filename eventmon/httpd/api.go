@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/Symantec/keymaster/eventmon/eventrecorder"
-	"github.com/Symantec/keymaster/eventmon/monitord"
+	"github.com/Cloud-Foundations/keymaster/eventmon/eventrecorder"
+	"github.com/Cloud-Foundations/keymaster/eventmon/monitord"
 )
 
 type HtmlWriter interface {

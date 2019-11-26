@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/authutil"
-	"github.com/Symantec/keymaster/lib/certgen"
-	"github.com/Symantec/keymaster/lib/instrumentedwriter"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/lib/authutil"
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"golang.org/x/crypto/ssh"
 )
 

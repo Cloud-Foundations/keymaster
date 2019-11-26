@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/pquerna/otp/totp"
 )
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/x509util"
+	"github.com/Cloud-Foundations/Dominator/lib/x509util"
 	"golang.org/x/crypto/ssh"
 )
 

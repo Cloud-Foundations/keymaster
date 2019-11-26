@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/simplestorage"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage"
 )
 
 type cacheCredentialEntry struct {

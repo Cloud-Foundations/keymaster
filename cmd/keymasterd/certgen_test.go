@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/certgen"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
 const testSignerX509Cert = `-----BEGIN CERTIFICATE-----

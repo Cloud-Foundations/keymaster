@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Symantec/Dominator/lib/html"
+	"github.com/Cloud-Foundations/Dominator/lib/html"
 )
 
 type adminDashboardType struct {

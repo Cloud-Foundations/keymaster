@@ -12,11 +12,11 @@ before_install:
     - go get github.com/mattn/goveralls
     - REPO_NAME=$(basename $PWD)
     - GITHUB_PATH=$(dirname $(dirname $PWD))
-    - SYMANTEC_PROJECT_DIR=${GITHUB_PATH}/Symantec/${REPO_NAME}
-    - mkdir -p ${SYMANTEC_PROJECT_DIR}
-    - rsync -az ${TRAVIS_BUILD_DIR}/ ${SYMANTEC_PROJECT_DIR}/
-    - export TRAVIS_BUILD_DIR=${SYMANTEC_PROJECT_DIR}
-    - cd ${SYMANTEC_PROJECT_DIR}
+    - CF_PROJECT_DIR=${GITHUB_PATH}/Cloud-Foundations/${REPO_NAME}
+    - mkdir -p ${CF_PROJECT_DIR}
+    - rsync -az ${TRAVIS_BUILD_DIR}/ ${CF_PROJECT_DIR}/
+    - export TRAVIS_BUILD_DIR=${CF_PROJECT_DIR}
+    - cd ${CF_PROJECT_DIR}
 
 install: make get-deps
 

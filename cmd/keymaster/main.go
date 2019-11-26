@@ -18,14 +18,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/Dominator/lib/log/cmdlogger"
-	"github.com/Symantec/Dominator/lib/net/rrdialer"
-	"github.com/Symantec/keymaster/lib/client/config"
-	libnet "github.com/Symantec/keymaster/lib/client/net"
-	"github.com/Symantec/keymaster/lib/client/twofa"
-	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
-	"github.com/Symantec/keymaster/lib/client/util"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
+	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	libnet "github.com/Cloud-Foundations/keymaster/lib/client/net"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
+	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 )
 
 const DefaultSSHKeysLocation = "/.ssh/"

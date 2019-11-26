@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/authutil"
+	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 
-	"github.com/Symantec/tricorder/go/tricorder"
-	"github.com/Symantec/tricorder/go/tricorder/units"
+	"github.com/Cloud-Foundations/tricorder/go/tricorder"
+	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

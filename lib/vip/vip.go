@@ -15,7 +15,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/util"
+	"github.com/Cloud-Foundations/keymaster/lib/util"
 )
 
 // The symantec VIP endpoint is very specific on namespaces, and golang's
