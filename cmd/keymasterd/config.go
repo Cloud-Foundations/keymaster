@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,11 +34,10 @@ import (
 )
 
 type baseConfig struct {
-	HttpAddress     string `yaml:"http_address"`
-	AdminAddress    string `yaml:"admin_address"`
-	TLSCertFilename string `yaml:"tls_cert_filename"`
-	TLSKeyFilename  string `yaml:"tls_key_filename"`
-	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
+	HttpAddress                  string   `yaml:"http_address"`
+	AdminAddress                 string   `yaml:"admin_address"`
+	TLSCertFilename              string   `yaml:"tls_cert_filename"`
+	TLSKeyFilename               string   `yaml:"tls_key_filename"`
 	SSHCAFilename                string   `yaml:"ssh_ca_filename"`
 	HtpasswdFilename             string   `yaml:"htpasswd_filename"`
 	ExternalAuthCmd              string   `yaml:"external_auth_command"`
@@ -57,6 +57,7 @@ type baseConfig struct {
 	AutomationUserGroups         []string `yaml:"automation_user_groups"`
 	AutomationUsers              []string `yaml:"automation_users"`
 	DisableUsernameNormalization bool     `yaml:"disable_username_normalization"`
+	UsernameFilterRegexp         string   `yaml:"username_filter_regexp"`
 	EnableLocalTOTP              bool     `yaml:"enable_local_totp"`
 }
 
@@ -131,8 +132,11 @@ type AppConfigFile struct {
 	ProfileStorage   ProfileStorageConfig
 }
 
-const defaultRSAKeySize = 3072
-const defaultSecsBetweenDependencyChecks = 60
+const (
+	defaultRSAKeySize                  = 3072
+	defaultSecsBetweenDependencyChecks = 60
+	defaultUsernameFilterRegexp        = "@.*"
+)
 
 func (state *RuntimeState) loadTemplates() (err error) {
 	//Load extra templates
@@ -323,6 +327,14 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 			return nil, err
 		}
 
+	}
+	usernameFilterRegexp := runtimeState.Config.Base.UsernameFilterRegexp
+	if usernameFilterRegexp == "" {
+		usernameFilterRegexp = defaultUsernameFilterRegexp
+	}
+	runtimeState.usernameFilterRE, err = regexp.Compile(usernameFilterRegexp)
+	if err != nil {
+		return nil, err
 	}
 
 	//create the oath2 config
