@@ -57,7 +57,6 @@ type baseConfig struct {
 	AutomationUserGroups         []string `yaml:"automation_user_groups"`
 	AutomationUsers              []string `yaml:"automation_users"`
 	DisableUsernameNormalization bool     `yaml:"disable_username_normalization"`
-	UsernameFilterRegexp         string   `yaml:"username_filter_regexp"`
 	EnableLocalTOTP              bool     `yaml:"enable_local_totp"`
 }
 
@@ -68,7 +67,8 @@ type LdapConfig struct {
 }
 
 type OktaConfig struct {
-	Domain string `yaml:"domain"`
+	Domain               string `yaml:"domain"`
+	UsernameFilterRegexp string `yaml:"username_filter_regexp"`
 }
 
 type UserInfoLDAPSource struct {
@@ -328,15 +328,6 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		}
 
 	}
-	usernameFilterRegexp := runtimeState.Config.Base.UsernameFilterRegexp
-	if usernameFilterRegexp == "" {
-		usernameFilterRegexp = defaultUsernameFilterRegexp
-	}
-	runtimeState.usernameFilterRE, err = regexp.Compile(usernameFilterRegexp)
-	if err != nil {
-		return nil, err
-	}
-
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {
 		logger.Printf("oath2 is enabled")
@@ -394,13 +385,22 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 			return nil, err
 		}
 	}
-	if runtimeState.Config.Okta.Domain != "" {
-		runtimeState.passwordChecker, err = okta.NewPublic(
-			runtimeState.Config.Okta.Domain, logger)
+	if oktaConfig := runtimeState.Config.Okta; oktaConfig.Domain != "" {
+		runtimeState.passwordChecker, err = okta.NewPublic(oktaConfig.Domain,
+			logger)
 		if err != nil {
 			return nil, err
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
+		usernameFilterRegexp := oktaConfig.UsernameFilterRegexp
+		if usernameFilterRegexp == "" {
+			usernameFilterRegexp = defaultUsernameFilterRegexp
+		}
+		runtimeState.usernameFilterRE, err = regexp.Compile(
+			usernameFilterRegexp)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 {
 		const timeoutSecs = 3
