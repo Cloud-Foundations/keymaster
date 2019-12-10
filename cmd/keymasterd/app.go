@@ -767,11 +767,14 @@ func (state *RuntimeState) reprocessUsername(username string) string {
 	if !state.Config.Base.DisableUsernameNormalization {
 		username = strings.ToLower(username)
 	}
-	filteredUsername := string(state.usernameFilterRE.ReplaceAll(
-		[]byte(username), nil))
-	logger.Debugf(1, "filtered user: \"%s\" to: \"%s\"\n",
-		username, filteredUsername)
-	return filteredUsername
+	if state.usernameFilterRE != nil {
+		filteredUsername := string(state.usernameFilterRE.ReplaceAll(
+			[]byte(username), nil))
+		logger.Debugf(1, "filtered user: \"%s\" to: \"%s\"\n",
+			username, filteredUsername)
+		username = filteredUsername
+	}
+	return username
 }
 
 const secretInjectorPath = "/admin/inject"
