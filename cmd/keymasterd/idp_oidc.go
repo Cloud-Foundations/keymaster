@@ -451,11 +451,20 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 }
 
-func (state *RuntimeState) getUserAttributes(username string, attributes []string) (map[string][]string, error) {
+func (state *RuntimeState) getUserAttributes(username string,
+	attributes []string) (map[string][]string, error) {
+	if state.gitDB != nil {
+		groups, err := state.gitDB.GetUserGroups(username, nil)
+		if err != nil {
+			return nil, err
+		}
+		return map[string][]string{"groups": prependGroups(
+				groups, state.Config.UserInfo.GitDB.GroupPrepend)},
+			nil
+	}
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
 	timeoutSecs = 2
-	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
 			continue
@@ -505,15 +514,15 @@ type openidConnectUserInfo struct {
 	Groups            []string `json:"groups,omitempty"`
 }
 
-func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *http.Request) {
-
+func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if !(r.Method == "GET" || r.Method == "POST") {
 		logger.Printf("Invalid Method for Userinfo Handler")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Userinfo Handler")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid Method for Userinfo Handler")
 		return
 	}
 	logger.Debugf(2, "userinfo request=%+v", r)
-
 	var accessToken string
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
@@ -526,7 +535,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		}
 	}
 	if accessToken == "" {
-		//logger.Printf("")
 		err := r.ParseForm()
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -535,51 +543,49 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		accessToken = r.Form.Get("access_token")
 	}
 	logger.Debugf(1, "access_token='%s'", accessToken)
-
 	if accessToken == "" {
 		logger.Printf("access_token='%s'", accessToken)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing access token")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Missing access token")
 		return
 	}
-
 	tok, err := jwt.ParseSigned(accessToken)
 	if err != nil {
 		logger.Printf("err=%s", err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad access token")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"bad access token")
 		return
 	}
 	logger.Debugf(1, "tok=%+v", tok)
-
 	parsedAccessToken := userInfoToken{}
-	//if err := tok.Claims(state.Signer.Public(), &parsedAccessToken); err != nil {
 	if err := state.JWTClaims(tok, &parsedAccessToken); err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
 	logger.Debugf(1, "out=%+v", parsedAccessToken)
-
-	//now we check for validity
+	// Now we check for validity.
 	if parsedAccessToken.Expiration < time.Now().Unix() {
 		logger.Printf("expired token attempted to be used for bearer")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
-	//now we check for validity
 	if parsedAccessToken.Type != "bearer" {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
-
-	//Get email from ldap if available
+	// Get email from LDAP if available.
 	defaultEmailDomain := state.HostIdentity
 	if len(state.Config.OpenIDConnectIDP.DefaultEmailDomain) > 3 {
 		defaultEmailDomain = state.Config.OpenIDConnectIDP.DefaultEmailDomain
 	}
-	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, defaultEmailDomain)
-	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
+	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username,
+		defaultEmailDomain)
+	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username,
+		[]string{"mail"})
 	if err != nil {
-		logger.Printf("warn: failed to get user attributes for %s, %s", parsedAccessToken.Username, err)
+		logger.Printf("warn: failed to get user attributes for %s, %s",
+			parsedAccessToken.Username, err)
 	}
 	var userGroups []string
 	if userAttributeMap != nil {
@@ -593,7 +599,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 			userGroups = groupList
 		}
 	}
-
 	userInfo := openidConnectUserInfo{
 		Subject:  parsedAccessToken.Username,
 		Username: parsedAccessToken.Username,
@@ -602,21 +607,19 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		Login:    parsedAccessToken.Username,
 		Groups:   userGroups,
 	}
-
-	// and write the json output
+	// Write the json output.
 	b, err := json.Marshal(userInfo)
 	if err != nil {
 		log.Printf("error marshaling in idpOpenIDUserinfonHandler: %s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"Internal Error")
 		return
 	}
 	logger.Debugf(1, "userinfo=%+v\n b=%s", userInfo, b)
-
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
-
 	logger.Printf("200 Successful userinfo request")
 	logger.Debugf(0, " Userinfo response =  %s", b)
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
+	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
@@ -155,6 +156,7 @@ type RuntimeState struct {
 	SignerIsReady        chan bool
 	oktaUsernameFilterRE *regexp.Regexp
 	Mutex                sync.Mutex
+	gitDB                *gitdb.UserInfo
 	pendingOauth2        map[string]pendingAuth2Request
 	storageRWMutex       sync.RWMutex
 	db                   *sql.DB

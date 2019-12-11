@@ -21,6 +21,17 @@ import (
 
 const certgenPath = "/certgen/"
 
+func prependGroups(groups []string, prefix string) []string {
+	if prefix == "" {
+		return groups
+	}
+	newGroups := make([]string, 0, len(groups))
+	for _, group := range groups {
+		newGroups = append(newGroups, prefix+group)
+	}
+	return newGroups
+}
+
 func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	var keySigner crypto.Signer
@@ -217,10 +228,17 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 }
 
 func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+	if state.gitDB != nil {
+		groups, err := state.gitDB.GetUserGroups(username, nil)
+		if err != nil {
+			return nil, err
+		}
+		return prependGroups(groups, state.Config.UserInfo.GitDB.GroupPrepend),
+			nil
+	}
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
 	timeoutSecs = 2
-	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
 			continue
@@ -238,7 +256,7 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		if err != nil {
 			continue
 		}
-		return groups, nil
+		return prependGroups(groups, ldapConfig.GroupPrepend), nil
 
 	}
 	if ldapConfig.LDAPTargetURLs == "" {
