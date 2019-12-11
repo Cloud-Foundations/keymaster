@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,11 +34,10 @@ import (
 )
 
 type baseConfig struct {
-	HttpAddress     string `yaml:"http_address"`
-	AdminAddress    string `yaml:"admin_address"`
-	TLSCertFilename string `yaml:"tls_cert_filename"`
-	TLSKeyFilename  string `yaml:"tls_key_filename"`
-	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
+	HttpAddress                  string   `yaml:"http_address"`
+	AdminAddress                 string   `yaml:"admin_address"`
+	TLSCertFilename              string   `yaml:"tls_cert_filename"`
+	TLSKeyFilename               string   `yaml:"tls_key_filename"`
 	SSHCAFilename                string   `yaml:"ssh_ca_filename"`
 	HtpasswdFilename             string   `yaml:"htpasswd_filename"`
 	ExternalAuthCmd              string   `yaml:"external_auth_command"`
@@ -67,7 +67,8 @@ type LdapConfig struct {
 }
 
 type OktaConfig struct {
-	Domain string `yaml:"domain"`
+	Domain               string `yaml:"domain"`
+	UsernameFilterRegexp string `yaml:"username_filter_regexp"`
 }
 
 type UserInfoLDAPSource struct {
@@ -131,8 +132,11 @@ type AppConfigFile struct {
 	ProfileStorage   ProfileStorageConfig
 }
 
-const defaultRSAKeySize = 3072
-const defaultSecsBetweenDependencyChecks = 60
+const (
+	defaultRSAKeySize                  = 3072
+	defaultSecsBetweenDependencyChecks = 60
+	defaultOktaUsernameFilterRegexp    = "@.*"
+)
 
 func (state *RuntimeState) loadTemplates() (err error) {
 	//Load extra templates
@@ -324,7 +328,6 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		}
 
 	}
-
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {
 		logger.Printf("oath2 is enabled")
@@ -382,13 +385,22 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 			return nil, err
 		}
 	}
-	if runtimeState.Config.Okta.Domain != "" {
-		runtimeState.passwordChecker, err = okta.NewPublic(
-			runtimeState.Config.Okta.Domain, logger)
+	if oktaConfig := runtimeState.Config.Okta; oktaConfig.Domain != "" {
+		runtimeState.passwordChecker, err = okta.NewPublic(oktaConfig.Domain,
+			logger)
 		if err != nil {
 			return nil, err
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
+		usernameFilterRegexp := oktaConfig.UsernameFilterRegexp
+		if usernameFilterRegexp == "" {
+			usernameFilterRegexp = defaultOktaUsernameFilterRegexp
+		}
+		runtimeState.oktaUsernameFilterRE, err = regexp.Compile(
+			usernameFilterRegexp)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 {
 		const timeoutSecs = 3
