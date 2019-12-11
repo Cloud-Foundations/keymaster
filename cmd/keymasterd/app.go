@@ -153,7 +153,7 @@ type RuntimeState struct {
 	vipPushCookie        map[string]pushPollTransaction
 	localAuthData        map[string]localUserData
 	SignerIsReady        chan bool
-	usernameFilterRE     *regexp.Regexp
+	oktaUsernameFilterRE *regexp.Regexp
 	Mutex                sync.Mutex
 	pendingOauth2        map[string]pendingAuth2Request
 	storageRWMutex       sync.RWMutex
@@ -767,8 +767,8 @@ func (state *RuntimeState) reprocessUsername(username string) string {
 	if !state.Config.Base.DisableUsernameNormalization {
 		username = strings.ToLower(username)
 	}
-	if state.usernameFilterRE != nil {
-		filteredUsername := string(state.usernameFilterRE.ReplaceAll(
+	if state.oktaUsernameFilterRE != nil {
+		filteredUsername := string(state.oktaUsernameFilterRE.ReplaceAll(
 			[]byte(username), nil))
 		logger.Debugf(1, "filtered user: \"%s\" to: \"%s\"\n",
 			username, filteredUsername)

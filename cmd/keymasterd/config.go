@@ -135,7 +135,7 @@ type AppConfigFile struct {
 const (
 	defaultRSAKeySize                  = 3072
 	defaultSecsBetweenDependencyChecks = 60
-	defaultUsernameFilterRegexp        = "@.*"
+	defaultOktaUsernameFilterRegexp    = "@.*"
 )
 
 func (state *RuntimeState) loadTemplates() (err error) {
@@ -394,9 +394,9 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 		usernameFilterRegexp := oktaConfig.UsernameFilterRegexp
 		if usernameFilterRegexp == "" {
-			usernameFilterRegexp = defaultUsernameFilterRegexp
+			usernameFilterRegexp = defaultOktaUsernameFilterRegexp
 		}
-		runtimeState.usernameFilterRE, err = regexp.Compile(
+		runtimeState.oktaUsernameFilterRE, err = regexp.Compile(
 			usernameFilterRegexp)
 		if err != nil {
 			return nil, err
