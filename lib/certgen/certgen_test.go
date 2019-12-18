@@ -425,7 +425,10 @@ func TestGetSignerFromPEMBytesFail(t *testing.T) {
 	if err == nil {
 		t.Fatal(err)
 	}
-	_, err = GetSignerFromPEMBytes([]byte(pkcs8rsaPrivateKey))
+}
+
+func TestGetSignerFromPEMBytesSuccess(t *testing.T) {
+	_, err := GetSignerFromPEMBytes([]byte(pkcs8rsaPrivateKey))
 	if err != nil {
 		t.Fatal(err)
 	}
