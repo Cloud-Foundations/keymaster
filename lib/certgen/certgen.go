@@ -125,6 +125,19 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	case "EC PRIVATE KEY":
 		return x509.ParseECPrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		parsedIface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		switch v := parsedIface.(type) {
+		case *rsa.PrivateKey:
+			return v, nil
+		case *ecdsa.PrivateKey:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+		}
 	default:
 		err := errors.New("Cannot process that key")
 		return nil, err
@@ -185,7 +198,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
@@ -318,7 +331,7 @@ func GenUserX509Cert(userName string, userPub interface{},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
 	}
 	if groupListExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,
