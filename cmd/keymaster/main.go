@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -244,12 +243,6 @@ func setupCerts(
 		logger.Fatal(err)
 	}
 	logger.Debugf(0, "Got Certs from server")
-	//..
-	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-		// TODO(rgooch): Parse certificate to get actual lifetime.
-		cmd := exec.Command("ssh-add", "-d", sshKeyPath)
-		cmd.Run()
-	}
 
 	//rename files to expected paths
 	err = os.Rename(tempPrivateKeyPath, sshKeyPath)
@@ -308,13 +301,14 @@ func setupCerts(
 		}
 	}
 
-	logger.Printf("Success")
-	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-		// TODO(rgooch): Parse certificate to get actual lifetime.
-		lifetime := fmt.Sprintf("%ds", uint64((*twofa.Duration).Seconds()))
-		cmd := exec.Command("ssh-add", "-t", lifetime, sshKeyPath)
-		cmd.Run()
+	// TODO eventually we should reorder operations so that we write to the
+	// private key only if we are unable to use the agent
+	err = insertCertIntoAgent(sshCert, signer, FilePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	if err != nil {
+		logger.Printf("could not insert into agent natively")
 	}
+
+	logger.Printf("Success")
 }
 
 func computeUserAgent() {
