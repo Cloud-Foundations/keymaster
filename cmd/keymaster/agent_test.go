@@ -67,4 +67,16 @@ func TestInsertCertIntoAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Call it twice to check for deletion
+	err = insertCertIntoAgent(
+		[]byte(demoCert),
+		key,
+		comment,
+		30,
+		testlogger.New(t),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
