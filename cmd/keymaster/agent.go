@@ -29,7 +29,6 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	}
 	deletedCount := 0
 	for _, key := range keyList {
-		//log.Printf("key=%+v, FORMAT=%s", key, key.Format)
 		pubKey, err := ssh.ParsePublicKey(key.Marshal())
 		if err != nil {
 			logger.Println(err)
@@ -37,7 +36,6 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 		}
 		_, ok := pubKey.(*ssh.Certificate)
 		if !ok {
-			logger.Printf("SSH public key is not a certificate")
 			continue
 		}
 		if key.Comment != comment {
