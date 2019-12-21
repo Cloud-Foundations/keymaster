@@ -1,9 +1,12 @@
 package main
 
 import (
+	"os"
+	"runtime"
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"github.com/cviecco/npipe"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -38,12 +41,30 @@ DCivzG6GfJ6nBGB+vrbKxkvSbKQqdGvqxunYzABSXEyhwBl25VAiXQ==
 -----END RSA PRIVATE KEY-----`
 
 func TestConnectToDefaultSSHAgentLocation(t *testing.T) {
+	switch runtime.GOOS {
+	case "windows":
+		conn, err := npipe.Dial(`\\.\pipe\openssh-ssh-agent`)
+		if err != nil {
+			t.Skip("Assuming that windows agent is not enabled/wori")
+		}
+		conn.Close()
+	default:
+		if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); !ok {
+			t.Skip("No Auth Socket present, skipping testing")
+		}
+	}
 	_, err := connectToDefaultSSHAgentLocation()
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 func TestInsertCertIntoAgent(t *testing.T) {
+	conn, err := connectToDefaultSSHAgentLocation()
+	if err != nil {
+		t.Skip("No Agent Socket/Pipe, skipping test")
+	}
+	conn.Close()
+
 	comment := "foo"
 	key, err := ssh.ParseRawPrivateKey([]byte(demoKey))
 	if err != nil {
