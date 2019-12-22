@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
-	"github.com/cviecco/npipe"
+	"github.com/Cloud-Foundations/npipe"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )

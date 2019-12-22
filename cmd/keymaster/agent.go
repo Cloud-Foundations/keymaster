@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log"
-	"github.com/cviecco/npipe"
+	"github.com/Cloud-Foundations/npipe"
 )
 
 func connectToDefaultSSHAgentLocation() (net.Conn, error) {
