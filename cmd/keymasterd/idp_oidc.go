@@ -2,12 +2,9 @@ package main
 
 import (
 	"bytes"
-	//"crypto"
-	//"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	//"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -15,12 +12,9 @@ import (
 	"strings"
 	"time"
 
-	//"golang.org/x/net/context"
-	"github.com/mendsley/gojwk"
-	//"gopkg.in/dgrijalva/jwt-go.v2"
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	//"golang.org/x/crypto/ssh"
+	"github.com/mendsley/gojwk"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -454,7 +448,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 func (state *RuntimeState) getUserAttributes(username string,
 	attributes []string) (map[string][]string, error) {
 	if state.gitDB != nil {
-		groups, err := state.gitDB.GetUserGroups(username, nil)
+		groups, err := state.gitDB.GetUserGroups(username)
 		if err != nil {
 			return nil, err
 		}

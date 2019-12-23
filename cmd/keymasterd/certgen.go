@@ -229,7 +229,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 
 func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 	if state.gitDB != nil {
-		groups, err := state.gitDB.GetUserGroups(username, nil)
+		groups, err := state.gitDB.GetUserGroups(username)
 		if err != nil {
 			return nil, err
 		}
