@@ -445,18 +445,26 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 }
 
-func (state *RuntimeState) getUserAttributes(username string,
-	attributes []string) (map[string][]string, error) {
-	if state.gitDB != nil {
-		groups, err := state.gitDB.GetUserGroups(username)
-		if err != nil {
-			return nil, err
-		}
-		return map[string][]string{"groups": prependGroups(
-				groups, state.Config.UserInfo.GitDB.GroupPrepend)},
-			nil
+func (state *RuntimeState) getGitDbUserAttributes(username string,
+	attributes []string) (bool, map[string][]string, error) {
+	if state.gitDB == nil {
+		return false, nil, nil
 	}
+	groups, err := state.gitDB.GetUserGroups(username)
+	if err != nil {
+		return true, nil, err
+	}
+	return true, map[string][]string{"groups": prependGroups(
+			groups, state.Config.UserInfo.GitDB.GroupPrepend)},
+		nil
+}
+
+func (state *RuntimeState) getLdapUserAttributes(username string,
+	attributes []string) (bool, map[string][]string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
+	if ldapConfig.LDAPTargetURLs == "" {
+		return false, nil, nil
+	}
 	var timeoutSecs uint
 	timeoutSecs = 2
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
@@ -471,7 +479,8 @@ func (state *RuntimeState) getUserAttributes(username string,
 		attributeMap, err := authutil.GetLDAPUserAttributes(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
-			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter, attributes)
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
+			attributes)
 		if err != nil {
 			continue
 		}
@@ -481,21 +490,30 @@ func (state *RuntimeState) getUserAttributes(username string,
 			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
 			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
 		if err != nil {
-			// TODO: We actually need to check the error, right now we are assuming
-			// the user does not exists and go with that.
+			// TODO: We actually need to check the error, right now we are
+			// assuming the user does not exists and go with that.
 			logger.Printf("Failed get userGroups for user '%s'", username)
 		} else {
-			logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
+			logger.Debugf(1, "Got groups for username %s: %s",
+				username, userGroups)
 			attributeMap["groups"] = userGroups
 		}
-		return attributeMap, nil
+		return true, attributeMap, nil
+	}
+	return true, nil, errors.New("error getting the groups")
+}
 
+func (state *RuntimeState) getUserAttributes(username string,
+	attributes []string) (map[string][]string, error) {
+	ok, attrs, err := state.getLdapUserAttributes(username, attributes)
+	if ok {
+		return attrs, err
 	}
-	if ldapConfig.LDAPTargetURLs == "" {
-		return nil, nil
+	ok, attrs, err = state.getGitDbUserAttributes(username, attributes)
+	if ok {
+		return attrs, err
 	}
-	err := errors.New("error getting the groups")
-	return nil, err
+	return nil, nil
 }
 
 type openidConnectUserInfo struct {
