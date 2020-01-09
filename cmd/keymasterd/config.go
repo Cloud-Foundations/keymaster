@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
@@ -60,6 +61,14 @@ type baseConfig struct {
 	EnableLocalTOTP              bool     `yaml:"enable_local_totp"`
 }
 
+type GitDatabaseConfig struct {
+	Branch                   string        `yaml:"branch"`
+	CheckInterval            time.Duration `yaml:"check_interval"`
+	GroupPrepend             string        `yaml:"group_prepend"`
+	LocalRepositoryDirectory string        `yaml:"local_repository_directory"`
+	RepositoryURL            string        `yaml:"repository_url"`
+}
+
 type LdapConfig struct {
 	BindPattern          string `yaml:"bind_pattern"`
 	LDAPTargetURLs       string `yaml:"ldap_target_urls"`
@@ -74,6 +83,7 @@ type OktaConfig struct {
 type UserInfoLDAPSource struct {
 	BindUsername       string   `yaml:"bind_username"`
 	BindPassword       string   `yaml:"bind_password"`
+	GroupPrepend       string   `yaml:"group_prepend"`
 	LDAPTargetURLs     string   `yaml:"ldap_target_urls"`
 	UserSearchBaseDNs  []string `yaml:"user_search_base_dns"`
 	UserSearchFilter   string   `yaml:"user_search_filter"`
@@ -82,7 +92,8 @@ type UserInfoLDAPSource struct {
 }
 
 type UserInfoSouces struct {
-	Ldap UserInfoLDAPSource
+	GitDB GitDatabaseConfig
+	Ldap  UserInfoLDAPSource
 }
 
 type Oauth2Config struct {
@@ -424,6 +435,17 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 
 	logger.Debugf(1, "End of config initialization: %+v", &runtimeState)
 
+	// UserInfo setup.
+	if runtimeState.Config.UserInfo.GitDB.LocalRepositoryDirectory != "" {
+		gitdbConfig := runtimeState.Config.UserInfo.GitDB
+		runtimeState.gitDB, err = gitdb.New(gitdbConfig.RepositoryURL,
+			gitdbConfig.Branch, gitdbConfig.LocalRepositoryDirectory,
+			gitdbConfig.CheckInterval, logger)
+		if err != nil {
+			return nil, err
+		}
+		logger.Println("loaded UserInfo GitDB")
+	}
 	// DB initialization
 	err = initDB(&runtimeState)
 	if err != nil {
