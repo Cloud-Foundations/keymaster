@@ -22,6 +22,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
 	libnet "github.com/Cloud-Foundations/keymaster/lib/client/net"
+	"github.com/Cloud-Foundations/keymaster/lib/client/sshagent"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
@@ -303,7 +304,7 @@ func setupCerts(
 
 	// TODO eventually we should reorder operations so that we write to the
 	// private key only if we are unable to use the agent
-	err = insertCertIntoAgent(sshCert, signer, FilePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	err = sshagent.UpsertCertIntoAgent(sshCert, signer, FilePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
 	if err != nil {
 		logger.Printf("could not insert into agent natively")
 	}

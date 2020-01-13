@@ -1,4 +1,4 @@
-package main
+package sshagent
 
 import (
 	"testing"
@@ -57,7 +57,7 @@ func TestInsertCertIntoAgent(t *testing.T) {
 		        lifeTimeSecs uint32,
 		        logger log.Logger)
 	*/
-	err = insertCertIntoAgent(
+	err = upsertCertIntoAgent(
 		[]byte(demoCert),
 		key,
 		comment,
@@ -68,7 +68,7 @@ func TestInsertCertIntoAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Call it twice to check for deletion
-	err = insertCertIntoAgent(
+	err = upsertCertIntoAgent(
 		[]byte(demoCert),
 		key,
 		comment,

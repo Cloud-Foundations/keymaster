@@ -1,4 +1,4 @@
-package main
+package sshagent
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/cviecco/npipe"
 )
 
@@ -50,7 +50,7 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	return deletedCount, nil
 }
 
-func insertCertIntoAgent(
+func upsertCertIntoAgent(
 	certText []byte,
 	privateKey interface{},
 	comment string,
