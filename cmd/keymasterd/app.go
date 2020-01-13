@@ -27,10 +27,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
+	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
@@ -111,9 +112,8 @@ type totpAuthData struct {
 }
 
 type userProfile struct {
-	U2fAuthData           map[int64]*u2fAuthData
-	RegistrationChallenge *u2f.Challenge
-	//U2fAuthChallenge      *u2f.Challenge
+	U2fAuthData                map[int64]*u2fAuthData
+	RegistrationChallenge      *u2f.Challenge
 	PendingTOTPSecret          *[][]byte
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
@@ -144,19 +144,19 @@ type totpRateLimitInfo struct {
 }
 
 type RuntimeState struct {
-	Config              AppConfigFile
-	SSHCARawFileContent []byte
-	Signer              crypto.Signer
-	ClientCAPool        *x509.CertPool
-	HostIdentity        string
-	KerberosRealm       *string
-	caCertDer           []byte
-	//authCookie          map[string]authInfo
-	vipPushCookie map[string]pushPollTransaction
-	localAuthData map[string]localUserData
-	SignerIsReady chan bool
-	Mutex         sync.Mutex
-	//userProfile         map[string]userProfile
+	Config               AppConfigFile
+	SSHCARawFileContent  []byte
+	Signer               crypto.Signer
+	ClientCAPool         *x509.CertPool
+	HostIdentity         string
+	KerberosRealm        *string
+	caCertDer            []byte
+	vipPushCookie        map[string]pushPollTransaction
+	localAuthData        map[string]localUserData
+	SignerIsReady        chan bool
+	oktaUsernameFilterRE *regexp.Regexp
+	Mutex                sync.Mutex
+	gitDB                *gitdb.UserInfo
 	pendingOauth2        map[string]pendingAuth2Request
 	storageRWMutex       sync.RWMutex
 	db                   *sql.DB
@@ -705,9 +705,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
-		if !state.Config.Base.DisableUsernameNormalization {
-			user = strings.ToLower(user)
-		}
+		user = state.reprocessUsername(user)
 		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -765,6 +763,20 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		}
 	}
 	return AuthLevel
+}
+
+func (state *RuntimeState) reprocessUsername(username string) string {
+	if !state.Config.Base.DisableUsernameNormalization {
+		username = strings.ToLower(username)
+	}
+	if state.oktaUsernameFilterRE != nil {
+		filteredUsername := string(state.oktaUsernameFilterRE.ReplaceAll(
+			[]byte(username), nil))
+		logger.Debugf(1, "filtered user: \"%s\" to: \"%s\"\n",
+			username, filteredUsername)
+		username = filteredUsername
+	}
+	return username
 }
 
 const secretInjectorPath = "/admin/inject"
@@ -1011,10 +1023,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-
-	if !state.Config.Base.DisableUsernameNormalization {
-		username = strings.ToLower(username)
-	}
+	username = state.reprocessUsername(username)
 	valid, err := checkUserPassword(username, password, state.Config, state.passwordChecker, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1028,7 +1037,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// AUTHN has passed
-	logger.Debug(1, "Valid passwd AUTH login for %s", username)
+	logger.Debugf(1, "Valid passwd AUTH login for %s\n", username)
 	userHasU2FTokens, err := state.userHasU2FTokens(username)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
@@ -1580,7 +1589,7 @@ func main() {
 
 	logBufOptions := logbuf.GetStandardOptions()
 	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
-	logger.Debugf(1, "acesslogdir=%d ", accessLogDirectory)
+	logger.Debugf(1, "accesslogdir=%s\n", accessLogDirectory)
 	serviceAccessLogger := serverlogger.NewWithOptions("access",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,

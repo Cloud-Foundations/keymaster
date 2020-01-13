@@ -21,6 +21,17 @@ import (
 
 const certgenPath = "/certgen/"
 
+func prependGroups(groups []string, prefix string) []string {
+	if prefix == "" {
+		return groups
+	}
+	newGroups := make([]string, 0, len(groups))
+	for _, group := range groups {
+		newGroups = append(newGroups, prefix+group)
+	}
+	return newGroups
+}
+
 func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	var keySigner crypto.Signer
@@ -216,11 +227,28 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 	}(targetUser, "ssh")
 }
 
-func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+func (state *RuntimeState) getGitDbUserGroups(username string) (
+	bool, []string, error) {
+	if state.gitDB == nil {
+		return false, nil, nil
+	}
+	groups, err := state.gitDB.GetUserGroups(username)
+	if err != nil {
+		return true, nil, err
+	}
+	return true,
+		prependGroups(groups, state.Config.UserInfo.GitDB.GroupPrepend),
+		nil
+}
+
+func (state *RuntimeState) getLdapUserGroups(username string) (
+	bool, []string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
 	timeoutSecs = 2
-	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	if ldapConfig.LDAPTargetURLs == "" {
+		return false, nil, nil
+	}
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
 			continue
@@ -238,15 +266,20 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		if err != nil {
 			continue
 		}
-		return groups, nil
+		return true, prependGroups(groups, ldapConfig.GroupPrepend), nil
 
 	}
-	if ldapConfig.LDAPTargetURLs == "" {
-		var emptyGroup []string
-		return emptyGroup, nil
+	return true, nil, errors.New("error getting the groups")
+}
+
+func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+	if config, groups, err := state.getLdapUserGroups(username); config {
+		return groups, err
 	}
-	err := errors.New("error getting the groups")
-	return nil, err
+	if config, groups, err := state.getGitDbUserGroups(username); config {
+		return groups, err
+	}
+	return nil, nil
 }
 
 func (state *RuntimeState) postAuthX509CertHandler(
