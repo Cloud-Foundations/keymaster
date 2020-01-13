@@ -80,7 +80,7 @@ func TestInsertCertIntoAgent(t *testing.T) {
 		        lifeTimeSecs uint32,
 		        logger log.Logger)
 	*/
-	err = upsertCertIntoAgent(
+	err = UpsertCertIntoAgent(
 		[]byte(demoCert),
 		key,
 		comment,
@@ -91,7 +91,7 @@ func TestInsertCertIntoAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Call it twice to check for deletion
-	err = upsertCertIntoAgent(
+	err = UpsertCertIntoAgent(
 		[]byte(demoCert),
 		key,
 		comment,
