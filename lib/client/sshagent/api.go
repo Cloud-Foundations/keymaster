@@ -4,11 +4,11 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
-func InsertCertIntoAgent(
+func UpsertCertIntoAgent(
 	certText []byte,
 	privateKey interface{},
 	comment string,
 	lifeTimeSecs uint32,
 	logger log.Logger) error {
-	return insertCertIntoAgent(certText, privateKey, comment, lifeTimeSecs, logger)
+	return upsertCertIntoAgent(certText, privateKey, comment, lifeTimeSecs, logger)
 }
