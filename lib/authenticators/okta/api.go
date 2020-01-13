@@ -4,9 +4,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/simplestorage"
 )
+
+// This module implements the PasswordAuthenticator interface and will implement
+// a unified 2fa backend interface in some future
 
 type authCacheData struct {
 	Response PrimaryResponseType
@@ -52,13 +55,13 @@ func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore
 }
 
 // VerifyOTP
-func (pa *PasswordAuthenticator) ValidateUserOTP(authUser string, otpValue int) (bool, error) {
-	return pa.validateUserOTP(authUser, otpValue)
+func (pa *PasswordAuthenticator) ValidateUserOTP(username string, otpValue int) (bool, error) {
+	return pa.validateUserOTP(username, otpValue)
 }
 
 // Initialize and verify Push
-func (pa *PasswordAuthenticator) ValidateUserPush(authUser string) (PushResponse, error) {
-	return pa.validateUserPush(authUser)
+func (pa *PasswordAuthenticator) ValidateUserPush(username string) (PushResponse, error) {
+	return pa.validateUserPush(username)
 }
 
 // SetAuthnURL. For testing only, update the internal authURL so that the backend can be tested

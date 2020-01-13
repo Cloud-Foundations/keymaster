@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
 	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
 )
 
 var authnURL string
@@ -374,7 +374,6 @@ func TestMfaOTPSuccess(t *testing.T) {
 
 func TestMfaPushNonExisting(t *testing.T) {
 	setupServer()
-
 	pa := &PasswordAuthenticator{authnURL: authnURL,
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),

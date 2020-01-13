@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
 const (
@@ -119,16 +119,16 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 }
 
-func (pa *PasswordAuthenticator) getValidUserResponse(authUser string) (*PrimaryResponseType, error) {
+func (pa *PasswordAuthenticator) getValidUserResponse(username string) (*PrimaryResponseType, error) {
 	pa.Mutex.Lock()
-	userData, ok := pa.recentAuth[authUser]
+	userData, ok := pa.recentAuth[username]
 	pa.Mutex.Unlock()
 	if !ok {
 		return nil, nil
 	}
 	if userData.Expires.Before(time.Now()) {
 		pa.Mutex.Lock()
-		delete(pa.recentAuth, authUser)
+		delete(pa.recentAuth, username)
 		pa.Mutex.Unlock()
 		return nil, nil
 
@@ -136,8 +136,8 @@ func (pa *PasswordAuthenticator) getValidUserResponse(authUser string) (*Primary
 	return &userData.Response, nil
 }
 
-func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
-	userResponse, err := pa.getValidUserResponse(authUser)
+func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) (bool, error) {
+	userResponse, err := pa.getValidUserResponse(username)
 	if err != nil {
 		return false, err
 	}
@@ -194,8 +194,8 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 	return false, nil
 }
 
-func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse, error) {
-	userResponse, err := pa.getValidUserResponse(authUser)
+func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse, error) {
+	userResponse, err := pa.getValidUserResponse(username)
 	if err != nil {
 		return PushResponseRejected, err
 	}
