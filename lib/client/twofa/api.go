@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
 )
 
 var (

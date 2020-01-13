@@ -3,13 +3,13 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"github.com/Symantec/keymaster/proto/eventmon"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 
 func (state *RuntimeState) startVIPPush(cookieVal string, username string) error {

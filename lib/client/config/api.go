@@ -3,7 +3,7 @@ package config
 import (
 	"net/http"
 
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
 )
 
 type BaseConfig struct {

@@ -110,7 +110,7 @@ func init() {
 	//we also make a simple tls listener
 	//
 	config, _ := getTLSconfig()
-	ln, _ := tls.Listen("tcp", ":10638", config)
+	ln, _ := tls.Listen("tcp", "127.0.0.1:10638", config)
 	go func(ln net.Listener) {
 		for {
 			conn, err := ln.Accept()

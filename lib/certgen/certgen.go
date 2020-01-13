@@ -127,6 +127,19 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	case "EC PRIVATE KEY":
 		return x509.ParseECPrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		parsedIface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		switch v := parsedIface.(type) {
+		case *rsa.PrivateKey:
+			return v, nil
+		case *ecdsa.PrivateKey:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+		}
 	default:
 		err := errors.New("Cannot process that key")
 		return nil, err
@@ -297,7 +310,7 @@ func getGroupListExtension(groups []string) (*pkix.Extension, error) {
 		return nil, err
 	}
 	groupListExtension := pkix.Extension{
-		// See github.com/Symantec/Dominator/lib/constants.GroupListOID
+		// See github.com/Cloud-Foundations/Dominator/lib/constants.GroupListOID
 		Id:    []int{1, 3, 6, 1, 4, 1, 9586, 100, 7, 2},
 		Value: encodedValue,
 	}

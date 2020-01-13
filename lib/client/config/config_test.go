@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 const simpleValidConfigFile = `base:

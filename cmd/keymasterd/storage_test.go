@@ -6,8 +6,8 @@ import (
 	"testing"
 	//"time"
 
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
+	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 )
 
 func init() {

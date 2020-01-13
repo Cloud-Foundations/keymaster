@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/format"
-	"github.com/Symantec/Dominator/lib/html"
-	"github.com/Symantec/keymaster/eventmon/eventrecorder"
+	"github.com/Cloud-Foundations/Dominator/lib/format"
+	"github.com/Cloud-Foundations/Dominator/lib/html"
+	"github.com/Cloud-Foundations/keymaster/eventmon/eventrecorder"
 )
 
 const (

@@ -18,10 +18,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
-	"github.com/Symantec/keymaster/lib/client/twofa/vip"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/vip"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
 )

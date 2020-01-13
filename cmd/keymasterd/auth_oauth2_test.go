@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 )
@@ -71,7 +71,7 @@ func init() {
 	http.HandleFunc("/token", tokenHandler)
 	http.HandleFunc("/", handler)
 	logger.Printf("about to start server")
-	go http.ListenAndServe(":12345", nil)
+	go http.ListenAndServe("127.0.0.1:12345", nil)
 	time.Sleep(20 * time.Millisecond)
 	_, err := http.Get("http://localhost:12345")
 	if err != nil {

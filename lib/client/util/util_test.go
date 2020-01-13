@@ -9,8 +9,8 @@ import (
 	"os/user"
 	"testing"
 
-	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 )
 
 func TestGenKeyPairSuccess(t *testing.T) {
