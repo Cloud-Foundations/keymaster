@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 PermissionsStartOnly=true
-ExecStartPre=setcap cap_net_bind_service=+ep /usr/sbin/keymasterd
+ExecStartPre=/sbin/setcap cap_net_bind_service=+ep /usr/sbin/keymasterd
 ExecStart=/usr/sbin/keymasterd
 Restart=always
 RestartSec=20
