@@ -109,7 +109,7 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 		if err != nil {
 			expires = time.Now().Add(time.Second * 60)
 		}
-		toCache := authCacheData{Response: response, Expires: expires}
+		toCache := authCacheData{response: response, expires: expires}
 		pa.Mutex.Lock()
 		pa.recentAuth[username] = toCache
 		pa.Mutex.Unlock()
@@ -126,14 +126,14 @@ func (pa *PasswordAuthenticator) getValidUserResponse(username string) (*Primary
 	if !ok {
 		return nil, nil
 	}
-	if userData.Expires.Before(time.Now()) {
+	if userData.expires.Before(time.Now()) {
 		pa.Mutex.Lock()
 		delete(pa.recentAuth, username)
 		pa.Mutex.Unlock()
 		return nil, nil
 
 	}
-	return &userData.Response, nil
+	return &userData.response, nil
 }
 
 func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) (bool, error) {

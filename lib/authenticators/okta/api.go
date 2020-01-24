@@ -12,8 +12,8 @@ import (
 // a unified 2fa backend interface in some future
 
 type authCacheData struct {
-	Response PrimaryResponseType
-	Expires  time.Time
+	response PrimaryResponseType
+	expires  time.Time
 }
 
 type PasswordAuthenticator struct {
@@ -64,8 +64,21 @@ func (pa *PasswordAuthenticator) ValidateUserPush(username string) (PushResponse
 	return pa.validateUserPush(username)
 }
 
+// New creates a new public authenticator, but poiting to an explicit authenticator url
+func NewPublicTesting(authnURL string, logger log.Logger) (
+	*PasswordAuthenticator, error) {
+	pa, err := newPublicAuthenticator("example.com", logger)
+	if err != nil {
+		return pa, err
+	}
+	pa.authnURL = authnURL
+	return pa, nil
+}
+
+/*
 // SetAuthnURL. For testing only, update the internal authURL so that the backend can be tested
 func (pa *PasswordAuthenticator) SetAuthnURL(authnURL string) error {
 	pa.authnURL = authnURL
 	return nil
 }
+*/
