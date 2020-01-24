@@ -158,36 +158,33 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 }
 
 // returns 3 values, if the key is valid, if the key is not valid, the text reason why and and error if it was an internal error
-
-func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, string, error) {
+func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
 	//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
 	validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if !validKey {
-		return nil, "Invalid File, bad re", nil
+		return nil, fmt.Errorf("Invalid File, bad re"), nil
 	}
-
 	userSSH, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
-		return nil, "invalid file, unparseable", nil
+		return nil, fmt.Errorf("invalid file, unparseable"), nil
 	}
-	// The next check should never fail, as all of out supported keys are ssh.CryptoPublicKey's but
+	// The next check should never fail, as all of our supported keys are ssh.CryptoPublicKey's but
 	// to prevent potential future panics we check anyway
 	cryptoPubKey, ok := userSSH.(ssh.CryptoPublicKey)
 	if !ok {
-		return nil, "", fmt.Errorf("Cannot transform ssh key into crypto key, inbound=%s", userPubKey)
+		return nil, nil, fmt.Errorf("Cannot transform ssh key into crypto key, inbound=%s", userPubKey)
 	}
 	validKey, err = certgen.ValidatePublicKeyStrength(cryptoPubKey.CryptoPublicKey())
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if !validKey {
-		return nil, "Invalid File, Check Key strength/key type", nil
+		return nil, fmt.Errorf("Invalid File, Check Key strength/key type"), nil
 	}
-
-	return userSSH, "", nil
+	return userSSH, nil, nil
 }
 
 func (state *RuntimeState) postAuthSSHCertHandler(
@@ -221,15 +218,15 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		buf.ReadFrom(file)
 		userPubKey := buf.String()
 
-		userSSH, validationErrorText, err := getValidSSHPublicKey(userPubKey)
+		_, userErr, err := getValidSSHPublicKey(userPubKey)
 		if err != nil {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
-		if userSSH == nil {
-			logger.Printf("validating Error err: %s", validationErrorText)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, validationErrorText)
+		if userErr != nil {
+			logger.Printf("validating Error err: %s", userErr)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
 			return
 		}
 

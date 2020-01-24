@@ -159,10 +159,13 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
+// ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
+// At this moment it chekcs for sizes of parameters only for RSA it means bits>=2058 && exponent>=65537,
+// For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
+// considered secure.
 func ValidatePublicKeyStrength(pub interface{}) (bool, error) {
 	switch k := pub.(type) {
 	case *rsa.PublicKey:
-
 		if k.Size() < 256 { //ksize is in bytes
 			return false, nil
 		}
