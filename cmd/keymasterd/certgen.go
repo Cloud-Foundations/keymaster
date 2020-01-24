@@ -159,7 +159,6 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 // returns 3 values, if the key is valid, if the key is not valid, the text reason why and and error if it was an internal error
 func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
-	//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
 	validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 	if err != nil {
 		return nil, nil, err
