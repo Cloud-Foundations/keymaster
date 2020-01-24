@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -150,10 +151,39 @@ func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey
-	//case *ecdsa.PrivateKey:
+	// TODO: eventaully we need to suport ecdsa for CA
+	// case *ecdsa.PrivateKey:
 	//	return &k.PublicKey
 	default:
 		return nil
+	}
+}
+
+// ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
+// At this moment it checks for sizes of parameters only. For RSA it means bits>=2041 && exponent>=65537,
+// For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
+// considered secure.
+func ValidatePublicKeyStrength(pub interface{}) (bool, error) {
+	switch k := pub.(type) {
+	case *rsa.PublicKey:
+		if k.Size() < 256 { //ksize is in bytes
+			return false, nil
+		}
+
+		if k.E < 65537 {
+			return false, nil
+		}
+		return true, nil
+	case *ecdsa.PublicKey:
+		// TODO: check for the actual curves used
+		if k.Curve.Params().BitSize < 255 {
+			return false, nil
+		}
+		return true, nil
+	case *ed25519.PublicKey, ed25519.PublicKey:
+		return true, nil
+	default:
+		return false, nil
 	}
 }
 
