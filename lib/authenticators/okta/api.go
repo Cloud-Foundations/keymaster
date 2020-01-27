@@ -12,14 +12,14 @@ import (
 // a unified 2fa backend interface in some future
 
 type authCacheData struct {
-	response PrimaryResponseType
+	response OktaApiPrimaryResponseType
 	expires  time.Time
 }
 
 type PasswordAuthenticator struct {
 	authnURL   string
 	logger     log.Logger
-	Mutex      sync.Mutex
+	mutex      sync.Mutex
 	recentAuth map[string]authCacheData
 }
 
