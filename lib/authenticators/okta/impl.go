@@ -61,7 +61,7 @@ type OktaApiPushResponseType struct {
 	Embedded        OktaApiEmbeddedDataResponseType `json:"_embedded,omitempty"`
 }
 
-func newPublicAuthenticator(oktaDomain string, logger log.Logger) (
+func newPublicAuthenticator(oktaDomain string, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	return &PasswordAuthenticator{
 		authnURL:   fmt.Sprintf(authEndpointFormat, oktaDomain),
@@ -101,8 +101,7 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	if err := decoder.Decode(&response); err != nil {
 		return false, err
 	}
-	// TODO: change logger to debug capable
-	//pa.logger.Printf("oktaresponse=%+v", response)
+	pa.logger.Debugf(1, "Okta Authenticator: oktaresponse=%+v", response)
 	switch response.Status {
 	case "SUCCESS", "MFA_REQUIRED":
 		expires, err := time.Parse(time.RFC3339, response.ExpiresAtString)
@@ -152,9 +151,8 @@ func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) 
 			StateToken: userResponse.StateToken,
 			PassCode:   fmt.Sprintf("%06d", otpValue),
 		}
-		// TODO: change logger type to allow debug logs
-		// pa.logger.Printf("AuthURL=%s", authURL)
-		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		pa.logger.Debugf(2, "AuthURL=%s", authURL)
+		pa.logger.Debugf(3, "totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -208,9 +206,8 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 		verifyStruct := OktaApiVerifyTOTPFactorDataType{
 			StateToken: userResponse.StateToken,
 		}
-		// TODO update logger type to allow debug logs
-		// pa.logger.Printf("AuthURL=%s", authURL)
-		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		pa.logger.Debugf(2, "AuthURL=%s", authURL)
+		pa.logger.Debugf(3, "totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.

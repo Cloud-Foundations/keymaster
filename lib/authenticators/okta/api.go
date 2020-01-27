@@ -18,7 +18,7 @@ type authCacheData struct {
 
 type PasswordAuthenticator struct {
 	authnURL   string
-	logger     log.Logger
+	logger     log.DebugLogger
 	mutex      sync.Mutex
 	recentAuth map[string]authCacheData
 }
@@ -36,7 +36,7 @@ const (
 // Public Application API is used, so rate limits apply.
 // The Okta domain to check must be given by oktaDomain.
 // Log messages are written to logger. A new *PasswordAuthenticator is returned.
-func NewPublic(oktaDomain string, logger log.Logger) (
+func NewPublic(oktaDomain string, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	return newPublicAuthenticator(oktaDomain, logger)
 }
@@ -64,8 +64,8 @@ func (pa *PasswordAuthenticator) ValidateUserPush(username string) (PushResponse
 	return pa.validateUserPush(username)
 }
 
-// New creates a new public authenticator, but poiting to an explicit authenticator url
-func NewPublicTesting(authnURL string, logger log.Logger) (
+// New creates a new public authenticator, but pointing to an explicit authenticator url
+func NewPublicTesting(authnURL string, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	pa, err := newPublicAuthenticator("example.com", logger)
 	if err != nil {
@@ -74,11 +74,3 @@ func NewPublicTesting(authnURL string, logger log.Logger) (
 	pa.authnURL = authnURL
 	return pa, nil
 }
-
-/*
-// SetAuthnURL. For testing only, update the internal authURL so that the backend can be tested
-func (pa *PasswordAuthenticator) SetAuthnURL(authnURL string) error {
-	pa.authnURL = authnURL
-	return nil
-}
-*/
