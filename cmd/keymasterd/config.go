@@ -22,9 +22,9 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
+	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
-	"github.com/Cloud-Foundations/keymaster/lib/pwauth/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
