@@ -163,7 +163,7 @@ func TestBaseAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewPublicTesting("http://localhost.locanet", testlogger.New(t))
+	_, err = NewPublicTesting("http://localhost.localnet", testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}

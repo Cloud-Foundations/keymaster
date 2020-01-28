@@ -41,6 +41,19 @@ func NewPublic(oktaDomain string, logger log.DebugLogger) (
 	return newPublicAuthenticator(oktaDomain, logger)
 }
 
+// NewPublicTesting creates a new public authenticator, but
+// pointing to an explicit authenticator url intead of okta urls.
+// Log messages are written to logger. A new *PasswordAuthenticator is returned.
+func NewPublicTesting(authnURL string, logger log.DebugLogger) (
+	*PasswordAuthenticator, error) {
+	pa, err := newPublicAuthenticator("example.com", logger)
+	if err != nil {
+		return pa, err
+	}
+	pa.authnURL = authnURL
+	return pa, nil
+}
+
 // PasswordAuthenticate will authenticate a user using the provided username and
 // password.
 // It returns true if the user is authenticated, else false (due to either
@@ -54,23 +67,15 @@ func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore
 	return nil
 }
 
-// VerifyOTP
+// ValidateUserOTP validates the otp value for an authenticated user.
+// Assumes the user has a recent password authentication transaction.
+// Returns true if the OTP value is valid according to okta, false otherwise.
 func (pa *PasswordAuthenticator) ValidateUserOTP(username string, otpValue int) (bool, error) {
 	return pa.validateUserOTP(username, otpValue)
 }
 
-// Initialize and verify Push
+// ValidateUserPush initializes or checks if a user MFA push has succeed for
+// a specific user. Returns one of PushRessponse.
 func (pa *PasswordAuthenticator) ValidateUserPush(username string) (PushResponse, error) {
 	return pa.validateUserPush(username)
-}
-
-// New creates a new public authenticator, but pointing to an explicit authenticator url
-func NewPublicTesting(authnURL string, logger log.DebugLogger) (
-	*PasswordAuthenticator, error) {
-	pa, err := newPublicAuthenticator("example.com", logger)
-	if err != nil {
-		return pa, err
-	}
-	pa.authnURL = authnURL
-	return pa, nil
 }
