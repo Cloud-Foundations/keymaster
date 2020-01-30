@@ -93,17 +93,7 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
-
-		switch v := state.passwordChecker.(type) {
-		//case int:
-		//	logger.Printf("Twice %v is %v\n", v, v*2)
-		//case string:
-		//	logger.Printf("%q is %v bytes long\n", v, len(v))
-		default:
-			logger.Printf("I don't know about type '%T'!\n", v)
-		}
-
-		logger.Printf("oktaPushStartHandler: password authenticator is not okta is of type %T", oktaAuth)
+		logger.Debugf(2, "oktaPushStartHandler: password authenticator is not okta is of type %T", oktaAuth)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
 		return
 	}
