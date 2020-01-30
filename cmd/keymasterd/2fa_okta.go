@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	"github.com/Cloud-Foundations/keymaster/lib/pwauth/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -74,9 +74,12 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 const oktaPushStartPath = "/api/v0/oktaPushStart"
 
 func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Printf("top of oktaPushStartHandler")
 	if state.sendFailureToClientIfLocked(w, r) {
+		logger.Printf("foo")
 		return
 	}
+	logger.Printf("oktaPushStartHandler post lock")
 	if !(r.Method == "POST" || r.Method == "GET") {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -90,7 +93,17 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
-		logger.Println("password authenticator is not okta")
+
+		switch v := state.passwordChecker.(type) {
+		//case int:
+		//	logger.Printf("Twice %v is %v\n", v, v*2)
+		//case string:
+		//	logger.Printf("%q is %v bytes long\n", v, len(v))
+		default:
+			logger.Printf("I don't know about type '%T'!\n", v)
+		}
+
+		logger.Printf("oktaPushStartHandler: password authenticator is not okta is of type %T", oktaAuth)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
 		return
 	}

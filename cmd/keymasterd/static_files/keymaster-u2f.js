@@ -41,6 +41,9 @@ function checkError(resp) {
     document.getElementById('register_action_text').style.display="block";
     $.getJSON('/u2f/RegisterRequest/' + username).done(function(req) {
       console.log(req);
+      if (req.registeredKeys == null) {
+	      req.registeredKeys = [];
+      }
       u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
     }).fail(serverError);
   }

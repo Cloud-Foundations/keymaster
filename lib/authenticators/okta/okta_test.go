@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
 	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
 )
 
 var authnURL string
@@ -18,7 +18,7 @@ func authnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var loginData LoginDataType
+	var loginData OktaApiLoginDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&loginData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -63,7 +63,7 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// For now we do TOTP only verifyTOTPFactorDataType
-	var otpData VerifyTOTPFactorDataType
+	var otpData OktaApiVerifyTOTPFactorDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&otpData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -78,7 +78,7 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(invalidOTPStringFromDoc))
 		return
 	case "push-send-waiting":
-		response := PushResponseType{
+		response := OktaApiPushResponseType{
 			Status:       "MFA_CHALLENGE",
 			FactorResult: "WAITING",
 		}
@@ -92,7 +92,7 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		writeStatus(w, "SUCCESS")
 		return
 	case "push-send-timeout":
-		response := PushResponseType{
+		response := OktaApiPushResponseType{
 			Status:       "MFA_CHALLENGE",
 			FactorResult: "TIMEOUT",
 		}
@@ -141,7 +141,7 @@ func setupServer() {
 func writeStatus(w http.ResponseWriter, status string) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.
-	response := PrimaryResponseType{Status: status}
+	response := OktaApiPrimaryResponseType{Status: status}
 	if err := encoder.Encode(response); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -163,7 +163,7 @@ func TestBaseAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = pa.SetAuthnURL("http://localhost.locanet")
+	_, err = NewPublicTesting("http://localhost.localnet", testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,10 +171,9 @@ func TestBaseAPI(t *testing.T) {
 
 func TestNonExistantUser(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{
-		authnURL:   authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	ok, err := pa.PasswordAuthenticate("bad-user", []byte("dummy-password"))
 	if err != nil {
@@ -186,11 +185,11 @@ func TestNonExistantUser(t *testing.T) {
 
 func TestBadPassword(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{authnURL: authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err := pa.ValidateUserPush("someuser")
+	_, err = pa.ValidateUserPush("someuser")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,9 +203,9 @@ func TestBadPassword(t *testing.T) {
 
 func TestGoodPassword(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{authnURL: authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("good-password"))
 	if err != nil {
@@ -218,9 +217,9 @@ func TestGoodPassword(t *testing.T) {
 
 func TestMfaRequired(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{authnURL: authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA"))
 	if err != nil {
@@ -232,9 +231,9 @@ func TestMfaRequired(t *testing.T) {
 
 func TestUserLockedOut(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{authnURL: authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("password-expired"))
 	if err != nil {
@@ -246,9 +245,9 @@ func TestUserLockedOut(t *testing.T) {
 
 func TestMfaOtpNonExisting(t *testing.T) {
 	setupServer()
-	pa := &PasswordAuthenticator{authnURL: authnURL,
-		recentAuth: make(map[string]authCacheData),
-		logger:     testlogger.New(t),
+	pa, err := NewPublicTesting(authnURL, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 	valid, err := pa.ValidateUserOTP("someuser", 123456)
 	if err != nil {
@@ -265,7 +264,7 @@ func TestMfaOtpExpired(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	expiredUserCachedData := authCacheData{Expires: time.Now().Add(-3 * time.Second)}
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(-3 * time.Second)}
 	expiredUser := "expiredUser"
 	pa.recentAuth[expiredUser] = expiredUserCachedData
 	valid, err := pa.ValidateUserOTP(expiredUser, 123456)
@@ -282,15 +281,15 @@ func TestMfaOTPFailNoValidDevices(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "foo", Status: "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{Factor: []MFAFactorsType{
-			MFAFactorsType{Id: "someid", FactorType: "token:software:totp"},
-			MFAFactorsType{Id: "someid", VendorName: "OKTA"},
+		Embedded: OktaApiEmbeddedDataResponseType{Factor: []OktaApiMFAFactorsType{
+			OktaApiMFAFactorsType{Id: "someid", FactorType: "token:software:totp"},
+			OktaApiMFAFactorsType{Id: "someid", VendorName: "OKTA"},
 		}},
 	}
-	expiredUserCachedData := authCacheData{Expires: time.Now().Add(60 * time.Second),
-		Response: response,
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	noOTPCredsUser := "noOTPCredsUser"
 	pa.recentAuth[noOTPCredsUser] = expiredUserCachedData
@@ -316,19 +315,19 @@ func TestMFAOTPFailInvalidOTP(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "invalid-otp",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
 			}},
 	}
-	userCachedData := authCacheData{Expires: time.Now().Add(60 * time.Second),
-		Response: response,
+	userCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	goodOTPUser := "goodOTPUser"
 	pa.recentAuth[goodOTPUser] = userCachedData
@@ -347,19 +346,19 @@ func TestMfaOTPSuccess(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "valid-otp",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
 			}},
 	}
-	expiredUserCachedData := authCacheData{Expires: time.Now().Add(60 * time.Second),
-		Response: response,
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	goodOTPUser := "goodOTPUser"
 	pa.recentAuth[goodOTPUser] = expiredUserCachedData
@@ -374,7 +373,6 @@ func TestMfaOTPSuccess(t *testing.T) {
 
 func TestMfaPushNonExisting(t *testing.T) {
 	setupServer()
-
 	pa := &PasswordAuthenticator{authnURL: authnURL,
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
@@ -394,7 +392,7 @@ func TestMfaPushExpired(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	expiredUserCachedData := authCacheData{Expires: time.Now().Add(-3 * time.Second)}
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(-3 * time.Second)}
 	expiredUser := "expiredUser"
 	pa.recentAuth[expiredUser] = expiredUserCachedData
 	pushResult, err := pa.ValidateUserPush(expiredUser)
@@ -412,20 +410,20 @@ func TestMfaPushWaiting(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "push-send-waiting",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
 			}},
 	}
 	needsPushCacheData := authCacheData{
-		Expires:  time.Now().Add(60 * time.Second),
-		Response: response,
+		expires:  time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	pushUserWaiting := "puhsUserWaiting"
 	pa.recentAuth[pushUserWaiting] = needsPushCacheData
@@ -444,20 +442,20 @@ func TestMfaPushAccept(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "push-send-accept",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
 			}},
 	}
 	userCacheData := authCacheData{
-		Expires:  time.Now().Add(60 * time.Second),
-		Response: response,
+		expires:  time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	username := "puhsUserAccept"
 	pa.recentAuth[username] = userCacheData
@@ -476,20 +474,20 @@ func TestMfaPushTimeout(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "push-send-timeout",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
 			}},
 	}
 	userCacheData := authCacheData{
-		Expires:  time.Now().Add(60 * time.Second),
-		Response: response,
+		expires:  time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	username := "puhsUserTimeout"
 	pa.recentAuth[username] = userCacheData
@@ -508,20 +506,20 @@ func TestMfaPushInvalidWrapper(t *testing.T) {
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
 	}
-	response := PrimaryResponseType{
+	response := OktaApiPrimaryResponseType{
 		StateToken: "push-send-invalidWrapper",
 		Status:     "MFA_REQUIRED",
-		Embedded: EmbeddedDataResponseType{
-			Factor: []MFAFactorsType{
-				MFAFactorsType{
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
 			}},
 	}
 	userCacheData := authCacheData{
-		Expires:  time.Now().Add(60 * time.Second),
-		Response: response,
+		expires:  time.Now().Add(60 * time.Second),
+		response: response,
 	}
 	username := "puhsUserTimeout"
 	pa.recentAuth[username] = userCacheData

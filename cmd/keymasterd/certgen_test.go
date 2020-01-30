@@ -39,6 +39,11 @@ Unc9jsYhX7DR3SV8vcFqduUmSH8vdc/zJEk76T2D+qe1aWqtr84QpxXBTrIKvSXD
 igkmavdG2gu3SpbFzNxuVCrxQ88Kte0xYJTe7vY=
 -----END CERTIFICATE-----`
 
+// we do not support dsa
+const dsaPublicSSH = `ssh-dss AAAAB3NzaC1kc3MAAACBALd5BLQoXxeJHHMQpJzk283nbne65LQiFNPeH6VuNiNEGZI6N3KlQsijYK1oJX2R3oTDEhqEjQsdNa6s++eGbh2z6U3Xwu34odNCFJekKB3qZN7/gqWXzBcgFvir//edTCrN0evzbTedtjz3pB5KlB6OSsnntm/y6E/j45Q3ijGTAAAAFQCjyfpjPi4gmdskz5/cQZbGirVzmwAAAIEAr/LZ7rvsgdnQ1/x5NpJAGEy7QlxfjGfIUo2a57WpDvcjiQmpa9VRCF0ziF3XSv2iDfWZ19qPrbxAp4FIe+xXF3kR0XMmDQzeEZsBzl8pNe7ZxLBHKFX8ZL66VBngYJL2a4v84QoPCpXDJ1hWd7t+okqkFj/a+99cuWj65jk2zLkAAACAPbtpnU39ZioS+9HolaGqudhTfToNAVsVPwj7uiuqiR2OTywbR0WpDPs7zrYsJTzIviuuEXzTVLFWBDR6EwXQdg9Acz+uRRiiZ58e7kN7qv+hQ3FBT3W214A0EVkRJMozowYhzS4HM0x/LrxlNHHFpzMu/njkNfNYDJTK4I47BO0= cviecco@cviecco--MacBookPro15`
+
+const invalidSSHFileBadKeyData = `ssh-rsa AAAAB3NzaC1kc3dddMAAACBALd5BLQoXxeJHHMQpJz cviecco@cviecco--MacBookPro15`
+
 const testDuration = time.Duration(120 * time.Second)
 
 /// X509section (this is from certgen TODO: make public)
@@ -141,4 +146,28 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestGetValidSSHPublicKey(t *testing.T) {
+	//testUserSSHPublicKey
+	//valid key:
+	userSSH, _, err := getValidSSHPublicKey(testUserSSHPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if userSSH == nil {
+		t.Fatal("the usekey MUst not be null")
+	}
+	//invalid key
+	invalidKeys := []string{invalidSSHFileBadKeyData, dsaPublicSSH, testSignerX509Cert}
+	for _, badKey := range invalidKeys {
+		userSSH, _, err = getValidSSHPublicKey(badKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if userSSH != nil {
+			t.Fatal("the usekey MUST be null")
+		}
+	}
+
 }

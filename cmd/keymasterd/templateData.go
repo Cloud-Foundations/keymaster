@@ -171,8 +171,13 @@ const secondFactorAuthFormText = `
             </p>
         </form>
 	{{end}}
-
-
+	<form enctype="application/x-www-form-urlencoded" action="/api/v0/logout" method="post">
+            <br>
+	    <p>
+	    If you have login issues, you can also
+	    <input type="submit" value="Logout" />
+	    </p>
+	</form>
 	</div>
 	{{template "footer" . }}
 	</div>

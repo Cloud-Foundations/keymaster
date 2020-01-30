@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
 const (
@@ -16,52 +16,52 @@ const (
 	factorsVerifyPathExtra = "/factors/%s/verify"
 )
 
-type VerifyTOTPFactorDataType struct {
+type OktaApiVerifyTOTPFactorDataType struct {
 	StateToken string `json:"stateToken,omitempty"`
 	PassCode   string `json:"passCode,omitempty"`
 }
 
-type LoginDataType struct {
+type OktaApiLoginDataType struct {
 	Password string `json:"password,omitempty"`
 	Username string `json:"username,omitempty"`
 }
 
-type MFAFactorsType struct {
+type OktaApiMFAFactorsType struct {
 	Id         string `json:"id,omitempty"`
 	FactorType string `json:"factorType,omitempty"`
 	Provider   string `json:"provider,omitempty"`
 	VendorName string `json:"vendorName,omitempty"`
 }
 
-type UserProfileType struct {
+type OktaApiUserProfileType struct {
 	Login string `json:"login,omitempty"`
 }
 
-type UserInfoType struct {
-	Id      string          `json:"id,omitempty"`
-	Profile UserProfileType `json:"profile,omitempty"`
+type OktaApiUserInfoType struct {
+	Id      string                 `json:"id,omitempty"`
+	Profile OktaApiUserProfileType `json:"profile,omitempty"`
 }
 
-type EmbeddedDataResponseType struct {
-	User   UserInfoType     `json:"user,omitempty"`
-	Factor []MFAFactorsType `json:"factors,omitempty"`
+type OktaApiEmbeddedDataResponseType struct {
+	User   OktaApiUserInfoType     `json:"user,omitempty"`
+	Factor []OktaApiMFAFactorsType `json:"factors,omitempty"`
 }
 
-type PrimaryResponseType struct {
-	StateToken      string                   `json:"stateToken,omitempty"`
-	ExpiresAtString string                   `json:"expiresAt,omitempty"`
-	Status          string                   `json:"status,omitempty"`
-	Embedded        EmbeddedDataResponseType `json:"_embedded,omitempty"`
+type OktaApiPrimaryResponseType struct {
+	StateToken      string                          `json:"stateToken,omitempty"`
+	ExpiresAtString string                          `json:"expiresAt,omitempty"`
+	Status          string                          `json:"status,omitempty"`
+	Embedded        OktaApiEmbeddedDataResponseType `json:"_embedded,omitempty"`
 }
 
-type PushResponseType struct {
-	ExpiresAtString string                   `json:"expiresAt,omitempty"`
-	Status          string                   `json:"status,omitempty"`
-	FactorResult    string                   `json:"factorResult,omitempty"`
-	Embedded        EmbeddedDataResponseType `json:"_embedded,omitempty"`
+type OktaApiPushResponseType struct {
+	ExpiresAtString string                          `json:"expiresAt,omitempty"`
+	Status          string                          `json:"status,omitempty"`
+	FactorResult    string                          `json:"factorResult,omitempty"`
+	Embedded        OktaApiEmbeddedDataResponseType `json:"_embedded,omitempty"`
 }
 
-func newPublicAuthenticator(oktaDomain string, logger log.Logger) (
+func newPublicAuthenticator(oktaDomain string, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	return &PasswordAuthenticator{
 		authnURL:   fmt.Sprintf(authEndpointFormat, oktaDomain),
@@ -72,7 +72,7 @@ func newPublicAuthenticator(oktaDomain string, logger log.Logger) (
 
 func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	password []byte) (bool, error) {
-	loginData := LoginDataType{Password: string(password), Username: username}
+	loginData := OktaApiLoginDataType{Password: string(password), Username: username}
 	body := &bytes.Buffer{}
 	encoder := json.NewEncoder(body)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -97,47 +97,44 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 		return false, fmt.Errorf("bad status: %s", resp.Status)
 	}
 	decoder := json.NewDecoder(resp.Body)
-	var response PrimaryResponseType
+	var response OktaApiPrimaryResponseType
 	if err := decoder.Decode(&response); err != nil {
 		return false, err
 	}
-	// TODO: change logger to debug capable
-	//pa.logger.Printf("oktaresponse=%+v", response)
+	pa.logger.Debugf(1, "Okta Authenticator: oktaresponse=%+v", response)
 	switch response.Status {
 	case "SUCCESS", "MFA_REQUIRED":
 		expires, err := time.Parse(time.RFC3339, response.ExpiresAtString)
 		if err != nil {
 			expires = time.Now().Add(time.Second * 60)
 		}
-		toCache := authCacheData{Response: response, Expires: expires}
-		pa.Mutex.Lock()
+		toCache := authCacheData{response: response, expires: expires}
+		pa.mutex.Lock()
 		pa.recentAuth[username] = toCache
-		pa.Mutex.Unlock()
+		pa.mutex.Unlock()
 		return true, nil
 	default:
 		return false, nil
 	}
 }
 
-func (pa *PasswordAuthenticator) getValidUserResponse(authUser string) (*PrimaryResponseType, error) {
-	pa.Mutex.Lock()
-	userData, ok := pa.recentAuth[authUser]
-	pa.Mutex.Unlock()
+func (pa *PasswordAuthenticator) getValidUserResponse(username string) (*OktaApiPrimaryResponseType, error) {
+	pa.mutex.Lock()
+	userData, ok := pa.recentAuth[username]
+	defer pa.mutex.Unlock()
 	if !ok {
 		return nil, nil
 	}
-	if userData.Expires.Before(time.Now()) {
-		pa.Mutex.Lock()
-		delete(pa.recentAuth, authUser)
-		pa.Mutex.Unlock()
+	if userData.expires.Before(time.Now()) {
+		delete(pa.recentAuth, username)
 		return nil, nil
 
 	}
-	return &userData.Response, nil
+	return &userData.response, nil
 }
 
-func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
-	userResponse, err := pa.getValidUserResponse(authUser)
+func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) (bool, error) {
+	userResponse, err := pa.getValidUserResponse(username)
 	if err != nil {
 		return false, err
 	}
@@ -150,13 +147,12 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
-		verifyStruct := VerifyTOTPFactorDataType{
+		verifyStruct := OktaApiVerifyTOTPFactorDataType{
 			StateToken: userResponse.StateToken,
 			PassCode:   fmt.Sprintf("%06d", otpValue),
 		}
-		// TODO: change logger type to allow debug logs
-		// pa.logger.Printf("AuthURL=%s", authURL)
-		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		pa.logger.Debugf(2, "AuthURL=%s", authURL)
+		pa.logger.Debugf(3, "totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -181,7 +177,7 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 			return false, fmt.Errorf("bad status: %s", resp.Status)
 		}
 		decoder := json.NewDecoder(resp.Body)
-		var response PrimaryResponseType
+		var response OktaApiPrimaryResponseType
 		if err := decoder.Decode(&response); err != nil {
 			return false, err
 		}
@@ -194,8 +190,8 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 	return false, nil
 }
 
-func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse, error) {
-	userResponse, err := pa.getValidUserResponse(authUser)
+func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse, error) {
+	userResponse, err := pa.getValidUserResponse(username)
 	if err != nil {
 		return PushResponseRejected, err
 	}
@@ -207,12 +203,11 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
-		verifyStruct := VerifyTOTPFactorDataType{
+		verifyStruct := OktaApiVerifyTOTPFactorDataType{
 			StateToken: userResponse.StateToken,
 		}
-		// TODO update logger type to allow debug logs
-		// pa.logger.Printf("AuthURL=%s", authURL)
-		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		pa.logger.Debugf(2, "AuthURL=%s", authURL)
+		pa.logger.Debugf(3, "totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -234,7 +229,7 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			return PushResponseRejected, fmt.Errorf("bad status: %s", resp.Status)
 		}
 		decoder := json.NewDecoder(resp.Body)
-		var response PushResponseType
+		var response OktaApiPushResponseType
 		if err := decoder.Decode(&response); err != nil {
 			return PushResponseRejected, err
 		}

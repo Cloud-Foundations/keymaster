@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/pwauth/okta"
 )
 
 func oktaTestWriteStatus(w http.ResponseWriter, status string) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.
-	response := okta.PrimaryResponseType{Status: status}
+	response := okta.OktaApiPrimaryResponseType{Status: status}
 	if err := encoder.Encode(response); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -30,7 +30,7 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var loginData okta.LoginDataType
+	var loginData okta.OktaApiLoginDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&loginData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -45,17 +45,17 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		oktaTestWriteStatus(w, "SUCCESS")
 		return
 	case "needs-2FA":
-		response := okta.PrimaryResponseType{
+		response := okta.OktaApiPrimaryResponseType{
 			StateToken:      "valid-otp",
 			ExpiresAtString: "2035-11-03T10:15:57.000Z",
 			Status:          "MFA_REQUIRED",
-			Embedded: okta.EmbeddedDataResponseType{
-				Factor: []okta.MFAFactorsType{
-					okta.MFAFactorsType{
+			Embedded: okta.OktaApiEmbeddedDataResponseType{
+				Factor: []okta.OktaApiMFAFactorsType{
+					okta.OktaApiMFAFactorsType{
 						Id:         "someid",
 						FactorType: "token:software:totp",
 						VendorName: "OKTA"},
-					okta.MFAFactorsType{
+					okta.OktaApiMFAFactorsType{
 						Id:         "anotherid",
 						FactorType: "push",
 						VendorName: "OKTA",
@@ -68,13 +68,13 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	case "needs-2FA-waiting":
-		response := okta.PrimaryResponseType{
+		response := okta.OktaApiPrimaryResponseType{
 			StateToken:      "push-send-waiting",
 			ExpiresAtString: "2035-11-03T10:15:57.000Z",
 			Status:          "MFA_REQUIRED",
-			Embedded: okta.EmbeddedDataResponseType{
-				Factor: []okta.MFAFactorsType{
-					okta.MFAFactorsType{
+			Embedded: okta.OktaApiEmbeddedDataResponseType{
+				Factor: []okta.OktaApiMFAFactorsType{
+					okta.OktaApiMFAFactorsType{
 						Id:         "anotherid",
 						FactorType: "push",
 						VendorName: "OKTA",
@@ -100,7 +100,7 @@ func oktaTestFactorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// For now we do TOTP only verifyTOTPFactorDataType
-	var otpData okta.VerifyTOTPFactorDataType
+	var otpData okta.OktaApiVerifyTOTPFactorDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&otpData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -111,7 +111,7 @@ func oktaTestFactorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		oktaTestWriteStatus(w, "SUCCESS")
 		return
 	case "push-send-waiting":
-		response := okta.PushResponseType{
+		response := okta.OktaApiPushResponseType{
 			Status:       "MFA_CHALLENGE",
 			FactorResult: "WAITING",
 		}
@@ -168,14 +168,16 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 
 	setupTestOtkaServer()
-	pa, err := okta.NewPublic("some-domain", testlogger.New(t))
+	pa, err := okta.NewPublicTesting(oktaTestAuthnURL, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = pa.SetAuthnURL(oktaTestAuthnURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	/*
+		err = pa.SetAuthnURL(oktaTestAuthnURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+	*/
 	state.passwordChecker = pa
 
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA"))
@@ -228,14 +230,16 @@ func TestOkta2FAPushStartAndWait(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 
 	setupTestOtkaServer()
-	pa, err := okta.NewPublic("some-domain", testlogger.New(t))
+	pa, err := okta.NewPublicTesting(oktaTestAuthnURL, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = pa.SetAuthnURL(oktaTestAuthnURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	/*
+		err = pa.SetAuthnURL(oktaTestAuthnURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+	*/
 	state.passwordChecker = pa
 
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA-waiting"))

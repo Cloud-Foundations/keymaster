@@ -6,6 +6,8 @@ package certgen
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -125,6 +127,19 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	case "EC PRIVATE KEY":
 		return x509.ParseECPrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		parsedIface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		switch v := parsedIface.(type) {
+		case *rsa.PrivateKey:
+			return v, nil
+		case *ecdsa.PrivateKey:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+		}
 	default:
 		err := errors.New("Cannot process that key")
 		return nil, err
@@ -136,10 +151,39 @@ func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey
-	//case *ecdsa.PrivateKey:
+	// TODO: eventaully we need to suport ecdsa for CA
+	// case *ecdsa.PrivateKey:
 	//	return &k.PublicKey
 	default:
 		return nil
+	}
+}
+
+// ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
+// At this moment it checks for sizes of parameters only. For RSA it means bits>=2041 && exponent>=65537,
+// For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
+// considered secure.
+func ValidatePublicKeyStrength(pub interface{}) (bool, error) {
+	switch k := pub.(type) {
+	case *rsa.PublicKey:
+		if k.Size() < 256 { //ksize is in bytes
+			return false, nil
+		}
+
+		if k.E < 65537 {
+			return false, nil
+		}
+		return true, nil
+	case *ecdsa.PublicKey:
+		// TODO: check for the actual curves used
+		if k.Curve.Params().BitSize < 255 {
+			return false, nil
+		}
+		return true, nil
+	case *ed25519.PublicKey, ed25519.PublicKey:
+		return true, nil
+	default:
+		return false, nil
 	}
 }
 
@@ -185,7 +229,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
@@ -318,7 +362,7 @@ func GenUserX509Cert(userName string, userPub interface{},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
 	}
 	if groupListExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,

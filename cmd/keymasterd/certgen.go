@@ -21,6 +21,17 @@ import (
 
 const certgenPath = "/certgen/"
 
+func prependGroups(groups []string, prefix string) []string {
+	if prefix == "" {
+		return groups
+	}
+	newGroups := make([]string, 0, len(groups))
+	for _, group := range groups {
+		newGroups = append(newGroups, prefix+group)
+	}
+	return newGroups
+}
+
 func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	var keySigner crypto.Signer
@@ -149,6 +160,35 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// returns 3 values, if the key is valid, if the key is not valid, the text reason why and and error if it was an internal error
+func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
+	validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !validKey {
+		return nil, fmt.Errorf("Invalid File, bad re"), nil
+	}
+	userSSH, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
+	if err != nil {
+		return nil, fmt.Errorf("invalid file, unparseable"), nil
+	}
+	// The next check should never fail, as all of our supported keys are ssh.CryptoPublicKey's but
+	// to prevent potential future panics we check anyway
+	cryptoPubKey, ok := userSSH.(ssh.CryptoPublicKey)
+	if !ok {
+		return nil, nil, fmt.Errorf("Cannot transform ssh key into crypto key, inbound=%s", userPubKey)
+	}
+	validKey, err = certgen.ValidatePublicKeyStrength(cryptoPubKey.CryptoPublicKey())
+	if err != nil {
+		return nil, nil, err
+	}
+	if !validKey {
+		return nil, fmt.Errorf("Invalid File, Check Key strength/key type"), nil
+	}
+	return userSSH, nil, nil
+}
+
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration) {
@@ -179,18 +219,17 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(file)
 		userPubKey := buf.String()
-		//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
-		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
+
+		_, userErr, err := getValidSSHPublicKey(userPubKey)
 		if err != nil {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
-		if !validKey {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, bad re")
-			logger.Printf("invalid file, bad re")
+		if userErr != nil {
+			logger.Printf("validating Error err: %s", userErr)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
 			return
-
 		}
 
 		cert, certBytes, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
@@ -219,11 +258,28 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 	}(targetUser, "ssh")
 }
 
-func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+func (state *RuntimeState) getGitDbUserGroups(username string) (
+	bool, []string, error) {
+	if state.gitDB == nil {
+		return false, nil, nil
+	}
+	groups, err := state.gitDB.GetUserGroups(username)
+	if err != nil {
+		return true, nil, err
+	}
+	return true,
+		prependGroups(groups, state.Config.UserInfo.GitDB.GroupPrepend),
+		nil
+}
+
+func (state *RuntimeState) getLdapUserGroups(username string) (
+	bool, []string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
 	timeoutSecs = 2
-	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	if ldapConfig.LDAPTargetURLs == "" {
+		return false, nil, nil
+	}
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
 			continue
@@ -241,15 +297,20 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		if err != nil {
 			continue
 		}
-		return groups, nil
+		return true, prependGroups(groups, ldapConfig.GroupPrepend), nil
 
 	}
-	if ldapConfig.LDAPTargetURLs == "" {
-		var emptyGroup []string
-		return emptyGroup, nil
+	return true, nil, errors.New("error getting the groups")
+}
+
+func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+	if config, groups, err := state.getLdapUserGroups(username); config {
+		return groups, err
 	}
-	err := errors.New("error getting the groups")
-	return nil, err
+	if config, groups, err := state.getGitDbUserGroups(username); config {
+		return groups, err
+	}
+	return nil, nil
 }
 
 func (state *RuntimeState) postAuthX509CertHandler(
@@ -303,6 +364,17 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			state.writeFailureResponse(w, r, http.StatusBadRequest,
 				"Cannot parse public key")
 			logger.Printf("Cannot parse public key")
+			return
+		}
+		validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !validKey {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
+			logger.Printf("Invalid File, Check Key strength/key type")
 			return
 		}
 		caCert, err := x509.ParseCertificate(state.caCertDer)
