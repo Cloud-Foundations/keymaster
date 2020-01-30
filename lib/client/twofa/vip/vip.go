@@ -194,7 +194,7 @@ func genericAuthenticateWithToken(
 	return nil
 }
 
-func doVIPAuthenticate(
+func doGenericTokenPushAuthenticate(
 	client *http.Client,
 	baseURL string,
 	pushType string,
@@ -218,12 +218,12 @@ func doVIPAuthenticate(
 	select {
 	case err := <-ch:
 		if err != nil {
-			logger.Printf("Problem with vip ='%s'", err)
+			logger.Printf("Problem with %s ='%s'", pushType, err)
 			return err
 		}
 		return nil
 	case <-time.After(timeout):
-		err := errors.New("vip timeout")
+		err := fmt.Errorf("%s timeout", pushType)
 		return err
 	}
 	return nil

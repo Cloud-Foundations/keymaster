@@ -1,4 +1,4 @@
-// Package vip does two factor authentication with Symantec VIP
+// Package vip does two factor authentication with Symantec VIP or Okta
 package vip
 
 import (
@@ -13,7 +13,7 @@ func DoVIPAuthenticate(
 	baseURL string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	return doVIPAuthenticate(client, baseURL, "vip", userAgentString, logger)
+	return doGenericTokenPushAuthenticate(client, baseURL, "vip", userAgentString, logger)
 }
 
 func DoOktaAuthenticate(
@@ -21,5 +21,5 @@ func DoOktaAuthenticate(
 	baseURL string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	return doVIPAuthenticate(client, baseURL, "okta", userAgentString, logger)
+	return doGenericTokenPushAuthenticate(client, baseURL, "okta", userAgentString, logger)
 }
