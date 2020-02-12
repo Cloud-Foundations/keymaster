@@ -216,32 +216,43 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 		AllowedRedirectDomains: []string{"example.com"},
 	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, weakREWithDomains)
+	onlyDomainConfig := OpenIDConnectClientConfig{
+		ClientID:               "onlyWithDomains",
+		AllowedRedirectURLRE:   []string{"https://[^/]*\\.example\\.com"},
+		AllowedRedirectDomains: []string{"example.com"},
+	}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, onlyDomainConfig)
 
 	attackerTestURLS := []string{
 		"https://example.com.evil.com",
 		"https://example.com@evil.com",
 		"https://evil.com?target=example.com",
+		"http://www.example.com",
+		"https://http:www.example.com@evil.com",
 	}
 	expectedSuccessURLS := []string{
 		"https://www.example.com",
 		"https://other.example.com:443",
 	}
-	for _, mustFailURL := range attackerTestURLS {
-		resultMatch, err := state.idpOpenIDCClientCanRedirect("weakREWithDomains", mustFailURL)
-		if err != nil {
-			t.Fatal(err)
+	testConfigClients := []string{"weakREWithDomains", "onlyWithDomains"}
+	for _, clientID := range testConfigClients {
+		for _, mustFailURL := range attackerTestURLS {
+			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustFailURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resultMatch == true {
+				t.Fatal("should NOT have allowed this url")
+			}
 		}
-		if resultMatch == true {
-			t.Fatal("should NOT have allowed this url")
-		}
-	}
-	for _, mustPassURL := range expectedSuccessURLS {
-		resultMatch, err := state.idpOpenIDCClientCanRedirect("weakREWithDomains", mustPassURL)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resultMatch == false {
-			t.Fatal("should have allowed this url")
+		for _, mustPassURL := range expectedSuccessURLS {
+			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustPassURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resultMatch == false {
+				t.Fatal("should have allowed this url")
+			}
 		}
 	}
 

@@ -210,7 +210,8 @@ func warnInsecureConfiguration(state *RuntimeState) {
 		}
 	}
 	if warnInsercureClientConfig {
-		logger.Printf("At least some client openid configurations do NOT have domains attached. This is dangerous. Affecte clients: %v", insecureClientID)
+		logger.Printf("At least some client openid configurations do NOT have domains attached. "+
+			"This is dangerous. Affected clients: %v", insecureClientID)
 	}
 }
 

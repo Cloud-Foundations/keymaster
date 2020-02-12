@@ -143,13 +143,19 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 				break
 			}
 		}
-		// if no domains, the matchedRE ansmer is authoritative, no need to parse
+		// if no domains, the matchedRE answer is authoritative, no need to parse
 		if len(client.AllowedRedirectDomains) < 1 {
 			return matchedRE, nil
 		}
+		if len(client.AllowedRedirectURLRE) < 1 {
+			matchedRE = true
+		}
 		parsedURL, err := url.Parse(redirect_url)
 		if err != nil {
-			// TODO: Print ERR?
+			logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+			return false, nil
+		}
+		if parsedURL.Scheme != "https" {
 			return false, nil
 		}
 		matchedDomain := false
