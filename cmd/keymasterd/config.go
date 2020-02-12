@@ -109,9 +109,10 @@ type Oauth2Config struct {
 }
 
 type OpenIDConnectClientConfig struct {
-	ClientID             string   `yaml:"client_id"`
-	ClientSecret         string   `yaml:"client_secret"`
-	AllowedRedirectURLRE []string `yaml:"allowed_redirect_url_re"`
+	ClientID               string   `yaml:"client_id"`
+	ClientSecret           string   `yaml:"client_secret"`
+	AllowedRedirectURLRE   []string `yaml:"allowed_redirect_url_re"`
+	AllowedRedirectDomains []string `yaml:"allowed_redirect_domains"`
 }
 
 type OpenIDConnectIDPConfig struct {
@@ -197,6 +198,21 @@ func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	}
 	logger.Debugf(3, "number of pk known=%d", len(state.KeymasterPublicKeys))
 	return nil
+}
+
+func warnInsecureConfiguration(state *RuntimeState) {
+	warnInsercureClientConfig := false
+	var insecureClientID []string
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if len(client.AllowedRedirectDomains) < 1 {
+			warnInsercureClientConfig = true
+			insecureClientID = append(insecureClientID, client.ClientID)
+		}
+	}
+	if warnInsercureClientConfig {
+		logger.Printf("At least some client openid configurations do NOT have domains attached. "+
+			"This is dangerous. Affected clients: %v", insecureClientID)
+	}
 }
 
 func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
@@ -446,6 +462,10 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		}
 		logger.Println("loaded UserInfo GitDB")
 	}
+
+	// Warn on potential issues
+	warnInsecureConfiguration(&runtimeState)
+
 	// DB initialization
 	err = initDB(&runtimeState)
 	if err != nil {
