@@ -129,16 +129,38 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 		if client.ClientID != client_id {
 			continue
 		}
+		if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
+			return false, nil
+		}
+		matchedRE := false
 		for _, re := range client.AllowedRedirectURLRE {
 			matched, err := regexp.MatchString(re, redirect_url)
 			if err != nil {
 				return false, err
 			}
 			if matched {
-				return true, nil
+				matchedRE = true
+				break
 			}
-
 		}
+		// if no domains, the matchedRE ansmer is authoritative, no need to parse
+		if len(client.AllowedRedirectDomains) < 1 {
+			return matchedRE, nil
+		}
+		parsedURL, err := url.Parse(redirect_url)
+		if err != nil {
+			// TODO: Print ERR?
+			return false, nil
+		}
+		matchedDomain := false
+		for _, domain := range client.AllowedRedirectDomains {
+			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+			if matched {
+				matchedDomain = true
+				break
+			}
+		}
+		return matchedDomain && matchedRE, nil
 	}
 	return false, nil
 }
