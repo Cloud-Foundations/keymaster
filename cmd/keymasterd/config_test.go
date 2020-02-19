@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 )
 
 func TestGenerateNewConfigInternal(t *testing.T) {
@@ -32,7 +34,7 @@ func TestGenerateNewConfigInternal(t *testing.T) {
 		t.Fatal(err)
 	}
 	// AND not try to load
-	_, err = loadVerifyConfigFile(configFilename)
+	_, err = loadVerifyConfigFile(configFilename, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
