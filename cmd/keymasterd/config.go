@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
@@ -35,8 +37,10 @@ import (
 )
 
 type baseConfig struct {
+	ACME                         acmecfg.AcmeConfig
 	HttpAddress                  string   `yaml:"http_address"`
 	AdminAddress                 string   `yaml:"admin_address"`
+	HttpRedirectPort             uint16   `yaml:"http_redirect_port"`
 	TLSCertFilename              string   `yaml:"tls_cert_filename"`
 	TLSKeyFilename               string   `yaml:"tls_key_filename"`
 	SSHCAFilename                string   `yaml:"ssh_ca_filename"`
@@ -215,9 +219,12 @@ func warnInsecureConfiguration(state *RuntimeState) {
 	}
 }
 
-func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
-	var runtimeState RuntimeState
-	runtimeState.isAdminCache = admincache.New(5 * time.Minute)
+func loadVerifyConfigFile(configFilename string,
+	logger log.DebugLogger) (*RuntimeState, error) {
+	runtimeState := RuntimeState{
+		isAdminCache: admincache.New(5 * time.Minute),
+		logger:       logger,
+	}
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -258,16 +265,9 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
 		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
 	}
-
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSCertFilename, "http cert file")
-	if err != nil {
+	if err := runtimeState.setupCertificateManager(); err != nil {
 		return nil, err
 	}
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSKeyFilename, "http key file")
-	if err != nil {
-		return nil, err
-	}
-
 	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
 	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
@@ -479,6 +479,21 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	go runtimeState.doDependencyMonitoring(runtimeState.Config.Base.SecsBetweenDependencyChecks)
 
 	return &runtimeState, nil
+}
+
+func (state *RuntimeState) setupCertificateManager() error {
+	baseConfig := state.Config.Base
+	if len(baseConfig.ACME.DomainNames) < 1 {
+		baseConfig.ACME.DomainNames = []string{baseConfig.HostIdentity}
+	}
+	cm, err := acmecfg.New(baseConfig.TLSCertFilename,
+		baseConfig.TLSKeyFilename, baseConfig.HttpRedirectPort,
+		baseConfig.ACME, state.logger)
+	if err != nil {
+		return err
+	}
+	state.certManager = cm
+	return nil
 }
 
 func generateArmoredEncryptedCAPrivateKey(passphrase []byte,

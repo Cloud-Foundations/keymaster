@@ -27,10 +27,15 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/net/context"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/crypto/certmanager"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
@@ -47,9 +52,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -151,6 +153,7 @@ type RuntimeState struct {
 	HostIdentity         string
 	KerberosRealm        *string
 	caCertDer            []byte
+	certManager          *certmanager.CertificateManager
 	vipPushCookie        map[string]pushPollTransaction
 	localAuthData        map[string]localUserData
 	SignerIsReady        chan bool
@@ -170,6 +173,7 @@ type RuntimeState struct {
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
+	logger                  log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -1577,7 +1581,7 @@ func main() {
 
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier = eventnotifier.New(logger)
-	runtimeState, err := loadVerifyConfigFile(*configFilename)
+	runtimeState, err := loadVerifyConfigFile(*configFilename, logger)
 	if err != nil {
 		logger.Println(err)
 		os.Exit(1)
@@ -1650,6 +1654,7 @@ func main() {
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
 		ClientAuth:               tls.VerifyClientCertIfGiven,
+		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
@@ -1677,15 +1682,13 @@ func main() {
 	srpc.RegisterServerTlsConfig(
 		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
 		true)
-	go func(msg string) {
-		err := adminSrv.ListenAndServeTLS(
-			runtimeState.Config.Base.TLSCertFilename,
-			runtimeState.Config.Base.TLSKeyFilename)
+	go func() {
+		err := adminSrv.ListenAndServeTLS("", "")
 		if err != nil {
 			panic(err)
 		}
 
-	}("done")
+	}()
 
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
@@ -1706,6 +1709,7 @@ func main() {
 	serviceTLSConfig := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
 		ClientAuth:               tls.VerifyClientCertIfGiven,
+		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
@@ -1719,7 +1723,6 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
@@ -1735,9 +1738,7 @@ func main() {
 		healthserver.SetReady()
 		adminDashboard.setReady()
 	}()
-	err = serviceSrv.ListenAndServeTLS(
-		runtimeState.Config.Base.TLSCertFilename,
-		runtimeState.Config.Base.TLSKeyFilename)
+	err = serviceSrv.ListenAndServeTLS("", "")
 	if err != nil {
 		panic(err)
 	}
