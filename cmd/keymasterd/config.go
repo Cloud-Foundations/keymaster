@@ -35,33 +35,37 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type autoUnseal struct {
+	AwsSecretId  string `yaml:"aws_secret_id"`
+	AwsSecretKey string `yaml:"aws_secret_key"`
+}
+
 type baseConfig struct {
-	HttpAddress                  string   `yaml:"http_address"`
-	AdminAddress                 string   `yaml:"admin_address"`
-	TLSCertFilename              string   `yaml:"tls_cert_filename"`
-	TLSKeyFilename               string   `yaml:"tls_key_filename"`
-	SSHCAFilename                string   `yaml:"ssh_ca_filename"`
-	UnsealPasswordSecretArn      string   `yaml:"unseal_password_secret_arn"`
-	UnsealPasswordSecretKey      string   `yaml:"unseal_password_secret_key"`
-	HtpasswdFilename             string   `yaml:"htpasswd_filename"`
-	ExternalAuthCmd              string   `yaml:"external_auth_command"`
-	ClientCAFilename             string   `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename  string   `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                 string   `yaml:"host_identity"`
-	KerberosRealm                string   `yaml:"kerberos_realm"`
-	DataDirectory                string   `yaml:"data_directory"`
-	SharedDataDirectory          string   `yaml:"shared_data_directory"`
-	HideStandardLogin            bool     `yaml:"hide_standard_login"`
-	AllowedAuthBackendsForCerts  []string `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI  []string `yaml:"allowed_auth_backends_for_webui"`
-	AdminUsers                   []string `yaml:"admin_users"`
-	AdminGroups                  []string `yaml:"admin_groups"`
-	PublicLogs                   bool     `yaml:"public_logs"`
-	SecsBetweenDependencyChecks  int      `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups         []string `yaml:"automation_user_groups"`
-	AutomationUsers              []string `yaml:"automation_users"`
-	DisableUsernameNormalization bool     `yaml:"disable_username_normalization"`
-	EnableLocalTOTP              bool     `yaml:"enable_local_totp"`
+	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
+	HttpAddress                  string     `yaml:"http_address"`
+	AdminAddress                 string     `yaml:"admin_address"`
+	TLSCertFilename              string     `yaml:"tls_cert_filename"`
+	TLSKeyFilename               string     `yaml:"tls_key_filename"`
+	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
+	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
+	ExternalAuthCmd              string     `yaml:"external_auth_command"`
+	ClientCAFilename             string     `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename  string     `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                 string     `yaml:"host_identity"`
+	KerberosRealm                string     `yaml:"kerberos_realm"`
+	DataDirectory                string     `yaml:"data_directory"`
+	SharedDataDirectory          string     `yaml:"shared_data_directory"`
+	HideStandardLogin            bool       `yaml:"hide_standard_login"`
+	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
+	AdminUsers                   []string   `yaml:"admin_users"`
+	AdminGroups                  []string   `yaml:"admin_groups"`
+	PublicLogs                   bool       `yaml:"public_logs"`
+	SecsBetweenDependencyChecks  int        `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups         []string   `yaml:"automation_user_groups"`
+	AutomationUsers              []string   `yaml:"automation_users"`
+	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
+	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
 }
 
 type GitDatabaseConfig struct {
@@ -357,9 +361,7 @@ func loadVerifyConfigFile(configFilename string,
 		if runtimeState.ClientCAPool == nil {
 			logger.Println("No client CA: manual unsealing not possible")
 		}
-		if err := runtimeState.tryAutoUnseal(); err != nil {
-			logger.Printf("unable to auto-unseal: %s\n", err)
-		}
+		runtimeState.beginAutoUnseal()
 	}
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {

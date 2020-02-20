@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,20 +57,57 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter,
 	//fmt.Fprintf(w, "%+v\n", r.TLS)
 }
 
-func (state *RuntimeState) tryAutoUnseal() error {
-	baseConfig := state.Config.Base
-	if baseConfig.UnsealPasswordSecretArn == "" {
-		return nil
+func (state *RuntimeState) beginAutoUnseal() {
+	go state.autoUnsealAwsLoop()
+}
+
+func (state *RuntimeState) autoUnsealAwsLoop() {
+	if state.Config.Base.AutoUnseal.AwsSecretId == "" {
+		return
 	}
-	secretArn, err := arn.Parse(baseConfig.UnsealPasswordSecretArn)
-	if err != nil {
-		return err
+	metadataClient := ec2metadata.New(session.New(&aws.Config{}))
+	if !metadataClient.Available() {
+		state.logger.Println("not running on AWS or metadata is not available")
+		return
 	}
-	if baseConfig.UnsealPasswordSecretKey == "" {
-		baseConfig.UnsealPasswordSecretKey = "UnsealPassword"
+	for {
+		if state.isUnsealed() {
+			return
+		}
+		if err := state.tryAwsUnseal(metadataClient); err != nil {
+			state.logger.Printf(
+				"error unsealing with AWS Secrets Manager: %s\n", err)
+			state.logger.Println("will try again")
+			time.Sleep(time.Minute * 5)
+		} else {
+			return
+		}
+	}
+}
+
+func (state *RuntimeState) isUnsealed() bool {
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	return state.Signer != nil
+}
+
+func (state *RuntimeState) tryAwsUnseal(
+	metadataClient *ec2metadata.EC2Metadata) error {
+	config := state.Config.Base.AutoUnseal
+	var region string
+	if arn, err := arn.Parse(config.AwsSecretId); err == nil {
+		region = arn.Region
+	} else {
+		region, err = metadataClient.Region()
+		if err != nil {
+			return err
+		}
+	}
+	if config.AwsSecretKey == "" {
+		config.AwsSecretKey = "UnsealPassword"
 	}
 	creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
-		Client:       ec2metadata.New(session.New(&aws.Config{})),
+		Client:       metadataClient,
 		ExpiryWindow: time.Minute,
 	})
 	logger.Debugln(0, "getting EC2 role credentials")
@@ -81,7 +117,7 @@ func (state *RuntimeState) tryAutoUnseal() error {
 		logger.Debugf(0, "obtained credentials from: %s\n", value.ProviderName)
 	}
 	awsSession, err := session.NewSession(
-		aws.NewConfig().WithCredentials(creds).WithRegion(secretArn.Region))
+		aws.NewConfig().WithCredentials(creds).WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("error creating session: %s", err)
 	}
@@ -90,36 +126,26 @@ func (state *RuntimeState) tryAutoUnseal() error {
 	}
 	awsService := secretsmanager.New(awsSession)
 	input := secretsmanager.GetSecretValueInput{
-		SecretId: aws.String(baseConfig.UnsealPasswordSecretArn),
+		SecretId: aws.String(config.AwsSecretId),
 	}
 	output, err := awsService.GetSecretValue(&input)
 	if err != nil {
 		return fmt.Errorf("error calling secretsmanager:GetSecretValue: %s",
 			err)
 	}
-	var secret []byte
-	if output.SecretString != nil {
-		secret = []byte(*output.SecretString)
-	} else {
-		binaryData := make([]byte,
-			base64.StdEncoding.DecodedLen(len(output.SecretBinary)))
-		length, err := base64.StdEncoding.Decode(binaryData,
-			output.SecretBinary)
-		if err != nil {
-			return fmt.Errorf("base64 decode error: %s", err)
-		}
-		secret = binaryData[:length]
+	if output.SecretString == nil {
+		return errors.New("no SecretString in secret")
 	}
+	secret := []byte(*output.SecretString)
 	var secrets map[string]string
 	if err := json.Unmarshal(secret, &secrets); err != nil {
 		return fmt.Errorf("error unmarshaling secret: %s", err)
 	}
-	if password, ok := secrets[baseConfig.UnsealPasswordSecretKey]; !ok {
-		return fmt.Errorf("key: %s not found in secret",
-			baseConfig.UnsealPasswordSecretKey)
-	} else {
-		return state.unsealCA([]byte(password), "AWS Secrets Manager")
+	password, ok := secrets[config.AwsSecretKey]
+	if !ok {
+		return fmt.Errorf("key: %s not found in secret", config.AwsSecretKey)
 	}
+	return state.unsealCA([]byte(password), "AWS Secrets Manager")
 }
 
 func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
