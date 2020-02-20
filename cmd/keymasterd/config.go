@@ -41,12 +41,12 @@ type autoUnseal struct {
 }
 
 type baseConfig struct {
-	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
 	HttpAddress                  string     `yaml:"http_address"`
 	AdminAddress                 string     `yaml:"admin_address"`
 	TLSCertFilename              string     `yaml:"tls_cert_filename"`
 	TLSKeyFilename               string     `yaml:"tls_key_filename"`
 	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
+	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
 	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
 	ExternalAuthCmd              string     `yaml:"external_auth_command"`
 	ClientCAFilename             string     `yaml:"client_ca_filename"`
@@ -258,6 +258,7 @@ func loadVerifyConfigFile(configFilename string,
 			return nil, err
 		}
 	}
+	runtimeState.Config.Base.AutoUnseal.applyDefaults()
 	// TODO: This assumes httpAddress is just the port..
 	u2fAppID = "https://" + runtimeState.HostIdentity
 	if runtimeState.Config.Base.HttpAddress != ":443" {

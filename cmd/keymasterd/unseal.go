@@ -21,6 +21,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
 )
 
+func (config *autoUnseal) applyDefaults() {
+	if config.AwsSecretKey == "" {
+		config.AwsSecretKey = "UnsealPassword"
+	}
+}
+
 func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter,
 	r *http.Request) {
 	// checks this is only allowed when using TLS client certs.. all other authn
@@ -103,9 +109,7 @@ func (state *RuntimeState) tryAwsUnseal(
 			return err
 		}
 	}
-	if config.AwsSecretKey == "" {
-		config.AwsSecretKey = "UnsealPassword"
-	}
+	// TODO(rgooch): Simplify.
 	creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
 		Client:       metadataClient,
 		ExpiryWindow: time.Minute,
