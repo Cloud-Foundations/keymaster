@@ -87,6 +87,7 @@ type LdapConfig struct {
 
 type OktaConfig struct {
 	Domain               string `yaml:"domain"`
+	Enable2FA            bool   `yaml:"enable_2fa"`
 	UsernameFilterRegexp string `yaml:"username_filter_regexp"`
 }
 

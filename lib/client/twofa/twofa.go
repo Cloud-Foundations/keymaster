@@ -19,8 +19,8 @@ import (
 	"strings"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/pushtoken"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
-	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/vip"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
@@ -148,6 +148,7 @@ func getCertsFromServer(
 
 	allowVIP := false
 	allowU2F := false
+	allowOkta2FA := false
 	for _, backend := range loginJSONResponse.CertAuthBackend {
 		if backend == proto.AuthTypePassword {
 			skip2fa = true
@@ -159,6 +160,9 @@ func getCertsFromServer(
 		}
 		if backend == proto.AuthTypeU2F {
 			allowU2F = true
+		}
+		if backend == proto.AuthTypeOkta2FA {
+			allowOkta2FA = true
 		}
 	}
 
@@ -200,10 +204,19 @@ func getCertsFromServer(
 		}
 
 		if allowVIP && !successful2fa {
-			err = vip.DoVIPAuthenticate(
+			err = pushtoken.DoVIPAuthenticate(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
+				return nil, nil, nil, err
+			}
+			successful2fa = true
+		}
+		// TODO: do better logic when both VIP and OKTA are configured
+		if allowOkta2FA && !successful2fa {
+			err = pushtoken.DoOktaAuthenticate(
+				client, baseUrl, userAgentString, logger)
+			if err != nil {
 				return nil, nil, nil, err
 			}
 			successful2fa = true
