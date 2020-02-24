@@ -53,7 +53,7 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta MFT token")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta MFA token")
 		return
 	}
 	// Now we send to the appropriate place
