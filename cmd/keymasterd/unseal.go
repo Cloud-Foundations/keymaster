@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -12,13 +11,7 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/secretsmanager"
 )
 
 func (config *autoUnseal) applyDefaults() {
@@ -71,9 +64,9 @@ func (state *RuntimeState) autoUnsealAwsLoop() {
 	if state.Config.Base.AutoUnseal.AwsSecretId == "" {
 		return
 	}
-	metadataClient := ec2metadata.New(session.New(&aws.Config{}))
-	if !metadataClient.Available() {
-		state.logger.Println("not running on AWS or metadata is not available")
+	metadataClient, err := getMetadataClient()
+	if err != nil {
+		state.logger.Println(err)
 		return
 	}
 	for {
@@ -100,50 +93,9 @@ func (state *RuntimeState) isUnsealed() bool {
 func (state *RuntimeState) tryAwsUnseal(
 	metadataClient *ec2metadata.EC2Metadata) error {
 	config := state.Config.Base.AutoUnseal
-	var region string
-	if arn, err := arn.Parse(config.AwsSecretId); err == nil {
-		region = arn.Region
-	} else {
-		region, err = metadataClient.Region()
-		if err != nil {
-			return err
-		}
-	}
-	// TODO(rgooch): Simplify.
-	creds := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{
-		Client:       metadataClient,
-		ExpiryWindow: time.Minute,
-	})
-	logger.Debugln(0, "getting EC2 role credentials")
-	if value, err := creds.Get(); err != nil {
-		return fmt.Errorf("error getting credentials: %s", err)
-	} else {
-		logger.Debugf(0, "obtained credentials from: %s\n", value.ProviderName)
-	}
-	awsSession, err := session.NewSession(
-		aws.NewConfig().WithCredentials(creds).WithRegion(region))
+	secrets, err := getAwsSecret(metadataClient, config.AwsSecretId)
 	if err != nil {
-		return fmt.Errorf("error creating session: %s", err)
-	}
-	if awsSession == nil {
-		return errors.New("awsSession == nil")
-	}
-	awsService := secretsmanager.New(awsSession)
-	input := secretsmanager.GetSecretValueInput{
-		SecretId: aws.String(config.AwsSecretId),
-	}
-	output, err := awsService.GetSecretValue(&input)
-	if err != nil {
-		return fmt.Errorf("error calling secretsmanager:GetSecretValue: %s",
-			err)
-	}
-	if output.SecretString == nil {
-		return errors.New("no SecretString in secret")
-	}
-	secret := []byte(*output.SecretString)
-	var secrets map[string]string
-	if err := json.Unmarshal(secret, &secrets); err != nil {
-		return fmt.Errorf("error unmarshaling secret: %s", err)
+		return err
 	}
 	password, ok := secrets[config.AwsSecretKey]
 	if !ok {
@@ -186,7 +138,7 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	}
 	signer, err := getSignerFromPEMBytes(plaintextBytes)
 	if err != nil {
-		fmt.Errorf("cannot parse Priave Key file: %s", err)
+		fmt.Errorf("cannot parse Private Key file: %s", err)
 	}
 	logger.Printf("About to generate CA DER %s", clientName)
 	state.caCertDer, err = generateCADer(state, signer)
