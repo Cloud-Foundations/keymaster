@@ -1,4 +1,4 @@
-package vip
+package pushtoken
 
 import (
 	"bufio"

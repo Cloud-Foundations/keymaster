@@ -1,5 +1,5 @@
 // Package vip does two factor authentication with Symantec VIP or Okta
-package vip
+package pushtoken
 
 import (
 	"net/http"
