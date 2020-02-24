@@ -128,6 +128,7 @@ type OpenIDConnectIDPConfig struct {
 }
 
 type ProfileStorageConfig struct {
+	AwsSecretId         string `yaml:"aws_secret_id"`
 	StorageUrl          string `yaml:"storage_url"`
 	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
 }
@@ -259,6 +260,9 @@ func loadVerifyConfigFile(configFilename string,
 		}
 	}
 	runtimeState.Config.Base.AutoUnseal.applyDefaults()
+	if err := runtimeState.expandStorageUrl(); err != nil {
+		logger.Println(err)
+	}
 	// TODO: This assumes httpAddress is just the port..
 	u2fAppID = "https://" + runtimeState.HostIdentity
 	if runtimeState.Config.Base.HttpAddress != ":443" {
