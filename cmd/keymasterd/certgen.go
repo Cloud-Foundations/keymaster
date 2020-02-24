@@ -75,6 +75,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypeIPCertificate && ((authLevel & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeOkta2FA && ((authLevel & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
+			sufficientAuthLevel = true
+		}
 	}
 	// if you have u2f you can always get the cert
 	if (authLevel & AuthTypeU2F) == AuthTypeU2F {

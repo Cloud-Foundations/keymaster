@@ -35,6 +35,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
+	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
@@ -58,6 +59,7 @@ const (
 	AuthTypeSymantecVIP
 	AuthTypeIPCertificate
 	AuthTypeTOTP
+	AuthTypeOkta2FA
 )
 
 const AuthTypeAny = 0xFFFF
@@ -341,8 +343,13 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if err != nil {
 			return false, err
 		}
+		// TODO: Replace these if's by a type switch
 		if isLDAP {
 			metricLogExternalServiceDuration("ldap", time.Since(start))
+		}
+		_, isOktaPwAuth := passwordChecker.(*okta.PasswordAuthenticator)
+		if isOktaPwAuth {
+			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
 		}
 		logger.Debugf(3, "pwdChaker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
@@ -430,12 +437,16 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	if state.Config.SymantecVIP.Enabled {
 		JSSources = append(JSSources, "/static/webui-2fa-symc-vip.js")
 	}
+	if state.Config.Okta.Enable2FA {
+		JSSources = append(JSSources, "/static/webui-2fa-okta-push.js")
+	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
 		ShowVIP:          state.Config.SymantecVIP.Enabled,
 		ShowU2F:          showU2F,
 		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
+		ShowOktaOTP:      state.Config.Okta.Enable2FA,
 		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
 	if err != nil {
@@ -760,6 +771,9 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		if webUIPref == proto.AuthTypeTOTP {
 			AuthLevel |= AuthTypeTOTP
 		}
+		if webUIPref == proto.AuthTypeOkta2FA {
+			AuthLevel |= AuthTypeOkta2FA
+		}
 	}
 	return AuthLevel
 }
@@ -982,6 +996,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		if certPref == proto.AuthTypeTOTP && state.Config.Base.EnableLocalTOTP {
 			certBackends = append(certBackends, proto.AuthTypeTOTP)
+		}
+		if certPref == proto.AuthTypeOkta2FA && state.Config.Okta.Enable2FA {
+			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
 		}
 	}
 	// logger.Printf("current backends=%+v", certBackends)
@@ -1547,7 +1564,11 @@ func main() {
 	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
 	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
 	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
-
+	if runtimeState.Config.Okta.Domain != "" {
+		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
+		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
+		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
