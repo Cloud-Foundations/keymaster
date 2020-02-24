@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/tls"
@@ -27,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
@@ -47,9 +48,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -170,6 +168,7 @@ type RuntimeState struct {
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
+	logger                  log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -780,102 +779,6 @@ func (state *RuntimeState) reprocessUsername(username string) string {
 }
 
 const secretInjectorPath = "/admin/inject"
-
-func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.Request) {
-	// checks this is only allowed when using TLS client certs.. all other authn
-	// mechanisms are considered invalid... for now no authz mechanisms are in place ie
-	// Any user with a valid cert can use this handler
-	if r.TLS == nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("We require TLS\n")
-		return
-	}
-
-	if len(r.TLS.VerifiedChains) < 1 {
-		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("Forbidden\n")
-		return
-	}
-	clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-	logger.Printf("Got connection from %s", clientName)
-	r.ParseForm()
-	sshCAPassword, ok := r.Form["ssh_ca_password"]
-	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Post, missing data")
-		logger.Printf("missing ssh_ca_password")
-		return
-	}
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-
-	// TODO.. make network error blocks to goroutines
-	if state.Signer != nil {
-		state.writeFailureResponse(w, r, http.StatusConflict, "Conflict post, signer already unlocked")
-		logger.Printf("Signer not null, already unlocked")
-		return
-	}
-
-	decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
-
-	armorBlock, err := armor.Decode(decbuf)
-	if err != nil {
-		logger.Printf("Cannot decode armored file")
-		return
-	}
-	password := []byte(sshCAPassword[0])
-	failed := false
-	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
-		// If the given passphrase isn't correct, the function will be called again, forever.
-		// This method will fail fast.
-		// Ref: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
-		if failed {
-			return nil, errors.New("decryption failed")
-		}
-		failed = true
-		return password, nil
-	}
-	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
-	if err != nil {
-		logger.Printf("cannot read message")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Unlocking key")
-		return
-	}
-
-	plaintextBytes, err := ioutil.ReadAll(md.UnverifiedBody)
-	if err != nil {
-		return
-	}
-
-	signer, err := getSignerFromPEMBytes(plaintextBytes)
-	if err != nil {
-		logger.Printf("Cannot parse Priave Key file")
-		return
-	}
-
-	logger.Printf("About to generate cader %s", clientName)
-	state.caCertDer, err = generateCADer(state, signer)
-	if err != nil {
-		logger.Printf("Cannot generate CA Der")
-		return
-	}
-	sendMessage := false
-	if state.Signer == nil {
-		sendMessage = true
-	}
-
-	// Assignmet of signer MUST be the last operation after
-	// all error checks
-	state.Signer = signer
-	state.signerPublicKeyToKeymasterKeys()
-	if sendMessage {
-		state.SignerIsReady <- true
-	}
-
-	// TODO... make success a goroutine
-	w.WriteHeader(200)
-	fmt.Fprintf(w, "OK\n")
-	//fmt.Fprintf(w, "%+v\n", r.TLS)
-}
 
 const publicPath = "/public/"
 
@@ -1577,7 +1480,7 @@ func main() {
 
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier = eventnotifier.New(logger)
-	runtimeState, err := loadVerifyConfigFile(*configFilename)
+	runtimeState, err := loadVerifyConfigFile(*configFilename, logger)
 	if err != nil {
 		logger.Println(err)
 		os.Exit(1)
