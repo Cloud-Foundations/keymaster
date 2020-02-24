@@ -15,6 +15,8 @@ import (
 	"github.com/Symantec/Dominator/lib/log/testlogger"
 )
 
+var oktaTestAuthnURL string
+
 func oktaTestWriteStatus(w http.ResponseWriter, status string) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -85,7 +87,6 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		if err := encoder.Encode(response); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		//oktaTestWriteStatus(w, "PASSWORD_EXPIRED")
 		return
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
@@ -124,16 +125,12 @@ func oktaTestFactorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 	case "push-send-accept":
 		oktaTestWriteStatus(w, "SUCCESS")
 		return
-
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
 		return
-
 	}
 
 }
-
-var oktaTestAuthnURL string
 
 func setupTestOtkaServer() {
 	if oktaTestAuthnURL != "" {
@@ -160,26 +157,17 @@ func setupTestOtkaServer() {
 }
 
 func TestOkta2FAuthHandlerSuccess(t *testing.T) {
-
 	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-
 	setupTestOtkaServer()
 	pa, err := okta.NewPublicTesting(oktaTestAuthnURL, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	/*
-		err = pa.SetAuthnURL(oktaTestAuthnURL)
-		if err != nil {
-			t.Fatal(err)
-		}
-	*/
 	state.passwordChecker = pa
-
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA"))
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +175,6 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 	if !ok {
 		t.Fatal("should have authenticated")
 	}
-
 	//Now we can acutally all the otp call
 	// End of Setup
 	cookieVal, err := state.setNewAuthCookie(nil, "a-user", AuthTypeU2F)
@@ -222,26 +209,17 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 }
 
 func TestOkta2FAPushStartAndWait(t *testing.T) {
-
 	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-
 	setupTestOtkaServer()
 	pa, err := okta.NewPublicTesting(oktaTestAuthnURL, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	/*
-		err = pa.SetAuthnURL(oktaTestAuthnURL)
-		if err != nil {
-			t.Fatal(err)
-		}
-	*/
 	state.passwordChecker = pa
-
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA-waiting"))
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +227,6 @@ func TestOkta2FAPushStartAndWait(t *testing.T) {
 	if !ok {
 		t.Fatal("should have authenticated")
 	}
-
 	//Now we can acutally all the otp call
 	// End of Setup
 	cookieVal, err := state.setNewAuthCookie(nil, "a-user", AuthTypeU2F)
@@ -257,7 +234,6 @@ func TestOkta2FAPushStartAndWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-
 	//now we verifyPoll Success
 	startPushReq, err := http.NewRequest("POST", oktaPushStartPath, nil)
 	if err != nil {
@@ -278,5 +254,4 @@ func TestOkta2FAPushStartAndWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }

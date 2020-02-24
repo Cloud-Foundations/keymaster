@@ -11,9 +11,11 @@ import (
 )
 
 const okta2FAauthPath = "/api/v0/okta2FAAuth"
+const oktaPushStartPath = "/api/v0/oktaPushStart"
+const oktaPollCheckPath = "/api/v0/oktaPollCheck"
 
 func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Printf("Top of Okta2FAuthHandler")
+	logger.Debugf(3, "Top of Okta2FAuthHandler")
 	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r, AuthTypeAny)
 	if err != nil {
 		//Common handler handles returning the right error response to caller
@@ -30,14 +32,14 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	valid, err := oktaAuth.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta MFA token")
 		return
 	}
 	metricLogExternalServiceDuration("okta-otp", time.Since(start))
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeOkta2FA, valid)
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
-		// TODO if client is html then do a redirect back to vipLoginPage
+		// TODO if client is html then do a redirect back to 2FALoginPage
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 
@@ -51,10 +53,10 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta MFT token")
 		return
 	}
-	// Now we send to the appropiate place
+	// Now we send to the appropriate place
 	returnAcceptType := getPreferredAcceptType(r)
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
@@ -70,17 +72,14 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	return
 }
 
-///////////////////////////
-const oktaPushStartPath = "/api/v0/oktaPushStart"
-
 func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Printf("top of oktaPushStartHandler")
+	logger.Debugf(3, "top of oktaPushStartHandler")
 	if state.sendFailureToClientIfLocked(w, r) {
-		logger.Printf("foo")
+		logger.Printf("Invalid state on oktaPushStartHandler (not unsealed)")
 		return
 	}
 	logger.Printf("oktaPushStartHandler post lock")
-	if !(r.Method == "POST" || r.Method == "GET") {
+	if r.Method != "POST" && r.Method != "GET" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
@@ -90,7 +89,6 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
 		logger.Debugf(2, "oktaPushStartHandler: password authenticator is not okta is of type %T", oktaAuth)
@@ -113,14 +111,11 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 	}
 }
 
-////////////////////////////
-const oktaPollCheckPath = "/api/v0/oktaPollCheck"
-
 func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if !(r.Method == "POST" || r.Method == "GET") {
+	if r.Method != "POST" && r.Method != "GET" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
@@ -130,7 +125,6 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
 		logger.Println("password authenticator is not okta")
@@ -150,7 +144,7 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 		_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 		if err != nil {
 			logger.Printf("Auth Cookie NOT found ? %s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta token")
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -167,5 +161,4 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
 		return
 	}
-
 }

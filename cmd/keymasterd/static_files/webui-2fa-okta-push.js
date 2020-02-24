@@ -23,6 +23,7 @@
       }
       setTimeout(clearInterval,60000, poller)
   }
+
   function startOktaPush() {
       var xhr = new XMLHttpRequest();
       xhr.onreadystatechange = function() {

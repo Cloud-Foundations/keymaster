@@ -217,7 +217,6 @@ func getCertsFromServer(
 			err = vip.DoOktaAuthenticate(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
-
 				return nil, nil, nil, err
 			}
 			successful2fa = true

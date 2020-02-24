@@ -352,7 +352,6 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if isOktaPwAuth {
 			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
 		}
-
 		logger.Debugf(3, "pwdChaker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
@@ -1662,13 +1661,11 @@ func main() {
 	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
 	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
 	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
-
 	if runtimeState.Config.Okta.Domain != "" {
 		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
 		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
 		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
 	}
-
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
