@@ -1,0 +1,55 @@
+base:
+  acme:
+    # The instance role must have access to update the Route 53 zone. The zone
+    # must be public, so that Let's Encrypt can see the challenge responses.
+    challenge_type:         dns-01
+    route53_hosted_zone_id: "ZoneID"
+  http_address: :443
+  admin_address: :6920
+  tls_cert_filename: /etc/keymaster/server.pem
+  tls_key_filename:  /etc/keymaster/server.key
+  ssh_ca_filename:   /etc/keymaster/masterKey.asc
+  auto_unseal:
+    # The instance role must have access to read the secret.
+    aws_secret_id: "keymaster/unsealer"
+  client_ca_filename: /etc/keymaster/KeymasterCA.pem
+#  keymaster_public_keys_filename: /etc/ssh/trusted-user-ca-keys
+  host_identity: "keymaster.company.com"
+  data_directory: /var/lib/keymaster
+  shared_data_directory: "/usr/share/keymasterd/"
+  hide_standard_login: false
+  allowed_auth_backends_for_certs: ["U2F"]
+  allowed_auth_backends_for_webui: ["U2F"]
+  admin_users: []
+  admin_groups: ["infra-team", "security-team"]
+  public_logs: false
+  secs_between_dependency_checks: 0
+  automation_user_groups: []
+  automation_users: []
+  disable_username_normalization: false
+
+okta:
+  domain: "company"
+
+userinfo_sources:
+  gitdb:
+    check_interval:             60s
+    local_repository_directory: /var/lib/keymaster/gitdb
+    repository_url:             git@github.com:company/IAM.git
+                                
+openid_connect_idp:
+  default_email_domain: "company.com"
+  clients:
+    - client_id:     "random-client-id"
+      client_secret: "random-client-secret"
+      client_name: "generic Company client"
+      allowed_redirect_domains:
+        - company.com
+        - company.io
+
+profilestorage:
+  aws_secret_id: "keymaster/database"
+  # The Username and Password variables are extracted from the AWS secret. The
+  # instance role must have access to read the secret.
+  storage_url: "postgresql://${Username}:${Password}@keymaster-dev.rds-instance.us-west-2.rds.amazonaws.com/"
+  tls_root_cert_filename: ""

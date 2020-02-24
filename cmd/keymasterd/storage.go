@@ -20,6 +20,26 @@ const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
 const cachedDBFilename = "cachedDB.sqlite3"
 
+func (state *RuntimeState) expandStorageUrl() error {
+	config := &state.Config.ProfileStorage
+	if config.AwsSecretId == "" {
+		return nil
+	}
+	metadataClient, err := getMetadataClient()
+	if err != nil {
+		return err
+	}
+	secrets, err := getAwsSecret(metadataClient, config.AwsSecretId)
+	if err != nil {
+		return err
+	}
+	config.StorageUrl = os.Expand(config.StorageUrl,
+		func(variableName string) string {
+			return secrets[variableName]
+		})
+	return nil
+}
+
 func initDB(state *RuntimeState) (err error) {
 	logger.Debugf(3, "Top of initDB")
 	//open/create cache DB first

@@ -36,6 +36,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type autoUnseal struct {
+	AwsSecretId  string `yaml:"aws_secret_id"`
+	AwsSecretKey string `yaml:"aws_secret_key"`
+}
+
 type baseConfig struct {
 	ACME                         acmecfg.AcmeConfig
 	HttpAddress                  string   `yaml:"http_address"`
@@ -125,6 +130,7 @@ type OpenIDConnectIDPConfig struct {
 }
 
 type ProfileStorageConfig struct {
+	AwsSecretId         string `yaml:"aws_secret_id"`
 	StorageUrl          string `yaml:"storage_url"`
 	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
 }
@@ -255,6 +261,10 @@ func loadVerifyConfigFile(configFilename string,
 			return nil, err
 		}
 	}
+	runtimeState.Config.Base.AutoUnseal.applyDefaults()
+	if err := runtimeState.expandStorageUrl(); err != nil {
+		logger.Println(err)
+	}
 	// TODO: This assumes httpAddress is just the port..
 	u2fAppID = "https://" + runtimeState.HostIdentity
 	if runtimeState.Config.Base.HttpAddress != ":443" {
@@ -327,33 +337,31 @@ func loadVerifyConfigFile(configFilename string,
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
 		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
 		if err != nil {
-			logger.Printf("Cannot parse Priave Key file")
+			logger.Printf("Cannot parse Private Key file")
 			return nil, err
 		}
 		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
 		if err != nil {
-			logger.Printf("Cannot generate CA Der")
+			logger.Printf("Cannot generate CA DER")
 			return nil, err
 		}
-
-		// Assignmet of signer MUST be the last operation after
+		// Assignment of signer MUST be the last operation after
 		// all error checks
 		runtimeState.Signer = signer
 		runtimeState.signerPublicKeyToKeymasterKeys()
 		runtimeState.SignerIsReady <- true
 
 	} else {
-		if runtimeState.ClientCAPool == nil {
-			err := errors.New("Invalid ssh CA private key file and NO clientCA")
-			return nil, err
-		}
-		//check that the loaded date seems like an openpgp armored file
+		//check that the loaded data seems like an openpgp armored file
 		fileAsString := string(runtimeState.SSHCARawFileContent[:])
 		if !strings.HasPrefix(fileAsString, "-----BEGIN PGP MESSAGE-----") {
-			err = errors.New("Have a client CA but the CA file does NOT look like and PGP file")
-			return nil, err
+			return nil, errors.New("CA private key file does NOT look like PGP")
 		}
-
+		logger.Println("Starting up in sealed state")
+		if runtimeState.ClientCAPool == nil {
+			logger.Println("No client CA: manual unsealing not possible")
+		}
+		runtimeState.beginAutoUnseal()
 	}
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {
