@@ -69,11 +69,8 @@ type baseConfig struct {
 }
 
 type GitDatabaseConfig struct {
-	Branch                   string        `yaml:"branch"`
-	CheckInterval            time.Duration `yaml:"check_interval"`
-	GroupPrepend             string        `yaml:"group_prepend"`
-	LocalRepositoryDirectory string        `yaml:"local_repository_directory"`
-	RepositoryURL            string        `yaml:"repository_url"`
+	gitdb.Config `yaml:",inline"`
+	GroupPrepend string `yaml:"group_prepend"`
 }
 
 type LdapConfig struct {
@@ -468,9 +465,8 @@ func loadVerifyConfigFile(configFilename string,
 	// UserInfo setup.
 	if runtimeState.Config.UserInfo.GitDB.LocalRepositoryDirectory != "" {
 		gitdbConfig := runtimeState.Config.UserInfo.GitDB
-		runtimeState.gitDB, err = gitdb.New(gitdbConfig.RepositoryURL,
-			gitdbConfig.Branch, gitdbConfig.LocalRepositoryDirectory,
-			gitdbConfig.CheckInterval, logger)
+		runtimeState.gitDB, err = gitdb.NewWithConfig(gitdbConfig.Config,
+			logger)
 		if err != nil {
 			return nil, err
 		}
