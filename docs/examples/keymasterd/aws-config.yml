@@ -33,6 +33,7 @@ okta:
 
 userinfo_sources:
   gitdb:
+    aws_secret_id:             "iam/ssh"
     check_interval:             60s
     local_repository_directory: /var/lib/keymaster/gitdb
     repository_url:             git@github.com:company/IAM.git
