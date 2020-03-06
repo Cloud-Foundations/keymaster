@@ -9,7 +9,7 @@ import (
 )
 
 // This module implements the PasswordAuthenticator interface and will implement
-// a unified 2fa backend interface in some future
+// a unified 2FA backend interface at some future time.
 
 type authCacheData struct {
 	response OktaApiPrimaryResponseType
@@ -17,10 +17,11 @@ type authCacheData struct {
 }
 
 type PasswordAuthenticator struct {
-	authnURL   string
-	logger     log.DebugLogger
-	mutex      sync.Mutex
-	recentAuth map[string]authCacheData
+	authnURL       string
+	logger         log.DebugLogger
+	usernameSuffix string
+	mutex          sync.Mutex               // Protect everything below.
+	recentAuth     map[string]authCacheData // Key: username (before "@")
 }
 
 type PushResponse int
@@ -36,9 +37,9 @@ const (
 // Public Application API is used, so rate limits apply.
 // The Okta domain to check must be given by oktaDomain.
 // Log messages are written to logger. A new *PasswordAuthenticator is returned.
-func NewPublic(oktaDomain string, logger log.DebugLogger) (
-	*PasswordAuthenticator, error) {
-	return newPublicAuthenticator(oktaDomain, logger)
+func NewPublic(oktaDomain string, usernameSuffix string,
+	logger log.DebugLogger) (*PasswordAuthenticator, error) {
+	return newPublicAuthenticator(oktaDomain, usernameSuffix, logger)
 }
 
 // NewPublicTesting creates a new public authenticator, but
@@ -46,7 +47,7 @@ func NewPublic(oktaDomain string, logger log.DebugLogger) (
 // Log messages are written to logger. A new *PasswordAuthenticator is returned.
 func NewPublicTesting(authnURL string, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
-	pa, err := newPublicAuthenticator("example.com", logger)
+	pa, err := newPublicAuthenticator("example.com", "", logger)
 	if err != nil {
 		return pa, err
 	}
