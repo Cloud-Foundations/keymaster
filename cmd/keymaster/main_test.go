@@ -250,6 +250,12 @@ func TestMost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tmpdir, err := ioutil.TempDir("", "keymaster"+userName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	homeDir = tmpdir
 	appConfig := config.AppConfigFile{
 		Base: config.BaseConfig{
 			Gen_Cert_URLS: localHttpsTarget,
