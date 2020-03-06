@@ -551,7 +551,11 @@ func checkValidLoginResponse(resp *http.Response, state *RuntimeState, username 
 }
 
 func TestLoginAPIBasicAuth(t *testing.T) {
-	var state RuntimeState
+	state, tmpdir, err := newTestingState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -559,19 +563,16 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	err = initDB(&state)
+	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	req, err := http.NewRequest("GET", "/api/v0/login", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -583,10 +584,9 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	//TODO: check for existence of login cookie!
-	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
+	if !checkValidLoginResponse(rr.Result(), state, validUsernameConst) {
 		t.Fatal(err)
 	}
-
 	//now we check for failed auth
 	for _, testVector := range loginFailValues {
 		//there are no nil values in basic auth
@@ -605,7 +605,11 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 }
 
 func TestLoginAPIFormAuth(t *testing.T) {
-	var state RuntimeState
+	state, tmpdir, err := newTestingState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -613,23 +617,19 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	err = initDB(&state)
+	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	form := url.Values{}
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
-
 	req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
@@ -638,23 +638,21 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	//req.Header.Add("Content-Type", "multipart/form-data")
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
 	rr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// TODO: check for existence of login cookie!
-	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
+	if !checkValidLoginResponse(rr.Result(), state, validUsernameConst) {
 		t.Fatal(err)
 	}
-
 	// test with form AND with json return
 	req.Header.Add("Accept", "application/json")
 	jsonrr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !checkValidLoginResponse(jsonrr.Result(), &state, validUsernameConst) {
+	if !checkValidLoginResponse(jsonrr.Result(), state, validUsernameConst) {
 		t.Fatal(err)
 	}
 	loginResponse := proto.LoginResponse{}
@@ -664,7 +662,6 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("loginResponse='%+v'", loginResponse)
-
 	// now we check for failed auth
 	for _, testVector := range loginFailValues {
 		form := url.Values{}
