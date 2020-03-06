@@ -32,6 +32,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/crypto/certmanager"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
@@ -151,6 +152,7 @@ type RuntimeState struct {
 	HostIdentity         string
 	KerberosRealm        *string
 	caCertDer            []byte
+	certManager          *certmanager.CertificateManager
 	vipPushCookie        map[string]pushPollTransaction
 	localAuthData        map[string]localUserData
 	SignerIsReady        chan bool
@@ -1574,6 +1576,7 @@ func main() {
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
 		ClientAuth:               tls.VerifyClientCertIfGiven,
+		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
@@ -1601,15 +1604,13 @@ func main() {
 	srpc.RegisterServerTlsConfig(
 		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
 		true)
-	go func(msg string) {
-		err := adminSrv.ListenAndServeTLS(
-			runtimeState.Config.Base.TLSCertFilename,
-			runtimeState.Config.Base.TLSKeyFilename)
+	go func() {
+		err := adminSrv.ListenAndServeTLS("", "")
 		if err != nil {
 			panic(err)
 		}
 
-	}("done")
+	}()
 
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
@@ -1630,6 +1631,7 @@ func main() {
 	serviceTLSConfig := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
 		ClientAuth:               tls.VerifyClientCertIfGiven,
+		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
@@ -1643,7 +1645,6 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
@@ -1659,9 +1660,7 @@ func main() {
 		healthserver.SetReady()
 		adminDashboard.setReady()
 	}()
-	err = serviceSrv.ListenAndServeTLS(
-		runtimeState.Config.Base.TLSCertFilename,
-		runtimeState.Config.Base.TLSKeyFilename)
+	err = serviceSrv.ListenAndServeTLS("", "")
 	if err != nil {
 		panic(err)
 	}

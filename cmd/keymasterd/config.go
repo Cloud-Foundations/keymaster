@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
@@ -41,10 +42,12 @@ type autoUnseal struct {
 }
 
 type baseConfig struct {
-	HttpAddress                  string     `yaml:"http_address"`
-	AdminAddress                 string     `yaml:"admin_address"`
-	TLSCertFilename              string     `yaml:"tls_cert_filename"`
-	TLSKeyFilename               string     `yaml:"tls_key_filename"`
+	HttpAddress                  string `yaml:"http_address"`
+	AdminAddress                 string `yaml:"admin_address"`
+	HttpRedirectPort             uint16 `yaml:"http_redirect_port"`
+	TLSCertFilename              string `yaml:"tls_cert_filename"`
+	TLSKeyFilename               string `yaml:"tls_key_filename"`
+	ACME                         acmecfg.AcmeConfig
 	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
 	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
 	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
@@ -271,16 +274,9 @@ func loadVerifyConfigFile(configFilename string,
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
 		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
 	}
-
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSCertFilename, "http cert file")
-	if err != nil {
+	if err := runtimeState.setupCertificateManager(); err != nil {
 		return nil, err
 	}
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSKeyFilename, "http key file")
-	if err != nil {
-		return nil, err
-	}
-
 	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
 	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
@@ -489,6 +485,21 @@ func loadVerifyConfigFile(configFilename string,
 	go runtimeState.doDependencyMonitoring(runtimeState.Config.Base.SecsBetweenDependencyChecks)
 
 	return &runtimeState, nil
+}
+
+func (state *RuntimeState) setupCertificateManager() error {
+	baseConfig := state.Config.Base
+	if len(baseConfig.ACME.DomainNames) < 1 {
+		baseConfig.ACME.DomainNames = []string{baseConfig.HostIdentity}
+	}
+	cm, err := acmecfg.New(baseConfig.TLSCertFilename,
+		baseConfig.TLSKeyFilename, baseConfig.HttpRedirectPort,
+		baseConfig.ACME, state.logger)
+	if err != nil {
+		return err
+	}
+	state.certManager = cm
+	return nil
 }
 
 func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
