@@ -61,18 +61,22 @@ type OktaApiPushResponseType struct {
 	Embedded        OktaApiEmbeddedDataResponseType `json:"_embedded,omitempty"`
 }
 
-func newPublicAuthenticator(oktaDomain string, logger log.DebugLogger) (
-	*PasswordAuthenticator, error) {
+func newPublicAuthenticator(oktaDomain string, usernameSuffix string,
+	logger log.DebugLogger) (*PasswordAuthenticator, error) {
 	return &PasswordAuthenticator{
-		authnURL:   fmt.Sprintf(authEndpointFormat, oktaDomain),
-		logger:     logger,
-		recentAuth: make(map[string]authCacheData),
+		authnURL:       fmt.Sprintf(authEndpointFormat, oktaDomain),
+		logger:         logger,
+		usernameSuffix: usernameSuffix,
+		recentAuth:     make(map[string]authCacheData),
 	}, nil
 }
 
 func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	password []byte) (bool, error) {
-	loginData := OktaApiLoginDataType{Password: string(password), Username: username}
+	loginData := OktaApiLoginDataType{
+		Password: string(password),
+		Username: username + pa.usernameSuffix,
+	}
 	body := &bytes.Buffer{}
 	encoder := json.NewEncoder(body)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.

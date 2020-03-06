@@ -149,7 +149,7 @@ func writeStatus(w http.ResponseWriter, status string) {
 
 func TestBaseAPI(t *testing.T) {
 	setupServer()
-	pa, err := NewPublic("somedomain", testlogger.New(t))
+	pa, err := NewPublic("somedomain", "", testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}

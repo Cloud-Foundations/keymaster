@@ -86,6 +86,7 @@ type OktaConfig struct {
 	Domain               string `yaml:"domain"`
 	Enable2FA            bool   `yaml:"enable_2fa"`
 	UsernameFilterRegexp string `yaml:"username_filter_regexp"`
+	UsernameSuffix       string `yaml:"username_suffix"`
 }
 
 type UserInfoLDAPSource struct {
@@ -421,7 +422,7 @@ func loadVerifyConfigFile(configFilename string,
 	}
 	if oktaConfig := runtimeState.Config.Okta; oktaConfig.Domain != "" {
 		runtimeState.passwordChecker, err = okta.NewPublic(oktaConfig.Domain,
-			logger)
+			oktaConfig.UsernameSuffix, logger)
 		if err != nil {
 			return nil, err
 		}
