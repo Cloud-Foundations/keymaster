@@ -1,7 +1,9 @@
 base:
   acme:
-    # The instance role must have access to update the Route 53 zone. The zone
-    # must be public, so that Let's Encrypt can see the challenge responses.
+    # The instance role must have access to update the Route 53 zone and
+    # read/write the secret in AWS Secrets Manager. The zone must be public, so
+    # that Let's Encrypt can see the challenge responses.
+    aws_secret_id:          keymaster/x509
     challenge_type:         dns-01
     route53_hosted_zone_id: "ZoneID"
   http_address: :443
