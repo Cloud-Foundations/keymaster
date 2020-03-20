@@ -56,14 +56,12 @@ func doU2FAuthenticate(
 		logger.Fatal(err)
 	}
 	signRequest.Header.Set("User-Agent", userAgentString)
-
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("Failure to sign request req %s", err)
 		return err
 	}
 	logger.Debugf(0, "Get url request did not failed %+v", signRequestResp)
-
 	// Dont defer the body response Close ... as we need to close it explicitly
 	// in the body of the function so that we can reuse the connection
 	if signRequestResp.StatusCode != 200 {
@@ -72,17 +70,15 @@ func doU2FAuthenticate(
 		err = errors.New("failed respose from sign request")
 		return err
 	}
-
 	var webSignRequest u2f.WebSignRequest
-	if err := json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest); err != nil {
-		//http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
-		//        return
+	err = json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest)
+	if err != nil {
 		logger.Fatal(err)
 	}
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
-
-	// TODO: move this to initialization code, ans pass the device list to this function?
+	// TODO: move this to initialization code, ans pass the device list to this
+	// function?
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
@@ -94,61 +90,60 @@ func doU2FAuthenticate(
 		logger.Println(err)
 		return err
 	}
-
 	// TODO: transform this into an iteration over all found devices
 	d := devices[0]
-	logger.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
-
+	logger.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x",
+		d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 	dev, err := u2fhid.Open(d)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer dev.Close()
 	t := u2ftoken.NewToken(dev)
-
 	version, err := t.Version()
 	if err != nil {
 		logger.Fatal(err)
 	}
 	// TODO: Maybe use Debugf()?
 	logger.Println("version:", version)
-
-	///////
-	tokenAuthenticationClientData := u2f.ClientData{Typ: clientDataAuthenticationTypeValue, Challenge: webSignRequest.Challenge, Origin: webSignRequest.AppID}
+	tokenAuthenticationClientData := u2f.ClientData{
+		Typ:       clientDataAuthenticationTypeValue,
+		Challenge: webSignRequest.Challenge,
+		Origin:    webSignRequest.AppID,
+	}
 	tokenAuthenticationBuf := new(bytes.Buffer)
-	err = json.NewEncoder(tokenAuthenticationBuf).Encode(tokenAuthenticationClientData)
+	err = json.NewEncoder(tokenAuthenticationBuf).Encode(
+		tokenAuthenticationClientData)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
-
 	// TODO: update creation to silence linter
 	challenge := make([]byte, 32)
 	app := make([]byte, 32)
-
 	challenge = reqSignChallenge[:]
 	reqSingApp := sha256.Sum256([]byte(webSignRequest.AppID))
 	app = reqSingApp[:]
-
 	// We find out what key is associated to the currently inserted device.
 	keyIsKnown := false
 	var req u2ftoken.AuthenticateRequest
 	var keyHandle []byte
 	for _, registeredKey := range webSignRequest.RegisteredKeys {
-		decodedHandle, err := base64.RawURLEncoding.DecodeString(registeredKey.KeyHandle)
+		decodedHandle, err := base64.RawURLEncoding.DecodeString(
+			registeredKey.KeyHandle)
 		if err != nil {
 			logger.Fatal(err)
 		}
 		keyHandle = decodedHandle
-
 		req = u2ftoken.AuthenticateRequest{
 			Challenge:   challenge,
 			Application: app,
 			KeyHandle:   keyHandle,
 		}
-
-		//logger.Printf("%+v", req)
-		if err := t.CheckAuthenticate(req); err == nil {
+		logger.Debugf(0, "%+v", req)
+		if err := t.CheckAuthenticate(req); err != nil {
+			logger.Debugln(1, err)
+		} else {
 			keyIsKnown = true
 			break
 		}
@@ -157,7 +152,6 @@ func doU2FAuthenticate(
 		err = errors.New("key is not known")
 		return err
 	}
-
 	// Now we ask the token to sign/authenticate
 	logger.Println("authenticating, provide user presence")
 	var rawBytes []byte
@@ -170,23 +164,24 @@ func doU2FAuthenticate(
 			logger.Fatal(err)
 		}
 		rawBytes = res.RawResponse
-		logger.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
+		logger.Printf("counter = %d, signature = %x",
+			res.Counter, res.Signature)
 		break
 	}
-
 	// now we do the last request
 	var signRequestResponse u2f.SignResponse
-	signRequestResponse.KeyHandle = base64.RawURLEncoding.EncodeToString(keyHandle)
-	signRequestResponse.SignatureData = base64.RawURLEncoding.EncodeToString(rawBytes)
-	signRequestResponse.ClientData = base64.RawURLEncoding.EncodeToString(tokenAuthenticationBuf.Bytes())
-
+	signRequestResponse.KeyHandle = base64.RawURLEncoding.EncodeToString(
+		keyHandle)
+	signRequestResponse.SignatureData = base64.RawURLEncoding.EncodeToString(
+		rawBytes)
+	signRequestResponse.ClientData = base64.RawURLEncoding.EncodeToString(
+		tokenAuthenticationBuf.Bytes())
 	//
 	webSignRequestBuf := &bytes.Buffer{}
 	err = json.NewEncoder(webSignRequestBuf).Encode(signRequestResponse)
 	if err != nil {
 		logger.Fatal(err)
 	}
-
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
 	if err != nil {
@@ -194,16 +189,15 @@ func doU2FAuthenticate(
 		return err
 	}
 	webSignRequest2.Header.Set("User-Agent", userAgentString)
-
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("Failure to sign request req %s", err)
 		return err
 	}
-
 	defer signRequestResp2.Body.Close()
 	if signRequestResp2.StatusCode != 200 {
-		logger.Printf("got error from call %s, url='%s'\n", signRequestResp2.Status, url)
+		logger.Printf("got error from call %s, url='%s'\n",
+			signRequestResp2.Status, url)
 		return err
 	}
 	io.Copy(ioutil.Discard, signRequestResp2.Body)
