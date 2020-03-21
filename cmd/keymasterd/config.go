@@ -69,6 +69,7 @@ type baseConfig struct {
 	AutomationUsers              []string   `yaml:"automation_users"`
 	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
 	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
+	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
 }
 
 type GitDatabaseConfig struct {

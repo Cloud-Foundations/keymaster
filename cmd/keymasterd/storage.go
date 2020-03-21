@@ -223,6 +223,14 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		logger.Printf("err='%s'", err)
 		return err
 	}
+
+	deleteProfilesQueryStr := fmt.Sprintf("DELETE from user_profile ")
+	_, err = destination.Query(deleteProfilesQueryStr)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+
 	stmtText := saveUserProfileStmt[destinationType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
@@ -494,6 +502,35 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 	metricLogExternalServiceDuration("storage-save", time.Since(start))
+	return nil
+}
+
+var deleteUserProfileStmt = map[string]string{
+	"sqlite":   "delete from  user_profile where username = ?",
+	"postgres": "delete from  user_profile where username = $1",
+}
+
+func (state *RuntimeState) DeleteUserProfile(username string) error {
+	//delete from DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmtText := deleteUserProfileStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username)
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
