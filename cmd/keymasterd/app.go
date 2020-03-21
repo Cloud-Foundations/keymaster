@@ -1590,7 +1590,8 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
+	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
+		runtimeState.IsAdminUser)
 	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{
@@ -1623,7 +1624,14 @@ func main() {
 			logger.Fatalf("Cannot update password checker")
 		}
 	}
-
+	if runtimeState.ClientCAPool == nil {
+		runtimeState.ClientCAPool = x509.NewCertPool()
+	}
+	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
+	if err != nil {
+		panic(err)
+	}
+	runtimeState.ClientCAPool.AddCert(myCert)
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating
