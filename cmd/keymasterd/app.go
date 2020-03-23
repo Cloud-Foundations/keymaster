@@ -61,6 +61,7 @@ const (
 	AuthTypeIPCertificate
 	AuthTypeTOTP
 	AuthTypeOkta2FA
+	AuthTypeBootstrapOTP
 )
 
 const AuthTypeAny = 0xFFFF
@@ -112,12 +113,18 @@ type totpAuthData struct {
 	ValidatorAddr   string
 }
 
+type bootstrapOTPData struct {
+	CreatedAt time.Time
+	Value     string
+}
+
 type userProfile struct {
 	U2fAuthData                map[int64]*u2fAuthData
 	RegistrationChallenge      *u2f.Challenge
 	PendingTOTPSecret          *[][]byte
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
+	bootstrapOTP               bootstrapOTPData
 }
 
 type localUserData struct {
@@ -1145,43 +1152,6 @@ func (state *RuntimeState) IsAdminUserAndU2F(user string, loginLevel int) bool {
 	return state.IsAdminUser(user) && ((loginLevel & AuthTypeU2F) != 0)
 }
 
-const usersPath = "/users/"
-
-func (state *RuntimeState) usersHandler(
-	w http.ResponseWriter, r *http.Request) {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
-	if err != nil {
-		logger.Debugf(1, "%v", err)
-		return
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
-	users, _, err := state.GetUsers()
-	if err != nil {
-		logger.Printf("Getting users error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-
-	}
-
-	JSSources := []string{"/static/jquery-3.4.1.min.js"}
-
-	displayData := usersPageTemplateData{
-		AuthUsername: authUser,
-		Title:        "Keymaster Users",
-		Users:        users,
-		JSSources:    JSSources}
-	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
-	if err != nil {
-		logger.Printf("Failed to execute %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-}
-
 const profilePath = "/profile/"
 
 func profileURI(authUser, assumedUser string) string {
@@ -1537,6 +1507,8 @@ func main() {
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
 	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
+	serviceMux.HandleFunc(addUsersPath, runtimeState.addUsersHandler)
+	serviceMux.HandleFunc(deleteUsersPath, runtimeState.deleteUsersHandler)
 
 	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
 	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)
