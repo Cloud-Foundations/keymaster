@@ -224,10 +224,10 @@ const usersHTML = `
     </ul>
     <br>
     <h3>Manage Users </h3>
-    <form enctype="application/x-www-form-urlencoded" action="/admin/adduser" method="post">
+    <form enctype="application/x-www-form-urlencoded" action="/admin/addUser" method="post">
        <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18  autocomplete="off"></p>
        <p><input type="submit" value="Add User" /> </p>
-       <p><input type="submit" value="Delete User" formaction="/admin/deleteuser" /> </p>
+       <p><input type="submit" value="Delete User" formaction="/admin/deleteUser" /> </p>
     </form>
 
     </div>

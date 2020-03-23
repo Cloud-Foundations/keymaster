@@ -1507,8 +1507,8 @@ func main() {
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
 	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
-	serviceMux.HandleFunc(addUsersPath, runtimeState.addUsersHandler)
-	serviceMux.HandleFunc(deleteUsersPath, runtimeState.deleteUsersHandler)
+	serviceMux.HandleFunc(addUserPath, runtimeState.addUserHandler)
+	serviceMux.HandleFunc(deleteUserPath, runtimeState.deleteUserHandler)
 
 	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
 	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)

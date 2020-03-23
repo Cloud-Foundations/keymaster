@@ -9,11 +9,52 @@ import (
 )
 
 const usersPath = "/users/"
-const addUsersPath = "/admin/adduser"
-const deleteUsersPath = "/admin/deleteuser"
+const addUserPath = "/admin/addUser"
+const deleteUserPath = "/admin/deleteUser"
 
-func (state *RuntimeState) usersHandler(
-	w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) checkAdminAndGetUsername(w http.ResponseWriter,
+	r *http.Request) string {
+	if state.sendFailureToClientIfNonAdmin(w, r) {
+		return ""
+	}
+	if r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return ""
+	}
+	err := r.ParseForm()
+	if err != nil {
+		logger.Printf("error parsing err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return ""
+	}
+	formUsername, ok := r.Form["username"]
+	if !ok {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Required Parameters missing")
+		return ""
+	}
+	if len(formUsername) != 1 {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Single value response required")
+		return ""
+	}
+	username := formUsername[0]
+	matched, err := regexp.Match(`^[A-Za-z0-9-_.]+$`, []byte(username))
+	if err != nil {
+		logger.Printf("error parsing err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return ""
+	}
+	if !matched {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid Username found")
+		return ""
+	}
+	return username
+}
+
+func (state *RuntimeState) usersHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -23,22 +64,17 @@ func (state *RuntimeState) usersHandler(
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
 	if !state.IsAdminUser(authUser) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
-
 	users, _, err := state.GetUsers()
 	if err != nil {
 		logger.Printf("Getting users error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
-
 	}
-
 	JSSources := []string{"/static/jquery-3.4.1.min.js"}
-
 	displayData := usersPageTemplateData{
 		AuthUsername: authUser,
 		Title:        "Keymaster Users",
@@ -52,8 +88,8 @@ func (state *RuntimeState) usersHandler(
 	}
 }
 
-func (state *RuntimeState) sendFailureToClientIfNonAdmin(
-	w http.ResponseWriter, r *http.Request) bool {
+func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
+	r *http.Request) bool {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return true
 	}
@@ -71,74 +107,38 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(
 	return false
 }
 
-func (state *RuntimeState) addUsersHandler(
-	w http.ResponseWriter, r *http.Request) {
-	if state.sendFailureToClientIfNonAdmin(w, r) {
+func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
+	r *http.Request) {
+	username := state.checkAdminAndGetUsername(w, r)
+	if username == "" {
 		return
 	}
-	//TODO: check method, must be POST
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-
-	err := r.ParseForm()
+	// Check if username already exists.
+	profile, existing, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
 		logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	usersToAdd, ok := r.Form["username"]
-	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Required Parameters missing")
+	if existing {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"User exists in DB")
 		return
 	}
-	//It is a good idea to match?
-	for _, username := range usersToAdd {
-		matched, err := regexp.Match(`^[A-Za-z0-9-_.]+$`, []byte(username))
-		if err != nil {
-			logger.Printf("error parsing err=%s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if !matched {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Usernames found")
-			return
-		}
+	if fromCache {
+		state.writeFailureResponse(w, r, http.StatusServiceUnavailable,
+			"Working in db disconnected mode, try again later")
+		return
 	}
-	var newProfiles map[string]*userProfile
-	newProfiles = make(map[string]*userProfile)
-	//check if usernames already exist
-	for _, username := range usersToAdd {
-		profile, existing, fromCache, err := state.LoadUserProfile(username)
-		if err != nil {
-			logger.Printf("error parsing err=%s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if existing {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "User exist in DB")
-			return
-		}
-		if fromCache {
-			state.writeFailureResponse(w, r, http.StatusServiceUnavailable, "Working in db disconnected mode, try again later")
-			return
-		}
-		newProfiles[username] = profile
+	if err := state.SaveUserProfile(username, profile); err != nil {
+		logger.Printf("error Savinf Profile  err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
 	}
-	for username, userProfile := range newProfiles {
-		err := state.SaveUserProfile(username, userProfile)
-		if err != nil {
-			logger.Printf("error Savinf Profile  err=%s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-	}
-	//if html then redirect to users page, else return jsonOK
+	// If html then redirect to users page, else return json OK.
 	preferredAcceptType := getPreferredAcceptType(r)
 	switch preferredAcceptType {
 	case "text/html":
-
 		http.Redirect(w, r, usersPath, http.StatusFound)
 	default:
 		w.WriteHeader(200)
@@ -146,35 +146,16 @@ func (state *RuntimeState) addUsersHandler(
 	}
 }
 
-func (state *RuntimeState) deleteUsersHandler(
+func (state *RuntimeState) deleteUserHandler(
 	w http.ResponseWriter, r *http.Request) {
-	if state.sendFailureToClientIfNonAdmin(w, r) {
+	username := state.checkAdminAndGetUsername(w, r)
+	if username == "" {
 		return
 	}
-	//TODO: check method, must be POST
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-
-	err := r.ParseForm()
-	if err != nil {
+	if err := state.DeleteUserProfile(username); err != nil {
 		logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
-	}
-	usersToDelete, ok := r.Form["username"]
-	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Required Parameters missing")
-		return
-	}
-	for _, username := range usersToDelete {
-		err = state.DeleteUserProfile(username)
-		if err != nil {
-			logger.Printf("error parsing err=%s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
 	}
 	preferredAcceptType := getPreferredAcceptType(r)
 	switch preferredAcceptType {
