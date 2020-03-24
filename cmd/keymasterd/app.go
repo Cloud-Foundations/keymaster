@@ -15,6 +15,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	stdlog "log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -484,7 +485,18 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Req
 	return nil
 }
 
-func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, message string) {
+func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
+	r *http.Request, code int, message string) {
+	// Do not do any magic if the request is not on the service port. This
+	// prevents login redirects on the admin port.
+	_, httpPort, err := net.SplitHostPort(state.Config.Base.HttpAddress)
+	if err == nil {
+		_, reqPort, err := net.SplitHostPort(r.Host)
+		if err == nil && reqPort != httpPort {
+			http.Error(w, message, code)
+			return
+		}
+	}
 	returnAcceptType := getPreferredAcceptType(r)
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
@@ -1563,7 +1575,7 @@ func main() {
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
-		runtimeState.IsAdminUser)
+		runtimeState)
 	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{

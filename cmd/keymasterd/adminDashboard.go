@@ -45,6 +45,8 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	}
 	if dashboard.publicLogs {
 		dashboard.htmlWriter.WriteHtml(writer)
+	} else {
+		fmt.Fprintln(writer, "<a href=\"logs\">Logs:</a><br>")
 	}
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")

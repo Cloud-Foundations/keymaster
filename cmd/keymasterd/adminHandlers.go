@@ -14,7 +14,10 @@ const deleteUserPath = "/admin/deleteUser"
 
 func (state *RuntimeState) checkAdminAndGetUsername(w http.ResponseWriter,
 	r *http.Request) string {
-	if state.sendFailureToClientIfNonAdmin(w, r) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return ""
+	}
+	if state.sendFailureToClientIfNonAdmin(w, r) == "" {
 		return ""
 	}
 	if r.Method != "POST" {
@@ -58,16 +61,11 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
-	if err != nil {
-		logger.Debugf(1, "%v", err)
+	authUser := state.sendFailureToClientIfNonAdmin(w, r)
+	if authUser == "" {
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if !state.IsAdminUser(authUser) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		return
-	}
 	users, _, err := state.GetUsers()
 	if err != nil {
 		logger.Printf("Getting users error: %v", err)
@@ -88,23 +86,33 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	}
 }
 
+// Returns empty string if an error was sent, admin username if no error.
 func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
-	r *http.Request) bool {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return true
+	r *http.Request) string {
+	// First check if we have a verified client certificate proving the request
+	// came from an admin user.
+	if r.TLS != nil {
+		logger.Debugf(4, "request is TLS %+v", r.TLS)
+		if len(r.TLS.VerifiedChains) > 0 {
+			logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
+			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+			if clientName != "" && state.IsAdminUser(clientName) {
+				return clientName
+			}
+		}
 	}
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		return true
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, err.Error())
+		return ""
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if !state.IsAdminUser(authUser) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		return true
+	if state.IsAdminUser(authUser) {
+		return authUser
 	}
-	return false
+	state.writeFailureResponse(w, r, http.StatusUnauthorized, "Not admin user")
+	return ""
 }
 
 func (state *RuntimeState) addUserHandler(w http.ResponseWriter,

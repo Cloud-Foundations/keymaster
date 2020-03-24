@@ -8,51 +8,26 @@ import (
 type checkAdminUserFunc func(string) bool
 
 type logFilterType struct {
-	checkAdminUser checkAdminUserFunc
-	handler        http.Handler
-	publicLogs     bool
+	handler    http.Handler
+	publicLogs bool
+	state      *RuntimeState
 }
 
 func NewLogFilterHandler(handler http.Handler, disableFilter bool,
-	checkAdminUser checkAdminUserFunc) http.Handler {
+	state *RuntimeState) http.Handler {
 	return &logFilterType{
-		checkAdminUser: checkAdminUser,
-		handler:        handler,
-		publicLogs:     disableFilter,
+		handler:    handler,
+		publicLogs: disableFilter,
+		state:      state,
 	}
-}
-
-func getValidAdminRemoteUsername(w http.ResponseWriter, r *http.Request,
-	checkAdminUser checkAdminUserFunc) (string, error) {
-	if r.TLS != nil {
-		logger.Debugf(4, "request is TLS %+v", r.TLS)
-		if len(r.TLS.VerifiedChains) > 0 {
-			logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
-			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-			if clientName != "" && checkAdminUser(clientName) {
-				return clientName, nil
-			}
-		}
-	}
-	return "", nil
 }
 
 func (h *logFilterType) ServeHTTP(w http.ResponseWriter,
 	req *http.Request) {
-	if strings.HasPrefix(req.URL.Path, "/logs") {
-		if !h.publicLogs {
-			username, err := getValidAdminRemoteUsername(w, req,
-				h.checkAdminUser)
-			if err != nil {
-				http.Error(w, "Check auth Failed", http.StatusInternalServerError)
-				return
-			}
-			if username == "" {
-				http.Error(w, "Invalid/Unknown Authentication", http.StatusUnauthorized)
-				return
-			}
+	if strings.HasPrefix(req.URL.Path, "/logs") && !h.publicLogs {
+		if h.state.sendFailureToClientIfNonAdmin(w, req) == "" {
+			return
 		}
 	}
-
 	h.handler.ServeHTTP(w, req)
 }
