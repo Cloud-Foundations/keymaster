@@ -228,6 +228,7 @@ const usersHTML = `
        <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18  autocomplete="off"></p>
        <p><input type="submit" value="Add User" /> </p>
        <p><input type="submit" value="Delete User" formaction="/admin/deleteUser" /> </p>
+       <p><input type="submit" value="Generate BootstrapOTP" formaction="/admin/newboostrapOTP" /> </p>
     </form>
 
     </div>
@@ -459,6 +460,53 @@ const newTOTPHTML = `
             <input type="submit" value="Validate" />
             </p>
     </form>
+    </div>
+    {{template "footer" . }}
+    </div>
+  </body>
+</html>
+{{end}}
+`
+
+type newBootstrapOTPPPageTemplateData struct {
+	Title             string
+	AuthUsername      string
+	JSSources         []string
+	ErrorMessage      string
+	Username          string
+	BootstrapTOTValue string
+}
+
+const newBootstrapOTPPHTML = `
+{{define "newBoostrapOTPage"}}
+<!DOCTYPE html>
+<html style="height:100%; padding:0;border:0;margin:0">
+  <head>
+    <title>{{.Title}}</title>
+    {{if .JSSources -}}
+    {{- range .JSSources }}
+    <script type="text/javascript" src="{{.}}"></script>
+    {{- end}}
+    {{- end}}
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
+  </head>
+  <body>
+    <div style="min-height:100%;position:relative;">
+    {{template "header" .}}
+    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+
+    <h1>{{.Title}}</h1>
+
+    {{if .ErrorMessage}}
+    <p style="color:red;">{{.ErrorMessage}} </p>
+    {{end}}
+
+    <div>
+    <p> New bootstrap OTP value for {{.Username}} is "{{.BootstrapTOTValue}}"</p>
+    </div>
+
     </div>
     {{template "footer" . }}
     </div>
