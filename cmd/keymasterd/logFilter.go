@@ -22,41 +22,43 @@ func NewLogFilterHandler(handler http.Handler, disableFilter bool,
 	}
 }
 
-// This function should be a TODO with better detection of keymaster vs non-keymaster certs
-func getAdminPortValidAdminRemoteUsername(state *RuntimeState,
-	w http.ResponseWriter,
-	r *http.Request) (string, error) {
-	if r.TLS != nil {
-		logger.Debugf(4, "request is TLS %+v", r.TLS)
-		if len(r.TLS.VerifiedChains) > 0 {
-			logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
-			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-			if clientName != "" {
-				clientName = r.TLS.VerifiedChains[0][0].Subject.String()
-			}
-			if !state.IsAdminUser(clientName) {
-				return "", nil
-			}
-			return clientName, nil
-		}
+// Returns true if an error was sent, else false indicating admin user or admin
+// CA.
+func (state *RuntimeState) sendFailureToClientIfNotAdminUserOrCA(
+	w http.ResponseWriter, r *http.Request) bool {
+	if r.TLS == nil {
+		http.Error(w, "TLS mandatory", http.StatusUnauthorized)
+		return true
 	}
-	return "", nil
+	logger.Debugf(4, "request is TLS %+v", r.TLS)
+	if len(r.TLS.VerifiedChains) > 0 {
+		logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
+		username, err := state.getUsernameIfKeymasterSigned(
+			r.TLS.VerifiedChains)
+		if err != nil {
+			state.logger.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return true
+		}
+		if username != "" && !state.IsAdminUser(username) {
+			http.Error(w, "Not admin user", http.StatusUnauthorized)
+			return true
+		}
+		return false
+	}
+	_, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		return true
+	}
+	return false
 }
 
 func (h *logFilterType) ServeHTTP(w http.ResponseWriter,
 	req *http.Request) {
 	if strings.HasPrefix(req.URL.Path, "/logs") && !h.publicLogs {
-
-		username, err := getAdminPortValidAdminRemoteUsername(h.state, w, req)
-		if err != nil {
-			http.Error(w, "Check auth Failed", http.StatusInternalServerError)
+		if h.state.sendFailureToClientIfNotAdminUserOrCA(w, req) {
 			return
 		}
-		if username == "" {
-			http.Error(w, "Invalid/Unknown Authentication", http.StatusUnauthorized)
-			return
-		}
-
 	}
 	h.handler.ServeHTTP(w, req)
 }

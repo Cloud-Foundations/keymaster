@@ -764,30 +764,35 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	if authCookie == nil {
 
 		if (AuthTypePassword & requiredAuthType) == 0 {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			err := errors.New("Insufficeint Auth Level passwd")
+			err := errors.New("Insufficient Auth Level passwd")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized,
+				err.Error())
 			return "", AuthTypeNone, err
 		}
 
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized,
+				err.Error())
+			//toLoginOrBasicAuth(w, r)
 			return "", AuthTypeNone, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
 		user = state.reprocessUsername(user)
-		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
+		valid, err := checkUserPassword(user, pass, config,
+			state.passwordChecker, r)
 		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError,
+				err.Error())
 			return "", AuthTypeNone, err
 		}
 		if !valid {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized,
+				"Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
 			return "", AuthTypeNone, err
 		}
