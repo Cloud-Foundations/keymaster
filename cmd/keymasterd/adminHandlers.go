@@ -22,10 +22,11 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(
 	if state.sendFailureToClientIfLocked(w, r) {
 		return true, ""
 	}
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	// TODO: probably this should be just u2f and authkeymaterx509... but probably we want also
+	// to allow configurability for this. Leaving AuthTypeKeymasterX509 as optional for now
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return true, ""
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -76,6 +77,7 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 
 func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	r *http.Request) {
+	logger.Debugf(3, "Top of usersHandler r=%+v", r)
 	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
 	if failure || authUser == "" {
 		return

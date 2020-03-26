@@ -63,6 +63,7 @@ const (
 	AuthTypeTOTP
 	AuthTypeOkta2FA
 	AuthTypeBootstrapOTP
+	AuthTypeKeymasterX509
 )
 
 const AuthTypeAny = 0xFFFF
@@ -642,6 +643,66 @@ func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
 	return false, nil
 }
 
+func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, error) {
+	for _, chain := range VerifiedChains {
+		if len(chain) < 2 {
+			continue
+		}
+		username := chain[0].Subject.CommonName
+		//keymaster certs as signed directly
+		certSignerPKFingerprint, err := getKeyFingerprint(chain[1].PublicKey)
+		if err != nil {
+			return "", err
+		}
+		for _, key := range state.KeymasterPublicKeys {
+			fp, err := getKeyFingerprint(key)
+			if err != nil {
+				return "", err
+			}
+			if certSignerPKFingerprint == fp {
+				return username, nil
+			}
+		}
+
+	}
+	return "", nil
+}
+
+func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, error, error) {
+	clientName := VerifiedChains[0][0].Subject.CommonName
+	userCert := VerifiedChains[0][0]
+
+	validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
+	if err != nil {
+		logger.Printf("Error verifying up restricted cert: %s", err)
+		return "", nil, err
+	}
+	if !validIP {
+		logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
+		return "", fmt.Errorf("Bad incoming ip addres"), nil
+	}
+	// Check if there are group restrictions on
+	ok, err := state.isAutomationUser(clientName)
+	if err != nil {
+		return "", nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("Bad username  for ip restricted cert"), nil
+	}
+
+	revoked, ok, err := revoke.VerifyCertificateError(userCert)
+	if err != nil {
+		logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
+	}
+	// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
+	if revoked == true && ok {
+		logger.Printf("Cert is revoked")
+		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
+		return "", fmt.Errorf("revoked cert"), nil
+	}
+	return clientName, nil, nil
+}
+
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
 	// Check csrf
@@ -664,48 +725,31 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		}
 	}
 	// We first check for certs if this auth is allowed
-	if ((requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) &&
+	if ((requiredAuthType & (AuthTypeIPCertificate | AuthTypeKeymasterX509)) != 0) &&
 		r.TLS != nil {
-		logger.Debugf(3, "looks like authtype ip cert, r.tls=%+v", r.TLS)
+		logger.Debugf(3, "looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
-			logger.Debugf(3, "looks like authtype ip cert, has verifiedChains")
-			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-			userCert := r.TLS.VerifiedChains[0][0]
 
-			validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
-			if err != nil {
-				logger.Printf("Error verifying up restricted cert: %s", err)
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert: %s", err)
-			}
-			if !validIP {
-				logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
-			}
-			// Check if there are group restrictions on
-			ok, err := state.isAutomationUser(clientName)
-			if err != nil {
-				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
-			}
-			if !ok {
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad username  for ip restricted cert ")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: User %s is not a service account.", clientName)
+			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
+				tlsAuthUser, err := state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
+				if err == nil && tlsAuthUser != "" {
+					return tlsAuthUser, AuthTypeKeymasterX509, nil
+				}
 			}
 
-			revoked, ok, err := revoke.VerifyCertificateError(userCert)
-			if err != nil {
-				logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
-			}
-			// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
-			if revoked == true && ok {
-				logger.Printf("Cert is revoked")
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: IP cert is revoked")
-			}
-			return clientName, AuthTypeIPCertificate, nil
+			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
+				clientName, userErr, err := state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
+				if userErr != nil {
+					state.writeFailureResponse(w, r, http.StatusForbidden, fmt.Sprintf("%s", userErr))
+					return "", AuthTypeNone, userErr
+				}
+				if err != nil {
+					state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+					return "", AuthTypeNone, err
+				}
+				return clientName, AuthTypeIPCertificate, nil
 
+			}
 		}
 	}
 
