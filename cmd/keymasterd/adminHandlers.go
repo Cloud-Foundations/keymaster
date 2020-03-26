@@ -26,6 +26,9 @@ func (state *RuntimeState) checkAdminAndGetUsername(w http.ResponseWriter,
 	if state.sendFailureToClientIfNonAdmin(w, r) == "" {
 		return ""
 	}
+*/
+func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
+	r *http.Request) string {
 	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return ""
@@ -61,7 +64,6 @@ func (state *RuntimeState) checkAdminAndGetUsername(w http.ResponseWriter,
 	}
 	return username
 }
-*/
 
 func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	r *http.Request) {
@@ -109,6 +111,7 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
 			}
 		}
 */
+
 func (state *RuntimeState) sendFailureToClientIfNonAdmin(
 	w http.ResponseWriter, r *http.Request) (bool, string) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -117,15 +120,15 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, err.Error())
-		return false, ""
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return true, ""
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if state.IsAdminUser(authUser) {
-		return authUser
+	if !state.IsAdminUser(authUser) {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return true, ""
 	}
-	state.writeFailureResponse(w, r, http.StatusUnauthorized, "Not admin user")
-	return ""
+	return false, authUser
 }
 
 /*
@@ -146,14 +149,13 @@ func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
 }
 */
 
-func (state *RuntimeState) addUsersHandler(
+func (state *RuntimeState) addUserHandler(
 	w http.ResponseWriter, r *http.Request) {
 	if failure, _ := state.sendFailureToClientIfNonAdmin(w, r); failure {
 		return
 	}
-	//TODO: check method, must be POST
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+	username := state.ensurePostAndGetUsername(w, r)
+	if username == "" {
 		return
 	}
 	// Check if username already exists.
@@ -194,9 +196,8 @@ func (state *RuntimeState) deleteUserHandler(
 	if failure, _ := state.sendFailureToClientIfNonAdmin(w, r); failure {
 		return
 	}
-	//TODO: check method, must be POST
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+	username := state.ensurePostAndGetUsername(w, r)
+	if username == "" {
 		return
 	}
 	if err := state.DeleteUserProfile(username); err != nil {
@@ -221,28 +222,11 @@ func (state *RuntimeState) generateBootstrapOTP(
 		return
 	}
 	//TODO: check method, must be POST
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-	err := r.ParseForm()
-	if err != nil {
-		logger.Printf("error parsing err=%s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+	username := state.ensurePostAndGetUsername(w, r)
+	if username == "" {
 		return
 	}
 
-	//check username
-	inputUsers, ok := r.Form["username"]
-	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Required Parameters missing (username)")
-		return
-	}
-	if len(inputUsers) != 1 {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "TooManyUsers")
-		return
-	}
-	username := inputUsers[0]
 	profile, existing, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
 		logger.Printf("error parsing err=%s", err)
