@@ -178,7 +178,9 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	}
 	/// Load the oter built in templates
 	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
-		profileHTML, usersHTML, headerTemplateText, newTOTPHTML}
+		profileHTML, usersHTML, headerTemplateText, newTOTPHTML,
+		newBootstrapOTPPHTML,
+	}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
