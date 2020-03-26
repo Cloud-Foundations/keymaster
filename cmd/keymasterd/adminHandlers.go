@@ -17,16 +17,25 @@ const generateBoostrapOTPPath = "/admin/newboostrapOTP"
 
 const defaultBootstrapOTPDuration = 6 * time.Hour
 
-/*
-func (state *RuntimeState) checkAdminAndGetUsername(w http.ResponseWriter,
-	r *http.Request) string {
+func (state *RuntimeState) sendFailureToClientIfNonAdmin(
+	w http.ResponseWriter, r *http.Request) (bool, string) {
 	if state.sendFailureToClientIfLocked(w, r) {
-		return ""
+		return true, ""
 	}
-	if state.sendFailureToClientIfNonAdmin(w, r) == "" {
-		return ""
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return true, ""
 	}
-*/
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	if !state.IsAdminUser(authUser) {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return true, ""
+	}
+	return false, authUser
+}
+
 func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 	r *http.Request) string {
 	if r.Method != "POST" {
@@ -67,11 +76,8 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 
 func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	r *http.Request) {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
 	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
-	if authUser == "" {
+	if failure || authUser == "" {
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -94,60 +100,6 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 		return
 	}
 }
-
-/*
-// Returns empty string if an error was sent, admin username if no error.
-func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
-	r *http.Request) string {
-	// First check if we have a verified client certificate proving the request
-	// came from an admin user.
-	if r.TLS != nil {
-		logger.Debugf(4, "request is TLS %+v", r.TLS)
-		if len(r.TLS.VerifiedChains) > 0 {
-			logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
-			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-			if clientName != "" && state.IsAdminUser(clientName) {
-				return clientName
-			}
-		}
-*/
-
-func (state *RuntimeState) sendFailureToClientIfNonAdmin(
-	w http.ResponseWriter, r *http.Request) (bool, string) {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return true, ""
-	}
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
-	if err != nil {
-		logger.Debugf(1, "%v", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		return true, ""
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if !state.IsAdminUser(authUser) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		return true, ""
-	}
-	return false, authUser
-}
-
-/*
-func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
-	r *http.Request) {
-	username := state.checkAdminAndGetUsername(w, r)
-	if username == "" {
-=======
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		return true, ""
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if !state.IsAdminUser(authUser) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		return true, ""
-	}
-	return false, authUser
-}
-*/
 
 func (state *RuntimeState) addUserHandler(
 	w http.ResponseWriter, r *http.Request) {
