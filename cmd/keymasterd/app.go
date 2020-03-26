@@ -114,7 +114,7 @@ type totpAuthData struct {
 }
 
 type bootstrapOTPData struct {
-	CreatedAt time.Time
+	ExpiresAt time.Time
 	Value     string
 }
 
@@ -124,7 +124,7 @@ type userProfile struct {
 	PendingTOTPSecret          *[][]byte
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
-	bootstrapOTP               bootstrapOTPData
+	BootstrapOTP               bootstrapOTPData
 }
 
 type localUserData struct {
@@ -1509,6 +1509,8 @@ func main() {
 	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
 	serviceMux.HandleFunc(addUsersPath, runtimeState.addUsersHandler)
 	serviceMux.HandleFunc(deleteUsersPath, runtimeState.deleteUsersHandler)
+	//TODO: shoul enable only if bootraptop is enabled
+	serviceMux.HandleFunc(generateBoostrapOTPPath, runtimeState.generateBootstrapOTP)
 
 	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
 	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)
