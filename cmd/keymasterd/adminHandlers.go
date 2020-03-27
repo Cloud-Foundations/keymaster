@@ -16,6 +16,7 @@ const deleteUserPath = "/admin/deleteUser"
 const generateBoostrapOTPPath = "/admin/newBoostrapOTP"
 
 const defaultBootstrapOTPDuration = 6 * time.Hour
+const maximumBootstrapOTPDuration = 24 * time.Hour
 
 // Returns (true, "") if an error was sent, (false, adminUser) if an admin user.
 func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
@@ -186,8 +187,7 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 	profile, existing, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
 		state.logger.Printf("error parsing err=%s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError,
-			err.Error())
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !existing {
@@ -211,14 +211,14 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		}
 		duration, err = time.ParseDuration(formDuration[0])
 		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, err.Error())
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "")
 			return
 		}
 	}
 	if duration < time.Minute {
 		duration = time.Minute
 	}
-	if duration > time.Hour*24 {
+	if duration > maximumBootstrapOTPDuration {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Duration over 1 day not allowed")
 		return
@@ -227,16 +227,14 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 	bootstrapOTP.Value, err = genRandomString()
 	if err != nil {
 		state.logger.Printf("error generating randr=%s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError,
-			err.Error())
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	profile.BootstrapOTP = bootstrapOTP
 	err = state.SaveUserProfile(username, profile)
 	if err != nil {
 		state.logger.Printf("error saving profile randr=%s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError,
-			err.Error())
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	state.logger.Debugf(0,

@@ -30,9 +30,9 @@ func (state *RuntimeState) sendFailureToClientIfNotAdminUserOrCA(
 		http.Error(w, "TLS mandatory", http.StatusUnauthorized)
 		return true
 	}
-	logger.Debugf(4, "request is TLS %+v", r.TLS)
+	state.logger.Debugf(4, "request is TLS %+v", r.TLS)
 	if len(r.TLS.VerifiedChains) > 0 {
-		logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
+		state.logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
 		username, err := state.getUsernameIfKeymasterSigned(
 			r.TLS.VerifiedChains)
 		if err != nil {
