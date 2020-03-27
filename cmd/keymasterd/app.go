@@ -488,13 +488,16 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Req
 
 func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 	r *http.Request, code int, message string) {
+	publicErrorText := fmt.Sprintf("%d %s %s\n",
+		code, http.StatusText(code), message)
+	setSecurityHeaders(w)
 	// Do not do any magic if the request is not on the service port. This
 	// prevents login redirects on the admin port.
 	_, httpPort, err := net.SplitHostPort(state.Config.Base.HttpAddress)
 	if err == nil {
 		_, reqPort, err := net.SplitHostPort(r.Host)
 		if err == nil && reqPort != httpPort {
-			http.Error(w, message, code)
+			http.Error(w, publicErrorText, code)
 			return
 		}
 	}
@@ -503,10 +506,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	}
 	w.WriteHeader(code)
-	publicErrorText := fmt.Sprintf("%d %s %s\n", code, http.StatusText(code), message)
-	setSecurityHeaders(w)
 	switch code {
-
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
 		case "text/html":
@@ -548,7 +548,6 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			state.writeHTMLLoginPage(w, r, loginDestnation, message)
 			return
-
 		default:
 			w.Write([]byte(publicErrorText))
 		}
@@ -764,19 +763,17 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	if authCookie == nil {
 
 		if (AuthTypePassword & requiredAuthType) == 0 {
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Insufficient Auth Level passwd")
-			state.writeFailureResponse(w, r, http.StatusUnauthorized,
-				err.Error())
 			return "", AuthTypeNone, err
 		}
 
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
-			err := errors.New("check_Auth, Invalid or no auth header")
-			state.writeFailureResponse(w, r, http.StatusUnauthorized,
-				err.Error())
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
+			err := errors.New("check_Auth, Invalid or no auth header")
 			return "", AuthTypeNone, err
 		}
 		state.Mutex.Lock()
@@ -786,8 +783,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		valid, err := checkUserPassword(user, pass, config,
 			state.passwordChecker, r)
 		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError,
-				err.Error())
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
 		}
 		if !valid {

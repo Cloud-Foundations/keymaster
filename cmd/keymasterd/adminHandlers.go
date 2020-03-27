@@ -13,25 +13,30 @@ import (
 const usersPath = "/users/"
 const addUserPath = "/admin/addUser"
 const deleteUserPath = "/admin/deleteUser"
-const generateBoostrapOTPPath = "/admin/newboostrapOTP"
+const generateBoostrapOTPPath = "/admin/newBoostrapOTP"
 
 const defaultBootstrapOTPDuration = 6 * time.Hour
+const maximumBootstrapOTPDuration = 24 * time.Hour
 
-func (state *RuntimeState) sendFailureToClientIfNonAdmin(
-	w http.ResponseWriter, r *http.Request) (bool, string) {
+// Returns (true, "") if an error was sent, (false, adminUser) if an admin user.
+func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
+	r *http.Request) (bool, string) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return true, ""
 	}
-	// TODO: probably this should be just u2f and authkeymaterx509... but probably we want also
-	// to allow configurability for this. Leaving AuthTypeKeymasterX509 as optional for now
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
+	// TODO: probably this should be just u2f and authkeymaterx509... but
+	// probably we want also to allow configurability for this. Leaving
+	// AuthTypeKeymasterX509 as optional for now
+	authUser, _, err := state.checkAuth(w, r,
+		state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return true, ""
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	if !state.IsAdminUser(authUser) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"Not an admin user")
 		return true, ""
 	}
 	return false, authUser
@@ -103,8 +108,8 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	}
 }
 
-func (state *RuntimeState) addUserHandler(
-	w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if failure, _ := state.sendFailureToClientIfNonAdmin(w, r); failure {
 		return
 	}
@@ -140,13 +145,13 @@ func (state *RuntimeState) addUserHandler(
 	case "text/html":
 		http.Redirect(w, r, usersPath, http.StatusFound)
 	default:
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "OK\n")
 	}
 }
 
-func (state *RuntimeState) deleteUserHandler(
-	w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) deleteUserHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if failure, _ := state.sendFailureToClientIfNonAdmin(w, r); failure {
 		return
 	}
@@ -164,54 +169,77 @@ func (state *RuntimeState) deleteUserHandler(
 	case "text/html":
 		http.Redirect(w, r, usersPath, http.StatusFound)
 	default:
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "OK\n")
 	}
 }
 
-func (state *RuntimeState) generateBootstrapOTP(
-	w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
+	r *http.Request) {
 	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
 	if failure {
 		return
 	}
-	//TODO: check method, must be POST
 	username := state.ensurePostAndGetUsername(w, r)
 	if username == "" {
 		return
 	}
-
 	profile, existing, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
-		logger.Printf("error parsing err=%s", err)
+		state.logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !existing {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "User does not exist in DB")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"User does not exist in DB")
 		return
 	}
 	if fromCache {
-		state.writeFailureResponse(w, r, http.StatusServiceUnavailable, "Working in db disconnected mode, try again later")
+		state.writeFailureResponse(w, r, http.StatusServiceUnavailable,
+			"Working in db disconnected mode, try again later")
 		return
 	}
-	logger.Printf("profile=%v", profile)
-	bootstrapOTP := bootstrapOTPData{
-		ExpiresAt: time.Now().Add(defaultBootstrapOTPDuration),
+	state.logger.Debugf(1, "profile=%v", profile)
+	duration := defaultBootstrapOTPDuration
+	formDuration, ok := r.Form["duration"]
+	if ok {
+		if len(formDuration) != 1 {
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Single value duration required")
+			return
+		}
+		duration, err = time.ParseDuration(formDuration[0])
+		if err != nil {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "")
+			return
+		}
 	}
+	if duration < time.Minute {
+		duration = time.Minute
+	}
+	if duration > maximumBootstrapOTPDuration {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Duration over 1 day not allowed")
+		return
+	}
+	bootstrapOTP := bootstrapOTPData{ExpiresAt: time.Now().Add(duration)}
 	bootstrapOTP.Value, err = genRandomString()
 	if err != nil {
-		logger.Printf("error generating randr=%s", err)
+		state.logger.Printf("error generating randr=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	profile.BootstrapOTP = bootstrapOTP
 	err = state.SaveUserProfile(username, profile)
 	if err != nil {
-		logger.Printf("error saving profile randr=%s", err)
+		state.logger.Printf("error saving profile randr=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
+	state.logger.Debugf(0,
+		"%s: generated bootstrap OTP for: %s, duration: %s\n",
+		authUser, username, duration)
 	displayData := newBootstrapOTPPPageTemplateData{
 		Title:        "New Bootstrap OTP Value",
 		AuthUsername: authUser,
@@ -223,9 +251,10 @@ func (state *RuntimeState) generateBootstrapOTP(
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		err := state.htmlTemplate.ExecuteTemplate(w, "newBoostrapOTPage", displayData)
+		err := state.htmlTemplate.ExecuteTemplate(w, "newBoostrapOTPage",
+			displayData)
 		if err != nil {
-			logger.Printf("Failed to execute %v", err)
+			state.logger.Printf("Failed to execute %v", err)
 			http.Error(w, "error", http.StatusInternalServerError)
 			return
 		}

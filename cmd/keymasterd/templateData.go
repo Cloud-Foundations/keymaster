@@ -228,7 +228,7 @@ const usersHTML = `
        <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18  autocomplete="off"></p>
        <p><input type="submit" value="Add User" /> </p>
        <p><input type="submit" value="Delete User" formaction="/admin/deleteUser" /> </p>
-       <p><input type="submit" value="Generate BootstrapOTP" formaction="/admin/newboostrapOTP" /> </p>
+       <p><input type="submit" value="Generate BootstrapOTP" formaction="/admin/newBoostrapOTP" /> </p>
     </form>
 
     </div>
