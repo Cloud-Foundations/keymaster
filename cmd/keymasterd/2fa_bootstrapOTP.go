@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -16,25 +17,15 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	switch r.Method {
-	case "GET":
-		state.logger.Debugf(3, "Got client GET connection")
-		if err := r.ParseForm(); err != nil {
-			state.logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Error parsing form")
-			return
-		}
-	case "POST":
-		state.logger.Debugf(3, "Got client POST connection")
-		if err := r.ParseForm(); err != nil {
-			state.logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Error parsing form")
-			return
-		}
-	default:
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	state.logger.Debugf(3, "Got client POST connection")
+	if err := r.ParseForm(); err != nil {
+		state.logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
 		return
 	}
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
@@ -53,30 +44,31 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		}
 		inputOTP = val[0]
 	}
-	requiredOTP := state.userBootstrapOtp(authUser)
-	if requiredOTP == "" {
-		state.writeFailureResponse(w, r, http.StatusPreconditionFailed,
-			"No valid Bootstrap OTP saved")
-		return
-	}
-	if inputOTP != requiredOTP {
-		state.logger.Printf("Invalid Bootstrap OTP value for %s\n",
-			authUser)
-		state.logger.Debugf(0, "  input: \"%s\" required: \"%s\"\n",
-			inputOTP, requiredOTP)
-		state.writeFailureResponse(w, r, http.StatusUnauthorized,
-			"Invalid Bootstrap OTP")
-		return
-	}
 	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		state.logger.Printf("error parsing err=%s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.logger.Printf("error loading user profile err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"Failure loading user profile")
 		return
 	}
 	if fromCache {
 		state.writeFailureResponse(w, r, http.StatusServiceUnavailable,
 			"Working in DB disconnected mode, try again later")
+		return
+	}
+	requiredOTP := state.userBootstrapOtp(profile, fromCache)
+	if requiredOTP == "" {
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed,
+			"No valid Bootstrap OTP saved")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(inputOTP), []byte(requiredOTP)) != 1 {
+		state.logger.Debugf(0, "Invalid Bootstrap OTP value for %s\n",
+			authUser)
+		state.logger.Debugf(4, "  input: \"%s\" required: \"%s\"\n",
+			inputOTP, requiredOTP)
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"Invalid Bootstrap OTP")
 		return
 	}
 	profile.BootstrapOTP = bootstrapOTPData{}
@@ -111,14 +103,9 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	}
 }
 
-func (state *RuntimeState) userBootstrapOtp(username string) string {
-	profile, _, fromCache, err := state.LoadUserProfile(username)
-	state.logger.Debugf(1, "userBootstrapOtp: username: %s, fromCache: %v\n",
-		username, fromCache)
-	if err != nil {
-		return ""
-	}
-	if len(profile.U2fAuthData) > 0 {
+func (state *RuntimeState) userBootstrapOtp(profile *userProfile,
+	fromCache bool) string {
+	if len(profile.U2fAuthData) > 0 || len(profile.TOTPAuthData) > 0 {
 		return ""
 	}
 	if fromCache { // Since we will want to clear the OTP, require connection.

@@ -816,7 +816,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.logger.Debugf(1, "info.AuthType: %v, requiredAuthType: %v\n",
 			info.AuthType, requiredAuthType)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		err := errors.New("Insufficient Auth Level in critical section")
+		err := errors.New("Insufficient Auth Level in critical cookie")
 		return "", info.AuthType, err
 	}
 	return info.Username, info.AuthType, nil
@@ -1054,7 +1054,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			}
 		}
 	}
-	userHasBootstrapOTP := state.userBootstrapOtp(username) != ""
+	profile, _, fromCache, err := state.LoadUserProfile(username)
+	if err != nil {
+		state.logger.Printf("error loading user profile err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"cannot load user profile")
+		return
+	}
+	userHasBootstrapOTP := state.userBootstrapOtp(profile, fromCache) != ""
 	// Compute the cert prefs
 	var certBackends []string
 	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
@@ -1073,9 +1080,6 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 		}
 		if certPref == proto.AuthTypeOkta2FA && state.Config.Okta.Enable2FA {
 			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
-		}
-		if certPref == proto.AuthTypeBootstrapOTP && userHasBootstrapOTP {
-			certBackends = append(certBackends, proto.AuthTypeBootstrapOTP)
 		}
 	}
 	// logger.Printf("current backends=%+v", certBackends)
@@ -1613,6 +1617,10 @@ func main() {
 		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
 		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
 	}
+	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
+	//               The inline calls to getRequiredWebUIAuthLevel() should be
+	//               moved to the config section and replaced with a simple
+	//               bitfield test.
 	serviceMux.HandleFunc(bootstrapOtpAuthPath,
 		runtimeState.BootstrapOtpAuthHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
