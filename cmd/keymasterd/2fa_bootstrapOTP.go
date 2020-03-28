@@ -24,7 +24,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	state.logger.Debugf(3, "Got client POST connection")
 	if err := r.ParseForm(); err != nil {
 		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
 			"Error parsing form")
 		return
 	}
