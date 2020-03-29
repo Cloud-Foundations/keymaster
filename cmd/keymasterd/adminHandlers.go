@@ -200,6 +200,11 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 			"Working in db disconnected mode, try again later")
 		return
 	}
+	if len(profile.U2fAuthData) > 0 || len(profile.TOTPAuthData) > 0 {
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed,
+			"User has U2F tokens registered")
+		return
+	}
 	state.logger.Debugf(1, "profile=%v", profile)
 	duration := defaultBootstrapOTPDuration
 	formDuration, ok := r.Form["duration"]
