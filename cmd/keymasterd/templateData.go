@@ -485,7 +485,7 @@ type newBootstrapOTPPPageTemplateData struct {
 	JSSources         []string
 	ErrorMessage      string
 	Username          string
-	BootstrapTOTValue string
+	BootstrapOTPValue string
 }
 
 const newBootstrapOTPPHTML = `

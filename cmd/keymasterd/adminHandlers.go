@@ -251,7 +251,7 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		//JSSources         []string
 		//ErrorMessage      string
 		Username:          username,
-		BootstrapTOTValue: bootstrapOTP.Value,
+		BootstrapOTPValue: bootstrapOTP.Value,
 	}
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
