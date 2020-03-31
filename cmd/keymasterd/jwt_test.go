@@ -20,7 +20,6 @@ func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
 	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
-
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 
 }
@@ -31,9 +30,7 @@ func TestJWTAudtienceAuthToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-
 	issuer := state.idpGetIssuer()
-
 	goodToken, err := testONLYGenerateAuthJWT(state, "username", AuthTypeU2F, issuer, []string{issuer})
 	if err != nil {
 		t.Fatal(err)
