@@ -515,7 +515,7 @@ const newBootstrapOTPPHTML = `
     {{end}}
 
     <div>
-    <p> New bootstrap OTP value for {{.Username}} is "{{.BootstrapTOTValue}}"</p>
+    <p> New bootstrap OTP value for {{.Username}} is "{{.BootstrapOTPValue}}"</p>
     </div>
 
     </div>
