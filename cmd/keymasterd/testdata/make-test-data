@@ -1,0 +1,65 @@
+#! /bin/bash --posix
+#
+# make-test-data
+#
+# A simple script to generate test data (CAs and certs). This is normally run
+# just once, as the testfiles are expected to be checked into the repository.
+# This script is idempotent: it will not overwrite files.
+
+set -eu
+set -o pipefail
+
+make_key ()
+{
+    local -r name="$1"
+
+    if [ ! -r "$name.key" ]; then
+	openssl genpkey -algorithm RSA -out "$name.key" \
+		-pkeyopt rsa_keygen_bits:1024
+    fi
+}
+
+make_self_signed ()
+{
+    local -r name="$1"
+    local -r cn="$2"
+
+    make_key "$name"
+    if [ ! -r "$name.pem" ]; then
+	openssl req -new -key "$name.key" -days 356000 -extensions v3_ca \
+		-batch -out "$name.csr" -utf8 -subj "/CN=$cn"
+	openssl x509 -req -sha256 -days 356000 -in "$name.csr" \
+		-signkey "$name.key" -set_serial 1 -out "$name.pem"
+	rm "$name.csr"
+    fi
+}
+
+make_signed ()
+{
+    local -r name="$1"
+    local -r cn="$2"
+    local -r ca="$3"
+
+    make_key "$name"
+    if [ ! -r "$name.pem" ]; then
+	openssl req -new -key "$name.key" -days 356000 -extensions v3_ca \
+		-batch -out "$name.csr" -utf8 -subj "/CN=$cn"
+	openssl x509 -req -sha256 -days 356000 -in "$name.csr" \
+		-CAkey "$ca.key" -CA "$ca.pem" -set_serial 1 -out "$name.pem"
+	rm "$name.csr"
+    fi
+}
+
+# Make CAs.
+make_self_signed AdminCA TestAdminCA
+make_self_signed KeymasterCA TestKeymaster
+
+# Make administrator client cert.
+make_signed adminClient admin-client AdminCA
+
+# Make a fake user cert signed by the admin CA.
+make_signed alice-fake alice AdminCA
+
+# Make some legitimate user certs.
+make_signed alice alice KeymasterCA
+make_signed bob   bob   KeymasterCA

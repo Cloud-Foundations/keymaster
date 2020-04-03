@@ -710,50 +710,51 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	if r.Method != "GET" {
 		referer := r.Referer()
 		if len(referer) > 0 && len(r.Host) > 0 {
-			logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
+			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
 			if err != nil {
 				return "", AuthTypeNone, err
 			}
-			logger.Debugf(3, "refHost =%s, host=%s", refererURL.Host, r.Host)
+			state.logger.Debugf(3, "refHost =%s, host=%s",
+				refererURL.Host, r.Host)
 			if refererURL.Host != r.Host {
-				logger.Printf("CSRF detected.... rejecting with a 400")
+				state.logger.Printf("CSRF detected.... rejecting with a 400")
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 				err := errors.New("CSRF detected... rejecting")
 				return "", AuthTypeNone, err
-
 			}
 		}
 	}
 	// We first check for certs if this auth is allowed
 	if ((requiredAuthType & (AuthTypeIPCertificate | AuthTypeKeymasterX509)) != 0) &&
 		r.TLS != nil {
-		logger.Debugf(3, "looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
+		state.logger.Debugf(3,
+			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
-
 			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
-				tlsAuthUser, err := state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
+				tlsAuthUser, err :=
+					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 				if err == nil && tlsAuthUser != "" {
 					return tlsAuthUser, AuthTypeKeymasterX509, nil
 				}
 			}
-
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
-				clientName, userErr, err := state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
+				clientName, userErr, err :=
+					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
 				if userErr != nil {
-					state.writeFailureResponse(w, r, http.StatusForbidden, fmt.Sprintf("%s", userErr))
+					state.writeFailureResponse(w, r, http.StatusForbidden,
+						fmt.Sprintf("%s", userErr))
 					return "", AuthTypeNone, userErr
 				}
 				if err != nil {
-					state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+					state.writeFailureResponse(w, r,
+						http.StatusInternalServerError, "")
 					return "", AuthTypeNone, err
 				}
 				return clientName, AuthTypeIPCertificate, nil
-
 			}
 		}
 	}
-
 	// Next we check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -763,13 +764,11 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		authCookie = cookie
 	}
 	if authCookie == nil {
-
 		if (AuthTypePassword & requiredAuthType) == 0 {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Insufficient Auth Level passwd")
 			return "", AuthTypeNone, err
 		}
-
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
@@ -796,7 +795,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		}
 		return user, AuthTypePassword, nil
 	}
-
 	//Critical section
 	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 	if err != nil {
@@ -810,7 +808,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
 		return "", AuthTypeNone, err
-
 	}
 	if (info.AuthType & requiredAuthType) == 0 {
 		state.logger.Debugf(1, "info.AuthType: %v, requiredAuthType: %v\n",

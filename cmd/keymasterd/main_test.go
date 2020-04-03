@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
@@ -164,9 +165,9 @@ func setupPasswdFile() (f *os.File, err error) {
 	return tmpfile, nil
 }
 
-//
-func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
-	var state RuntimeState
+func setupValidRuntimeStateSigner(t *testing.T) (
+	*RuntimeState, *os.File, error) {
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -193,7 +194,7 @@ func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 }
 
 func TestSuccessFullSigningSSH(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +233,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 }
 
 func TestSuccessFullSigningX509(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +270,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 }
 
 func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +308,7 @@ func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
 }
 
 func TestFailFullSigningX509GroupsBadLDAPNoGroups(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +346,7 @@ func TestFailFullSigningX509GroupsBadLDAPNoGroups(t *testing.T) {
 }
 
 func TestFailCertgenDurationTooLong(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +408,7 @@ func TestFailCertgenDurationTooLong(t *testing.T) {
 }
 
 func TestFailSingingExpiredCookie(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +445,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 }
 
 func TestFailSinginUnexpectedCookie(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +487,7 @@ func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, ex
 }
 
 func TestPublicHandleLoginForm(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -551,7 +552,7 @@ func checkValidLoginResponse(resp *http.Response, state *RuntimeState, username 
 }
 
 func TestLoginAPIBasicAuth(t *testing.T) {
-	state, tmpdir, err := newTestingState()
+	state, tmpdir, err := newTestingState(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +606,7 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 }
 
 func TestLoginAPIFormAuth(t *testing.T) {
-	state, tmpdir, err := newTestingState()
+	state, tmpdir, err := newTestingState(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +688,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 }
 
 func TestProfileHandlerTemplate(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -732,7 +733,7 @@ func TestProfileHandlerTemplate(t *testing.T) {
 }
 
 func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -868,7 +869,7 @@ func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
 }
 
 func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {

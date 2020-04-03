@@ -157,7 +157,7 @@ func setupTestOtkaServer() {
 }
 
 func TestOkta2FAuthHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 }
 
 func TestOkta2FAPushStartAndWait(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
