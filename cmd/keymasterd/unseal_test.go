@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 )
 
 // symmtrically gpg encrypted with password "password"
@@ -45,7 +47,7 @@ WUGURkRA8g==
 -----END PGP MESSAGE-----`
 
 func TestInjectingSecret(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
 		t.Fatal(err)

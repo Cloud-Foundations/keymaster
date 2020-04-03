@@ -24,13 +24,13 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
 	if state.sendFailureToClientIfLocked(w, r) {
 		return true, ""
 	}
-	// TODO: probably this should be just u2f and authkeymaterx509... but
+	// TODO: probably this should be just u2f and AuthTypeKeymasterX509... but
 	// probably we want also to allow configurability for this. Leaving
 	// AuthTypeKeymasterX509 as optional for now
 	authUser, _, err := state.checkAuth(w, r,
 		state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
 	if err != nil {
-		logger.Debugf(1, "%v", err)
+		state.logger.Debugf(1, "%v", err)
 		return true, ""
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -50,7 +50,7 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 	}
 	err := r.ParseForm()
 	if err != nil {
-		logger.Printf("error parsing err=%s", err)
+		state.logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return ""
 	}
@@ -68,7 +68,7 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 	username := formUsername[0]
 	matched, err := regexp.Match(`^[A-Za-z0-9-_.]+$`, []byte(username))
 	if err != nil {
-		logger.Printf("error parsing err=%s", err)
+		state.logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return ""
 	}
@@ -82,7 +82,7 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 
 func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	r *http.Request) {
-	logger.Debugf(3, "Top of usersHandler r=%+v", r)
+	state.logger.Debugf(3, "Top of usersHandler r=%+v", r)
 	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
 	if failure || authUser == "" {
 		return
@@ -90,7 +90,7 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	users, _, err := state.GetUsers()
 	if err != nil {
-		logger.Printf("Getting users error: %v", err)
+		state.logger.Printf("Getting users error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -102,7 +102,7 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 		JSSources:    JSSources}
 	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
 	if err != nil {
-		logger.Printf("Failed to execute %v", err)
+		state.logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -120,7 +120,7 @@ func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
 	// Check if username already exists.
 	profile, existing, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
-		logger.Printf("error parsing err=%s", err)
+		state.logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -135,7 +135,7 @@ func (state *RuntimeState) addUserHandler(w http.ResponseWriter,
 		return
 	}
 	if err := state.SaveUserProfile(username, profile); err != nil {
-		logger.Printf("error Savinf Profile  err=%s", err)
+		state.logger.Printf("error Savinf Profile  err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -160,7 +160,7 @@ func (state *RuntimeState) deleteUserHandler(w http.ResponseWriter,
 		return
 	}
 	if err := state.DeleteUserProfile(username); err != nil {
-		logger.Printf("error parsing err=%s", err)
+		state.logger.Printf("error parsing err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
