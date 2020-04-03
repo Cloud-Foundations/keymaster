@@ -75,6 +75,7 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalu
 	//At this stage is now crypto verified, now is time to verify sane values
 	issuer := state.idpGetIssuer()
 	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "keymaster_auth" ||
+		len(inboundJWT.Audience) < 1 || inboundJWT.Audience[0] != issuer ||
 		inboundJWT.NotBefore > time.Now().Unix() {
 		err = errors.New("invalid JWT values")
 		return rvalue, err
@@ -104,6 +105,7 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 	}
 	issuer := state.idpGetIssuer()
 	if parsedJWT.Issuer != issuer || parsedJWT.TokenType != "keymaster_auth" ||
+		len(parsedJWT.Audience) < 1 || parsedJWT.Audience[0] != issuer ||
 		parsedJWT.NotBefore > time.Now().Unix() {
 		err = errors.New("invalid JWT values")
 		return "", err
@@ -143,6 +145,7 @@ func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToke
 	// Now is time to do semantic validation
 	issuer := state.idpGetIssuer()
 	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "storage_data" ||
+		len(inboundJWT.Audience) < 1 || inboundJWT.Audience[0] != issuer ||
 		inboundJWT.NotBefore > time.Now().Unix() {
 		err = errors.New("invalid JWT values")
 		return rvalue, err
