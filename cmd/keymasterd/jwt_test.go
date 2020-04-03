@@ -21,7 +21,6 @@ func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int
 	authToken.IssuedAt = authToken.NotBefore
 	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
-
 }
 
 func TestJWTAudtienceAuthToken(t *testing.T) {
