@@ -306,7 +306,15 @@ func setupCerts(
 	// private key only if we are unable to use the agent
 	err = sshagent.UpsertCertIntoAgent(sshCert, signer, FilePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
 	if err != nil {
-		logger.Printf("could not insert into agent natively")
+		// NOTE: Current Windows ssh (OpenSSH_for_Windows_7.7p1, LibreSSL 2.6.5)
+		// barfs on timeouts missing, so we rety without a timeout in case
+		// we are on windows OR we have an agent running on windows thar is forwarded
+		// to us.
+		err = sshagent.UpsertCertIntoAgent(sshCert, signer,
+			FilePrefix+"-"+userName, 0, logger)
+		if err != nil {
+			logger.Printf("could not insert into agent natively")
+		}
 	}
 
 	logger.Printf("Success")
