@@ -15,7 +15,7 @@ make_key ()
 
     if [ ! -r "$name.key" ]; then
 	openssl genpkey -algorithm RSA -out "$name.key" \
-		-pkeyopt rsa_keygen_bits:512
+		-pkeyopt rsa_keygen_bits:1024
     fi
 }
 
