@@ -25,7 +25,8 @@ const footerTemplateText = `
 <div class="footer">
 <hr>
 <center>
-Copright 2017-2019 Symantec Corporation.  {{template "footer_extra"}}
+Copright 2017-2019 Symantec Corporation; 2019-2020 Cloud-Foundations.org.
+{{template "footer_extra"}}
 </center>
 </div>
 {{end}}
