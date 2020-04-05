@@ -43,13 +43,13 @@ func (state *RuntimeState) expandStorageUrl() error {
 func initDB(state *RuntimeState) (err error) {
 	logger.Debugf(3, "Top of initDB")
 	//open/create cache DB first
-	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory, cachedDBFilename)
+	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory,
+		cachedDBFilename)
 	state.cacheDB, err = initFileDBSQLite(cacheDBFilename, state.cacheDB)
 	if err != nil {
 		logger.Printf("Failure on creation of cacheDB")
 		return err
 	}
-
 	logger.Debugf(3, "storage=%s", state.Config.ProfileStorage.StorageUrl)
 	storageURL := state.Config.ProfileStorage.StorageUrl
 	if storageURL == "" {
@@ -76,7 +76,6 @@ func initDB(state *RuntimeState) (err error) {
 		err := errors.New("Bad storage url string")
 		return err
 	}
-
 }
 
 func initDBPostgres(state *RuntimeState) (err error) {
@@ -100,14 +99,14 @@ func initDBPostgres(state *RuntimeState) (err error) {
 			return err
 		}
 	}
-
 	return nil
 }
 
 // This call initializes the database if it does not exist.
 func initDBSQlite(state *RuntimeState) (err error) {
 	state.dbType = "sqlite"
-	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
+	dbFilename := filepath.Join(state.Config.Base.DataDirectory,
+		profileDBFilename)
 	state.db, err = initFileDBSQLite(dbFilename, state.db)
 	return err
 }
@@ -132,8 +131,6 @@ func initializeSQLitetables(db *sql.DB) error {
 // This call initializes the database if it does not exist.
 // TODO: update  to perform auto-updates of the db.
 func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
-	//state.dbType = "sqlite"
-	//dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
 	if _, err := os.Stat(dbFilename); os.IsNotExist(err) {
 		//CREATE NEW DB
 		fileDB, err := sql.Open("sqlite3", dbFilename)
@@ -148,10 +145,8 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 		}
 		return fileDB, nil
 	}
-
 	// try open the DB
 	if currentDB == nil {
-
 		fileDB, err := sql.Open("sqlite3", dbFilename)
 		if err != nil {
 			return nil, err
@@ -179,7 +174,6 @@ func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 		cleanupDBData(state.cacheDB)
 		time.Sleep(time.Second * 300)
 	}
-
 }
 
 func cleanupDBData(db *sql.DB) error {
@@ -187,7 +181,9 @@ func cleanupDBData(db *sql.DB) error {
 		err := errors.New("nil database on cleanup")
 		return err
 	}
-	queryStr := fmt.Sprintf("DELETE from expiring_signed_user_data WHERE expiration_epoch < %d", time.Now().Unix())
+	queryStr := fmt.Sprintf(
+		"DELETE from expiring_signed_user_data WHERE expiration_epoch < %d",
+		time.Now().Unix())
 	rows, err := db.Query(queryStr)
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -197,7 +193,8 @@ func cleanupDBData(db *sql.DB) error {
 	return nil
 }
 
-func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error {
+func copyDBIntoSQLite(source, destination *sql.DB,
+	destinationType string) error {
 	if source == nil || destination == nil {
 		err := errors.New("nil databases")
 		return err
@@ -209,21 +206,21 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		return err
 	}
 	defer rows.Close()
-
-	queryStr := fmt.Sprintf("SELECT username, type, jws_data, expiration_epoch,update_epoch FROM expiring_signed_user_data WHERE expiration_epoch > %d", time.Now().Unix())
+	queryStr := fmt.Sprintf(
+		"SELECT username, type, jws_data, expiration_epoch,update_epoch FROM expiring_signed_user_data WHERE expiration_epoch > %d",
+		time.Now().Unix())
 	genericRows, err := source.Query(queryStr)
 	if err != nil {
 		logger.Printf("err='%s'", err)
 		return err
 	}
 	defer genericRows.Close()
-
 	tx, err := destination.Begin()
 	if err != nil {
 		logger.Printf("err='%s'", err)
 		return err
 	}
-
+	defer tx.Rollback()
 	deleteProfilesQueryStr := fmt.Sprintf("DELETE from user_profile ")
 	if rows, err := destination.Query(deleteProfilesQueryStr); err != nil {
 		logger.Printf("err='%s'", err)
@@ -231,7 +228,6 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 	} else {
 		rows.Close()
 	}
-
 	stmtText := saveUserProfileStmt[destinationType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
@@ -239,7 +235,6 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		return err
 	}
 	defer stmt.Close()
-
 	for rows.Next() {
 		var (
 			username     string
@@ -274,18 +269,19 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 			expirationEpoch int64
 			updateEpoch     int64
 		)
-		if err := genericRows.Scan(&username, &dataType, &jwsData, &expirationEpoch, &updateEpoch); err != nil {
+		if err := genericRows.Scan(&username, &dataType, &jwsData,
+			&expirationEpoch, &updateEpoch); err != nil {
 			logger.Printf("err='%s'", err)
 			return err
 		}
 		//username, type, jws_data, expiration_epoch, update_epoch
-		_, err = expiringUpsertStmt.Exec(username, dataType, jwsData, expirationEpoch, updateEpoch)
+		_, err = expiringUpsertStmt.Exec(username, dataType, jwsData,
+			expirationEpoch, updateEpoch)
 		if err != nil {
 			logger.Printf("err='%s'", err)
 			return err
 		}
 	}
-
 	err = tx.Commit()
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -331,7 +327,8 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		stmtText := getUsersStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing getUsers statement primary DB: %s", err)
+			logger.Printf("Error Preparing getUsers statement primary DB: %s",
+				err)
 			return
 		}
 		defer stmt.Close()
@@ -355,7 +352,8 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		stmtText := getUsersStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing getUsers statement cached DB: %s", err)
+			logger.Printf("Error Preparing getUsers statement cached DB: %s",
+				err)
 			return nil, false, err
 		}
 		defer stmt.Close()
@@ -387,31 +385,31 @@ type loadUserProfileData struct {
 // If there a valid user profile returns: profile, true nil
 // If there is NO user profile returns default_object, false, nil
 // Any other case: nil, false, error
-func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, fromCache bool, err error) {
+func (state *RuntimeState) LoadUserProfile(username string) (
+	profile *userProfile, ok bool, fromCache bool, err error) {
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
 	defaultProfile.TOTPAuthData = make(map[int64]*totpAuthData)
-
 	ch := make(chan loadUserProfileData, 1)
 	start := time.Now()
 	go func(username string) { //loads profile from DB
 		var profileMessage loadUserProfileData
-
 		stmtText := loadUserProfileStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing statement LoadUsers primary DB: %s", err)
+			logger.Printf("Error Preparing statement LoadUsers primary DB: %s",
+				err)
 			return
 		}
-
 		defer stmt.Close()
 		// if the remoteDBQueryTimeout == 0 this means we are actuallty trying
-		// to force the cached db. In single core systems, we need to ensure this
-		// goroutine yields to sthis sleep is necesary
+		// to force the cached db. In single core systems, we need to ensure
+		// this goroutine yields to sthis sleep is necesary
 		if state.remoteDBQueryTimeout == 0 {
 			time.Sleep(10 * time.Millisecond)
 		}
-		profileMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
+		profileMessage.Err = stmt.QueryRow(username).Scan(
+			&profileMessage.ProfileBytes)
 		ch <- profileMessage
 	}(username)
 	var profileBytes []byte
@@ -427,7 +425,6 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 				logger.Printf("Problem with db ='%s'", err)
 				return nil, false, fromCache, err
 			}
-
 		}
 		metricLogExternalServiceDuration("storage-read", time.Since(start))
 		profileBytes = dbMessage.ProfileBytes
@@ -438,10 +435,10 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		stmtText := loadUserProfileStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing statement LoadUsers cache DB: %s", err)
+			logger.Printf("Error Preparing statement LoadUsers cache DB: %s",
+				err)
 			return nil, false, false, err
 		}
-
 		defer stmt.Close()
 		err = stmt.QueryRow(username).Scan(&profileBytes)
 		if err != nil {
@@ -452,10 +449,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 				logger.Printf("Problem with db ='%s'", err)
 				return nil, false, true, err
 			}
-
 		}
 		logger.Printf("GOT data from db cache")
-
 	}
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
@@ -474,20 +469,20 @@ var saveUserProfileStmt = map[string]string{
 	"postgres": "insert into user_profile(username, profile_data) values ($1,$2) on CONFLICT(username) DO UPDATE set  profile_data = excluded.profile_data",
 }
 
-func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile) error {
+func (state *RuntimeState) SaveUserProfile(username string,
+	profile *userProfile) error {
 	var gobBuffer bytes.Buffer
-
 	encoder := gob.NewEncoder(&gobBuffer)
 	if err := encoder.Encode(profile); err != nil {
 		return err
 	}
-
 	start := time.Now()
 	//insert into DB
 	tx, err := state.db.Begin()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmtText := saveUserProfileStmt[state.dbType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
@@ -517,6 +512,7 @@ func (state *RuntimeState) DeleteUserProfile(username string) error {
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmtText := deleteUserProfileStmt[state.dbType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
@@ -531,7 +527,6 @@ func (state *RuntimeState) DeleteUserProfile(username string) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -541,12 +536,12 @@ var deleteSignedUserDataStmt = map[string]string{
 }
 
 func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
-
 	//insert into DB
 	tx, err := state.db.Begin()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmtText := deleteSignedUserDataStmt[state.dbType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
@@ -561,7 +556,6 @@ func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -575,31 +569,30 @@ var getSignedUserDataStmt = map[string]string{
 	"postgres": "select jws_data from expiring_signed_user_data where username = $1 and type = $2 and expiration_epoch > $3",
 }
 
-func (state *RuntimeState) GetSigned(username string, dataType int) (bool, string, error) {
+func (state *RuntimeState) GetSigned(username string,
+	dataType int) (bool, string, error) {
 	logger.Printf("top of GetSigned")
-
 	//var jwsData string
 	ch := make(chan getSignedData, 1)
 	//start := time.Now()
 	go func(username string, dataType int) { //loads profile from DB
 		var signedDataMessage getSignedData
-
 		stmtText := getSignedUserDataStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing statement GetSigned Primary DB: %s", err)
+			logger.Printf("Error Preparing statement GetSigned Primary DB: %s",
+				err)
 			return
 		}
 		defer stmt.Close()
 		if state.remoteDBQueryTimeout == 0 {
 			time.Sleep(10 * time.Millisecond)
 		}
-		signedDataMessage.Err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&signedDataMessage.JWSData)
+		signedDataMessage.Err = stmt.QueryRow(username, dataType,
+			time.Now().Unix()).Scan(&signedDataMessage.JWSData)
 		ch <- signedDataMessage
 	}(username, dataType)
-
 	var jwsData string
-
 	select {
 	case dbMessage := <-ch:
 		logger.Debugf(2, "got data from db. dbMessage=%+v", dbMessage)
@@ -615,20 +608,19 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 			}
 		}
 		jwsData = dbMessage.JWSData
-
 	case <-time.After(state.remoteDBQueryTimeout):
 		logger.Printf("GOT a timeout")
 		// load from cache
 		stmtText := getSignedUserDataStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Printf("Error Preparing statement GetSigned Cache DB: %s", err)
+			logger.Printf("Error Preparing statement GetSigned Cache DB: %s",
+				err)
 			return false, "", err
 		}
-
 		defer stmt.Close()
-		//err = stmt.QueryRow(username).Scan(&profileBytes)
-		err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&jwsData)
+		err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(
+			&jwsData)
 		if err != nil {
 			if err.Error() == "sql: no rows in result set" {
 				logger.Printf("err='%s'", err)
@@ -637,10 +629,8 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 				logger.Printf("Problem with db ='%s'", err)
 				return false, "", err
 			}
-
 		}
 		logger.Printf("GOT data from db cache")
-
 	}
 	logger.Printf("GOT some jwsdata data")
 	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jwsData)
@@ -652,7 +642,6 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 		logger.Debugf(2, "%s for %s", err, username)
 		return false, "", errors.New("inconsistent data coming from DB")
 	}
-
 	return true, storageJWT.Data, nil
 }
 
@@ -661,10 +650,12 @@ var saveSignedUserDataStmt = map[string]string{
 	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch, update_epoch) values ($1,$2,$3,$4, $5) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
 }
 
-func (state *RuntimeState) UpsertSigned(username string, dataType int, expirationEpoch int64, data string) error {
+func (state *RuntimeState) UpsertSigned(username string, dataType int,
+	expirationEpoch int64, data string) error {
 	logger.Debugf(2, "top of UpsertSigned")
 	//expirationEpoch := expiration.Unix()
-	stringData, err := state.genNewSerializedStorageStringDataJWT(username, dataType, data, expirationEpoch)
+	stringData, err := state.genNewSerializedStorageStringDataJWT(username,
+		dataType, data, expirationEpoch)
 	if err != nil {
 		return err
 	}
@@ -674,13 +665,15 @@ func (state *RuntimeState) UpsertSigned(username string, dataType int, expiratio
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	stmtText := saveSignedUserDataStmt[state.dbType]
 	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch, time.Now().Unix())
+	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch,
+		time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -689,6 +682,5 @@ func (state *RuntimeState) UpsertSigned(username string, dataType int, expiratio
 		return err
 	}
 	metricLogExternalServiceDuration("storage-save", time.Since(start))
-
 	return nil
 }
