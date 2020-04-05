@@ -225,10 +225,11 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 	}
 
 	deleteProfilesQueryStr := fmt.Sprintf("DELETE from user_profile ")
-	_, err = destination.Query(deleteProfilesQueryStr)
-	if err != nil {
+	if rows, err := destination.Query(deleteProfilesQueryStr); err != nil {
 		logger.Printf("err='%s'", err)
 		return err
+	} else {
+		rows.Close()
 	}
 
 	stmtText := saveUserProfileStmt[destinationType]
