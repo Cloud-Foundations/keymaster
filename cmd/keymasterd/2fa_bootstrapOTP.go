@@ -35,11 +35,16 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	var inputOTP string
-	if val, ok := r.Form["OTP"]; ok {
+	if val, ok := r.Form["OTP"]; !ok {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"No OTP value provided")
+		state.logger.Printf("Bootstrap OTP login without OTP value")
+		return
+	} else {
 		if len(val) > 1 {
 			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Just one OTP Value allowed")
-			state.logger.Printf("Login with multiple OTP Values")
+				"Just one OTP value allowed")
+			state.logger.Printf("Bootstrap OTP login with multiple OTP values")
 			return
 		}
 		inputOTP = val[0]
