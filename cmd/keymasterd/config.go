@@ -646,6 +646,7 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int,
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"Acme Co"},
+			CommonName:   config.HostIdentity,
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
@@ -768,6 +769,13 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string,
 		return err
 	}
 	// TODO: Add check that directory exists.
+	defaultHostIdentity := "keymaster.DOMAIN"
+	hostIdentity, err := getUserString(reader, "HostIdentity",
+		defaultHostIdentity)
+	if err != nil {
+		return err
+	}
+	config.Base.HostIdentity = strings.TrimSpace(hostIdentity)
 	defaultHttpAddress := ":443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress",
 		defaultHttpAddress)
