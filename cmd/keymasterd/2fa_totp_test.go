@@ -17,7 +17,7 @@ import (
 )
 
 func TestEncryptDecryptSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestEncryptDecryptSuccess(t *testing.T) {
 }
 
 func TestGenerateNewTOTPSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func setupTestStateWithTOTPSecret(t *testing.T, state *RuntimeState, cookieAuth 
 }
 
 func TestVerifyTOTPHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestVerifyTOTPHandlerSuccess(t *testing.T) {
 }
 
 func TestAuthTOTPHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestAuthTOTPHandlerSuccess(t *testing.T) {
 }
 
 func TestTOTPTokenManagerHandlerUpdateSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}

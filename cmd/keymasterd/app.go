@@ -15,6 +15,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	stdlog "log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,6 +62,8 @@ const (
 	AuthTypeIPCertificate
 	AuthTypeTOTP
 	AuthTypeOkta2FA
+	AuthTypeBootstrapOTP
+	AuthTypeKeymasterX509
 )
 
 const AuthTypeAny = 0xFFFF
@@ -112,12 +115,18 @@ type totpAuthData struct {
 	ValidatorAddr   string
 }
 
+type bootstrapOTPData struct {
+	ExpiresAt time.Time
+	Value     string
+}
+
 type userProfile struct {
 	U2fAuthData                map[int64]*u2fAuthData
 	RegistrationChallenge      *u2f.Challenge
 	PendingTOTPSecret          *[][]byte
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
+	BootstrapOTP               bootstrapOTPData
 }
 
 type localUserData struct {
@@ -428,12 +437,12 @@ func getClientType(r *http.Request) string {
 	}
 }
 
-func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string, tryShowU2f bool) error {
+func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
+	r *http.Request, loginDestination string, tryShowU2f bool,
+	showBootstrapOTP bool) error {
 	JSSources := []string{"/static/jquery-3.4.1.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
-
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
 	}
 	if state.Config.SymantecVIP.Enabled {
@@ -445,12 +454,14 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
+		ShowBootstrapOTP: showBootstrapOTP,
 		ShowVIP:          state.Config.SymantecVIP.Enabled,
 		ShowU2F:          showU2F,
 		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
 		ShowOktaOTP:      state.Config.Okta.Enable2FA,
 		LoginDestination: loginDestination}
-	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
+	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
+		displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -477,16 +488,27 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Req
 	return nil
 }
 
-func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, message string) {
+func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
+	r *http.Request, code int, message string) {
+	publicErrorText := fmt.Sprintf("%d %s %s\n",
+		code, http.StatusText(code), message)
+	setSecurityHeaders(w)
+	// Do not do any magic if the request is not on the service port. This
+	// prevents login redirects on the admin port.
+	_, httpPort, err := net.SplitHostPort(state.Config.Base.HttpAddress)
+	if err == nil {
+		_, reqPort, err := net.SplitHostPort(r.Host)
+		if err == nil && reqPort != httpPort {
+			http.Error(w, publicErrorText, code)
+			return
+		}
+	}
 	returnAcceptType := getPreferredAcceptType(r)
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	}
 	w.WriteHeader(code)
-	publicErrorText := fmt.Sprintf("%d %s %s\n", code, http.StatusText(code), message)
-	setSecurityHeaders(w)
 	switch code {
-
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
 		case "text/html":
@@ -523,12 +545,11 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation, true)
+				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
 				return
 			}
 			state.writeHTMLLoginPage(w, r, loginDestnation, message)
 			return
-
 		default:
 			w.Write([]byte(publicErrorText))
 		}
@@ -623,73 +644,117 @@ func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
 	return false, nil
 }
 
+func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, error) {
+	for _, chain := range VerifiedChains {
+		if len(chain) < 2 {
+			continue
+		}
+		username := chain[0].Subject.CommonName
+		//keymaster certs as signed directly
+		certSignerPKFingerprint, err := getKeyFingerprint(chain[1].PublicKey)
+		if err != nil {
+			return "", err
+		}
+		for _, key := range state.KeymasterPublicKeys {
+			fp, err := getKeyFingerprint(key)
+			if err != nil {
+				return "", err
+			}
+			if certSignerPKFingerprint == fp {
+				return username, nil
+			}
+		}
+
+	}
+	return "", nil
+}
+
+func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, error, error) {
+	clientName := VerifiedChains[0][0].Subject.CommonName
+	userCert := VerifiedChains[0][0]
+
+	validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
+	if err != nil {
+		logger.Printf("Error verifying up restricted cert: %s", err)
+		return "", nil, err
+	}
+	if !validIP {
+		logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
+		return "", fmt.Errorf("Bad incoming ip addres"), nil
+	}
+	// Check if there are group restrictions on
+	ok, err := state.isAutomationUser(clientName)
+	if err != nil {
+		return "", nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("Bad username  for ip restricted cert"), nil
+	}
+
+	revoked, ok, err := revoke.VerifyCertificateError(userCert)
+	if err != nil {
+		logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
+	}
+	// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
+	if revoked == true && ok {
+		logger.Printf("Cert is revoked")
+		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
+		return "", fmt.Errorf("revoked cert"), nil
+	}
+	return clientName, nil, nil
+}
+
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
 	// Check csrf
 	if r.Method != "GET" {
 		referer := r.Referer()
 		if len(referer) > 0 && len(r.Host) > 0 {
-			logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
+			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
 			if err != nil {
 				return "", AuthTypeNone, err
 			}
-			logger.Debugf(3, "refHost =%s, host=%s", refererURL.Host, r.Host)
+			state.logger.Debugf(3, "refHost =%s, host=%s",
+				refererURL.Host, r.Host)
 			if refererURL.Host != r.Host {
-				logger.Printf("CSRF detected.... rejecting with a 400")
+				state.logger.Printf("CSRF detected.... rejecting with a 400")
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 				err := errors.New("CSRF detected... rejecting")
 				return "", AuthTypeNone, err
-
 			}
 		}
 	}
 	// We first check for certs if this auth is allowed
-	if ((requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) &&
+	if ((requiredAuthType & (AuthTypeIPCertificate | AuthTypeKeymasterX509)) != 0) &&
 		r.TLS != nil {
-		logger.Debugf(3, "looks like authtype ip cert, r.tls=%+v", r.TLS)
+		state.logger.Debugf(3,
+			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
-			logger.Debugf(3, "looks like authtype ip cert, has verifiedChains")
-			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-			userCert := r.TLS.VerifiedChains[0][0]
-
-			validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
-			if err != nil {
-				logger.Printf("Error verifying up restricted cert: %s", err)
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert: %s", err)
+			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
+				tlsAuthUser, err :=
+					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
+				if err == nil && tlsAuthUser != "" {
+					return tlsAuthUser, AuthTypeKeymasterX509, nil
+				}
 			}
-			if !validIP {
-				logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
+			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
+				clientName, userErr, err :=
+					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
+				if userErr != nil {
+					state.writeFailureResponse(w, r, http.StatusForbidden,
+						fmt.Sprintf("%s", userErr))
+					return "", AuthTypeNone, userErr
+				}
+				if err != nil {
+					state.writeFailureResponse(w, r,
+						http.StatusInternalServerError, "")
+					return "", AuthTypeNone, err
+				}
+				return clientName, AuthTypeIPCertificate, nil
 			}
-			// Check if there are group restrictions on
-			ok, err := state.isAutomationUser(clientName)
-			if err != nil {
-				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
-			}
-			if !ok {
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad username  for ip restricted cert ")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: User %s is not a service account.", clientName)
-			}
-
-			revoked, ok, err := revoke.VerifyCertificateError(userCert)
-			if err != nil {
-				logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
-			}
-			// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
-			if revoked == true && ok {
-				logger.Printf("Cert is revoked")
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: IP cert is revoked")
-			}
-			return clientName, AuthTypeIPCertificate, nil
-
 		}
 	}
-
 	// Next we check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -699,13 +764,11 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		authCookie = cookie
 	}
 	if authCookie == nil {
-
 		if (AuthTypePassword & requiredAuthType) == 0 {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			err := errors.New("Insufficeint Auth Level passwd")
+			err := errors.New("Insufficient Auth Level passwd")
 			return "", AuthTypeNone, err
 		}
-
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
@@ -718,19 +781,20 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		config := state.Config
 		state.Mutex.Unlock()
 		user = state.reprocessUsername(user)
-		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
+		valid, err := checkUserPassword(user, pass, config,
+			state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
 		}
 		if !valid {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized,
+				"Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
 			return "", AuthTypeNone, err
 		}
 		return user, AuthTypePassword, nil
 	}
-
 	//Critical section
 	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 	if err != nil {
@@ -744,11 +808,12 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
 		return "", AuthTypeNone, err
-
 	}
 	if (info.AuthType & requiredAuthType) == 0 {
+		state.logger.Debugf(1, "info.AuthType: %v, requiredAuthType: %v\n",
+			info.AuthType, requiredAuthType)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		err := errors.New("Insufficeint Auth Level")
+		err := errors.New("Insufficient Auth Level in critical cookie")
 		return "", info.AuthType, err
 	}
 	return info.Username, info.AuthType, nil
@@ -766,7 +831,6 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		if webUIPref == proto.AuthTypeU2F {
 			AuthLevel |= AuthTypeU2F
 		}
-
 		if webUIPref == proto.AuthTypeSymantecVIP {
 			AuthLevel |= AuthTypeSymantecVIP
 		}
@@ -775,6 +839,9 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		}
 		if webUIPref == proto.AuthTypeOkta2FA {
 			AuthLevel |= AuthTypeOkta2FA
+		}
+		if webUIPref == proto.AuthTypeBootstrapOTP {
+			AuthLevel |= AuthTypeBootstrapOTP
 		}
 	}
 	return AuthLevel
@@ -885,11 +952,11 @@ func getLoginDestination(r *http.Request) string {
 
 //const loginPath = "/api/v0/login"
 
-func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) loginHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-
 	//Check for valid method here?
 	switch r.Method {
 	case "GET":
@@ -897,7 +964,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		err := r.ParseForm()
 		if err != nil {
 			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Error parsing form")
 			return
 		}
 	case "POST":
@@ -906,7 +974,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		err := r.ParseForm()
 		if err != nil {
 			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Error parsing form")
 			return
 		}
 		logger.Debugf(2, "req =%+v", r)
@@ -914,14 +983,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
-
 	//First headers and then check form
 	username, password, ok := r.BasicAuth()
 	if !ok {
 		//var username string
 		if val, ok := r.Form["username"]; ok {
 			if len(val) > 1 {
-				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one username allowed")
+				state.writeFailureResponse(w, r, http.StatusBadRequest,
+					"Just one username allowed")
 				logger.Printf("Login with multiple usernames")
 				return
 			}
@@ -930,49 +999,48 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		//var password string
 		if val, ok := r.Form["password"]; ok {
 			if len(val) > 1 {
-				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one password allowed")
+				state.writeFailureResponse(w, r, http.StatusBadRequest,
+					"Just one password allowed")
 				logger.Printf("Login with passwords")
 				return
 			}
 			password = val[0]
 		}
-
 		if len(username) < 1 || len(password) < 1 {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
 		}
 	}
 	username = state.reprocessUsername(username)
-	valid, err := checkUserPassword(username, password, state.Config, state.passwordChecker, r)
+	valid, err := checkUserPassword(username, password, state.Config,
+		state.passwordChecker, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !valid {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"Invalid Username/Password")
 		logger.Printf("Invalid login for %s", username)
-		//err := errors.New("Invalid Credentials")
 		return
 	}
-
 	// AUTHN has passed
 	logger.Debugf(1, "Valid passwd AUTH login for %s\n", username)
 	userHasU2FTokens, err := state.userHasU2FTokens(username)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
-
-	//
 	_, err = state.setNewAuthCookie(w, username, AuthTypePassword)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
 	eventNotifier.PublishAuthEvent(eventmon.AuthTypePassword, username)
-
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
 	if ok {
@@ -983,7 +1051,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
-
+	profile, _, fromCache, err := state.LoadUserProfile(username)
+	if err != nil {
+		state.logger.Printf("error loading user profile err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"cannot load user profile")
+		return
+	}
+	userHasBootstrapOTP := state.userBootstrapOtp(profile, fromCache) != ""
 	// Compute the cert prefs
 	var certBackends []string
 	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
@@ -993,7 +1068,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if certPref == proto.AuthTypeU2F && userHasU2FTokens {
 			certBackends = append(certBackends, proto.AuthTypeU2F)
 		}
-		if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
+		if certPref == proto.AuthTypeSymantecVIP &&
+			state.Config.SymantecVIP.Enabled {
 			certBackends = append(certBackends, proto.AuthTypeSymantecVIP)
 		}
 		if certPref == proto.AuthTypeTOTP && state.Config.Base.EnableLocalTOTP {
@@ -1007,7 +1083,6 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}
-
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success",
 		CertAuthBackend: certBackends}
@@ -1024,43 +1099,44 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 				// set VIP cookie
 				cookieValue, err := genRandomString()
 				if err == nil { //Beware inverted Logic
-
-					expiration := time.Now().Add(maxAgeSecondsVIPCookie * time.Second)
+					expiration := time.Now().Add(maxAgeSecondsVIPCookie *
+						time.Second)
 					vipPushCookie := http.Cookie{Name: vipTransactionCookieName,
 						Value: cookieValue, Expires: expiration,
 						Path: "/", HttpOnly: true, Secure: true}
 					http.SetCookie(w, &vipPushCookie)
 				}
 			}
-			state.writeHTML2FAAuthPage(w, r, loginDestination, userHasU2FTokens)
+			state.writeHTML2FAAuthPage(w, r, loginDestination, userHasU2FTokens,
+				userHasBootstrapOTP)
 		}
 	default:
 		// add vippush cookie if we are using VIP
 		usesVIP := false
 		for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
-			if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
+			if certPref == proto.AuthTypeSymantecVIP &&
+				state.Config.SymantecVIP.Enabled {
 				usesVIP = true
 			}
 		}
 		requiredWebAuth := state.getRequiredWebUIAuthLevel()
-		usesVIP = usesVIP || ((requiredWebAuth & AuthTypeSymantecVIP) == AuthTypeSymantecVIP)
+		usesVIP = usesVIP ||
+			((requiredWebAuth & AuthTypeSymantecVIP) == AuthTypeSymantecVIP)
 		if usesVIP {
 			cookieValue, err := genRandomString()
 			if err == nil { //Beware inverted Logic
-				expiration := time.Now().Add(maxAgeSecondsVIPCookie * time.Second)
+				expiration := time.Now().Add(maxAgeSecondsVIPCookie *
+					time.Second)
 				vipPushCookie := http.Cookie{Name: vipTransactionCookieName,
 					Value: cookieValue, Expires: expiration,
 					Path: "/", HttpOnly: true, Secure: true}
 				http.SetCookie(w, &vipPushCookie)
 			}
 		}
-
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
-		//fmt.Fprintf(w, "Success!")
 	}
 	return
-
 }
 
 ///
@@ -1143,43 +1219,6 @@ func (state *RuntimeState) IsAdminUser(user string) bool {
 
 func (state *RuntimeState) IsAdminUserAndU2F(user string, loginLevel int) bool {
 	return state.IsAdminUser(user) && ((loginLevel & AuthTypeU2F) != 0)
-}
-
-const usersPath = "/users/"
-
-func (state *RuntimeState) usersHandler(
-	w http.ResponseWriter, r *http.Request) {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
-	if err != nil {
-		logger.Debugf(1, "%v", err)
-		return
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
-	users, _, err := state.GetUsers()
-	if err != nil {
-		logger.Printf("Getting users error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-
-	}
-
-	JSSources := []string{"/static/jquery-3.4.1.min.js"}
-
-	displayData := usersPageTemplateData{
-		AuthUsername: authUser,
-		Title:        "Keymaster Users",
-		Users:        users,
-		JSSources:    JSSources}
-	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
-	if err != nil {
-		logger.Printf("Failed to execute %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
 }
 
 const profilePath = "/profile/"
@@ -1537,6 +1576,10 @@ func main() {
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
 	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
+	serviceMux.HandleFunc(addUserPath, runtimeState.addUserHandler)
+	serviceMux.HandleFunc(deleteUserPath, runtimeState.deleteUserHandler)
+	//TODO: should enable only if bootraptop is enabled
+	serviceMux.HandleFunc(generateBoostrapOTPPath, runtimeState.generateBootstrapOTP)
 
 	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
 	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)
@@ -1571,6 +1614,12 @@ func main() {
 		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
 		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
 	}
+	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
+	//               The inline calls to getRequiredWebUIAuthLevel() should be
+	//               moved to the config section and replaced with a simple
+	//               bitfield test.
+	serviceMux.HandleFunc(bootstrapOtpAuthPath,
+		runtimeState.BootstrapOtpAuthHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
@@ -1590,7 +1639,8 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
+	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
+		runtimeState)
 	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{
@@ -1623,7 +1673,14 @@ func main() {
 			logger.Fatalf("Cannot update password checker")
 		}
 	}
-
+	if runtimeState.ClientCAPool == nil {
+		runtimeState.ClientCAPool = x509.NewCertPool()
+	}
+	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
+	if err != nil {
+		panic(err)
+	}
+	runtimeState.ClientCAPool.AddCert(myCert)
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating

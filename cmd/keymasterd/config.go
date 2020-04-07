@@ -69,6 +69,7 @@ type baseConfig struct {
 	AutomationUsers              []string   `yaml:"automation_users"`
 	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
 	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
+	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
 }
 
 type GitDatabaseConfig struct {
@@ -177,7 +178,9 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	}
 	/// Load the oter built in templates
 	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
-		profileHTML, usersHTML, headerTemplateText, newTOTPHTML}
+		profileHTML, usersHTML, headerTemplateText, newTOTPHTML,
+		newBootstrapOTPPHTML,
+	}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
@@ -188,7 +191,8 @@ func (state *RuntimeState) loadTemplates() (err error) {
 }
 
 func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
-	logger.Debugf(3, "number of pk known=%d", len(state.KeymasterPublicKeys))
+	state.logger.Debugf(3, "number of pk known=%d",
+		len(state.KeymasterPublicKeys))
 	signerPKFingerprint, err := getKeyFingerprint(state.Signer.Public())
 	if err != nil {
 		return err
@@ -204,9 +208,11 @@ func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 		}
 	}
 	if !found {
-		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, state.Signer.Public())
+		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
+			state.Signer.Public())
 	}
-	logger.Debugf(3, "number of pk known=%d", len(state.KeymasterPublicKeys))
+	state.logger.Debugf(3, "number of pk known=%d",
+		len(state.KeymasterPublicKeys))
 	return nil
 }
 

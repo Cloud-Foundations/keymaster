@@ -45,6 +45,11 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	}
 	if dashboard.publicLogs {
 		dashboard.htmlWriter.WriteHtml(writer)
+	} else {
+		// TODO(rgooch): checkAuth() should be refactored to only return status
+		// rather than sending errors. Then we have a clean way to dynamically
+		// hide this.
+		fmt.Fprintln(writer, "<a href=\"logs\">Logs:</a><br>")
 	}
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")

@@ -24,7 +24,7 @@ func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int
 }
 
 func TestJWTAudtienceAuthToken(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}

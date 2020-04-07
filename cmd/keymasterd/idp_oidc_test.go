@@ -37,7 +37,7 @@ func init() {
 }
 
 func TestIDPOpenIDCMetadataHandler(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestIDPOpenIDCMetadataHandler(t *testing.T) {
 }
 
 func TestIDPOpenIDCJWKSHandler(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 }
 
 func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -90,7 +90,7 @@ var testOauth2Config = oauth2.Config{
 }
 
 func TestOauth2DoRedirectoToProviderHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestOauth2DoRedirectoToProviderHandlerSuccess(t *testing.T) {
 }
 
 func TestOauth2RedirectPathHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}

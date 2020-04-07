@@ -82,7 +82,7 @@ func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, crypto.Si
 }
 
 func TestSuccessFullSigningX509IPCert(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 	req.TLS = connectionState
 
 	// Will fail due to bad username
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusUnauthorized)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusForbidden)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 
 	//now test with failure
 	req.RemoteAddr = "192.168.255.255:12345"
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusUnauthorized)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusForbidden)
 	if err != nil {
 		t.Fatal(err)
 	}

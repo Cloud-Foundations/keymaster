@@ -10,6 +10,7 @@ const (
 	AuthTypeIPCertificate = "IPCertificate"
 	AuthTypeTOTP          = "TOTP"
 	AuthTypeOkta2FA       = "Okta2FA"
+	AuthTypeBootstrapOTP  = "BootstrapOTP"
 )
 
 type LoginResponse struct {

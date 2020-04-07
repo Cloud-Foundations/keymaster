@@ -89,6 +89,7 @@ type secondFactorAuthTemplateData struct {
 	Title            string
 	AuthUsername     string
 	JSSources        []string
+	ShowBootstrapOTP bool
 	ShowVIP          bool
 	ShowU2F          bool
 	ShowTOTP         bool
@@ -117,6 +118,16 @@ const secondFactorAuthFormText = `
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor authentication </h2>
+	{{if .ShowBootstrapOTP}}
+	<div id="bootstrap_otp_login_destination" style="display: none;">{{.LoginDestination}}</div>
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/bootstrapOtpAuth" method="post">
+            <p>
+	    Enter Bootstrap OTP value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
+	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+            <input type="submit" value="Submit" />
+	    </p>
+        </form>
+	{{end}}
 	{{if .ShowVIP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
@@ -223,6 +234,15 @@ const usersHTML = `
        <li><a href="/profile/{{.}}">{{.}}</a></li>
     {{end}}
     </ul>
+    <br>
+    <h3>Manage Users </h3>
+    <form enctype="application/x-www-form-urlencoded" action="/admin/addUser" method="post">
+       <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18  autocomplete="off"></p>
+       <p><input type="submit" value="Add User" /> </p>
+       <p><input type="submit" value="Delete User" formaction="/admin/deleteUser" /> </p>
+       <p><input type="submit" value="Generate BootstrapOTP" formaction="/admin/newBoostrapOTP" /> </p>
+    </form>
+
     </div>
     {{template "footer" . }}
     </div>
@@ -452,6 +472,53 @@ const newTOTPHTML = `
             <input type="submit" value="Validate" />
             </p>
     </form>
+    </div>
+    {{template "footer" . }}
+    </div>
+  </body>
+</html>
+{{end}}
+`
+
+type newBootstrapOTPPPageTemplateData struct {
+	Title             string
+	AuthUsername      string
+	JSSources         []string
+	ErrorMessage      string
+	Username          string
+	BootstrapOTPValue string
+}
+
+const newBootstrapOTPPHTML = `
+{{define "newBoostrapOTPage"}}
+<!DOCTYPE html>
+<html style="height:100%; padding:0;border:0;margin:0">
+  <head>
+    <title>{{.Title}}</title>
+    {{if .JSSources -}}
+    {{- range .JSSources }}
+    <script type="text/javascript" src="{{.}}"></script>
+    {{- end}}
+    {{- end}}
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
+  </head>
+  <body>
+    <div style="min-height:100%;position:relative;">
+    {{template "header" .}}
+    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+
+    <h1>{{.Title}}</h1>
+
+    {{if .ErrorMessage}}
+    <p style="color:red;">{{.ErrorMessage}} </p>
+    {{end}}
+
+    <div>
+    <p> New bootstrap OTP value for {{.Username}} is "{{.BootstrapOTPValue}}"</p>
+    </div>
+
     </div>
     {{template "footer" . }}
     </div>

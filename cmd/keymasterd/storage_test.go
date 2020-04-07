@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 )
 
@@ -16,18 +17,18 @@ func init() {
 	eventNotifier = eventnotifier.New(logger)
 }
 
-func newTestingState() (*RuntimeState, string, error) {
+func newTestingState(t *testing.T) (*RuntimeState, string, error) {
 	tmpdir, err := ioutil.TempDir("", "keymasterd")
 	if err != nil {
 		return nil, "", err
 	}
-	state := &RuntimeState{}
+	state := &RuntimeState{logger: testlogger.New(t)}
 	state.Config.Base.DataDirectory = tmpdir
 	return state, tmpdir, nil
 }
 
 func TestDBCopy(t *testing.T) {
-	state, tmpdir, err := newTestingState()
+	state, tmpdir, err := newTestingState(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestDBCopy(t *testing.T) {
 }
 
 func TestFetchFromCache(t *testing.T) {
-	state, tmpdir, err := newTestingState()
+	state, tmpdir, err := newTestingState(t)
 	if err != nil {
 		t.Fatal(err)
 	}
