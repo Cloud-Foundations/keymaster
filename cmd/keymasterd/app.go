@@ -1323,6 +1323,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
 	}
+	if time.Until(profile.BootstrapOTP.ExpiresAt) > 0 {
+		if length := len(profile.BootstrapOTP.Value); length > 0 {
+			displayData.BootstrapOTP.ExpiresAt = profile.BootstrapOTP.ExpiresAt
+			displayData.BootstrapOTP.Value = profile.BootstrapOTP.Value[:2] +
+				"..." +
+				profile.BootstrapOTP.Value[length-2:]
+		}
+	}
 	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
