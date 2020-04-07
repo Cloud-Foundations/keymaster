@@ -267,8 +267,8 @@ type registeredTOTPTDeviceDisplayInfo struct {
 }
 
 type bootstrapOtpTemplateData struct {
-	ExpiresAt time.Time
-	Value     string
+	ExpiresAt   time.Time
+	Fingerprint [4]byte
 }
 
 type profilePageTemplateData struct {
@@ -276,7 +276,7 @@ type profilePageTemplateData struct {
 	AuthUsername         string
 	Username             string
 	JSSources            []string
-	BootstrapOTP         bootstrapOtpTemplateData
+	BootstrapOTP         *bootstrapOtpTemplateData
 	ShowU2F              bool
 	ShowTOTP             bool
 	ReadOnlyMsg          string
@@ -320,8 +320,8 @@ const profileHTML = `
     {{end}}
     </ul>
     <div id="bootstrap-otp">
-    {{if .BootstrapOTP.Value}}
-    Bootstrap OTP: <code>{{.BootstrapOTP.Value}}</code>
+    {{if .BootstrapOTP}}
+    Bootstrap OTP fingerprint: <code>{{printf "%x" .BootstrapOTP.Fingerprint}}</code>
     expires at: {{.BootstrapOTP.ExpiresAt}}<p>
     {{end}}
     <div id="u2f-tokens">
