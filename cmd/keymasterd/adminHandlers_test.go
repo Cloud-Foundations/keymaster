@@ -1,25 +1,19 @@
 package main
 
 import (
-	//	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	//	"fmt"
-	//	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	//	"net/url"
+	"net/url"
 	"os"
-	//	"strconv"
-	//	"strings"
 	"testing"
+	"time"
 
-	//	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	//	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
 func testCreateRuntimeStateWithBothCAs(t *testing.T) (
@@ -173,5 +167,137 @@ func TestAuthCertFakeAdminUser(t *testing.T) {
 	}
 	if username != "" {
 		t.Errorf("expected no username, got: %s", username)
+	}
+}
+
+func TestEnsurePostAndGetUsernameNotPost(t *testing.T) {
+	state, tmpdir, err := testCreateRuntimeStateWithBothCAs(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	recorder := httptest.NewRecorder()
+	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.TLS, err = testMakeConnectionState("testdata/bill.pem",
+		"testdata/KeymasterCA.pem")
+	username := state.ensurePostAndGetUsername(w, req)
+	resp := recorder.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("unexpected status code: %d, status: %s, body: %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+	if username != "" {
+		t.Errorf("expected no username, got: %s", username)
+	}
+}
+
+func TestEnsurePostAndGetUsernameNoUsername(t *testing.T) {
+	state, tmpdir, err := testCreateRuntimeStateWithBothCAs(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	recorder := httptest.NewRecorder()
+	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
+	req := httptest.NewRequest("POST", "/", nil)
+	req.TLS, err = testMakeConnectionState("testdata/bill.pem",
+		"testdata/KeymasterCA.pem")
+	username := state.ensurePostAndGetUsername(w, req)
+	resp := recorder.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("unexpected status code: %d, status: %s, body: %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+	if username != "" {
+		t.Errorf("expected no username, got: %s", username)
+	}
+}
+
+func TestEnsurePostAndGetUsernameBadUsername(t *testing.T) {
+	state, tmpdir, err := testCreateRuntimeStateWithBothCAs(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	recorder := httptest.NewRecorder()
+	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
+	req := httptest.NewRequest("POST", "/", nil)
+	req.TLS, err = testMakeConnectionState("testdata/bill.pem",
+		"testdata/KeymasterCA.pem")
+	req.Form = make(url.Values)
+	req.Form.Add("username", "user%name")
+	username := state.ensurePostAndGetUsername(w, req)
+	resp := recorder.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("unexpected status code: %d, status: %s, body: %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+	if username != "" {
+		t.Errorf("expected no username, got: %s", username)
+	}
+}
+
+func TestGenerateBootstrapOtpNotAdminUser(t *testing.T) {
+	state, tmpdir, err := testCreateRuntimeStateWithBothCAs(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	recorder := httptest.NewRecorder()
+	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
+	req := httptest.NewRequest("POST", generateBoostrapOTPPath, nil)
+	req.TLS, err = testMakeConnectionState("testdata/bill.pem",
+		"testdata/KeymasterCA.pem")
+	req.Form = make(url.Values)
+	req.Form.Add("username", "target")
+	state.generateBootstrapOTP(w, req)
+	resp := recorder.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("unexpected status code: %d, status: %s, body: %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+}
+
+func TestGenerateBootstrapOtpAdminUser(t *testing.T) {
+	state, tmpdir, err := testCreateRuntimeStateWithBothCAs(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	username := "target"
+	profile := &userProfile{}
+	if err := state.SaveUserProfile(username, profile); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
+	req := httptest.NewRequest("POST", generateBoostrapOTPPath, nil)
+	req.TLS, err = testMakeConnectionState("testdata/alice.pem",
+		"testdata/KeymasterCA.pem")
+	req.Form = make(url.Values)
+	req.Form.Add("username", username)
+	state.generateBootstrapOTP(w, req)
+	resp := recorder.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("unexpected status code: %d, status: %s, body: %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+	profile, _, _, err = state.LoadUserProfile(username)
+	if err != nil {
+		t.Error(err)
+	}
+	duration := time.Until(profile.BootstrapOTP.ExpiresAt)
+	if duration < defaultBootstrapOTPDuration-time.Minute ||
+		duration > defaultBootstrapOTPDuration+time.Minute {
+		t.Errorf("unexpected duration: %s", duration)
+	}
+	if profile.BootstrapOTP.Value == "" {
+		t.Error("got empty Bootstrap OTP value")
 	}
 }

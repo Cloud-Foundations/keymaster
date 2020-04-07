@@ -93,9 +93,9 @@ the contributor to ensure compliance with all laws, copyrights,
 patents and contracts.
 
 ## LICENSE
-Copyright 2016 Symantec Corporation.
+Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019 cloud-foundations.org
+Copyright 2019-2020 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
