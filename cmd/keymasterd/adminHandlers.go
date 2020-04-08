@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -228,12 +229,16 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 			"Duration over 1 day not allowed")
 		return
 	}
-	bootstrapOTP := bootstrapOTPData{ExpiresAt: time.Now().Add(duration)}
-	bootstrapOTP.Value, err = genRandomString()
+	bootstrapOtpValue, err := genRandomString()
 	if err != nil {
 		state.logger.Printf("error generating randr=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
+	}
+	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
+	bootstrapOTP := bootstrapOTPData{
+		ExpiresAt:  time.Now().Add(duration),
+		Sha512Hash: bootstrapOtpHash[:],
 	}
 	profile.BootstrapOTP = bootstrapOTP
 	err = state.SaveUserProfile(username, profile)
@@ -243,15 +248,15 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		return
 	}
 	state.logger.Debugf(0,
-		"%s: generated bootstrap OTP for: %s, duration: %s\n",
-		authUser, username, duration)
+		"%s: generated bootstrap OTP for: %s, duration: %s, hash: %v\n",
+		authUser, username, duration, bootstrapOtpHash)
 	displayData := newBootstrapOTPPPageTemplateData{
 		Title:        "New Bootstrap OTP Value",
 		AuthUsername: authUser,
 		//JSSources         []string
 		//ErrorMessage      string
 		Username:          username,
-		BootstrapOTPValue: bootstrapOTP.Value,
+		BootstrapOTPValue: bootstrapOtpValue,
 	}
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {

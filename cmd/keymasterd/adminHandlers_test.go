@@ -297,7 +297,7 @@ func TestGenerateBootstrapOtpAdminUser(t *testing.T) {
 		duration > defaultBootstrapOTPDuration+time.Minute {
 		t.Errorf("unexpected duration: %s", duration)
 	}
-	if profile.BootstrapOTP.Value == "" {
-		t.Error("got empty Bootstrap OTP value")
+	if len(profile.BootstrapOTP.Sha512Hash) < 1 {
+		t.Error("got empty Bootstrap OTP hash")
 	}
 }

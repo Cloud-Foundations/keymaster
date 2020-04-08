@@ -116,8 +116,8 @@ type totpAuthData struct {
 }
 
 type bootstrapOTPData struct {
-	ExpiresAt time.Time
-	Value     string
+	ExpiresAt  time.Time
+	Sha512Hash []byte
 }
 
 type userProfile struct {
@@ -932,7 +932,7 @@ func genRandomString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(rb), nil
+	return base64.RawURLEncoding.EncodeToString(rb), nil
 }
 
 // We need to ensure that all login destinations are relative paths
@@ -1058,7 +1058,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			"cannot load user profile")
 		return
 	}
-	userHasBootstrapOTP := state.userBootstrapOtp(profile, fromCache) != ""
+	userHasBootstrapOTP := len(state.userBootstrapOtpHash(profile,
+		fromCache)) > 0
 	// Compute the cert prefs
 	var certBackends []string
 	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
@@ -1322,6 +1323,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
+	}
+	if time.Until(profile.BootstrapOTP.ExpiresAt) > 0 &&
+		len(profile.BootstrapOTP.Sha512Hash) >= 4 {
+		displayData.BootstrapOTP = &bootstrapOtpTemplateData{
+			ExpiresAt: profile.BootstrapOTP.ExpiresAt,
+		}
+		copy(displayData.BootstrapOTP.Fingerprint[:],
+			profile.BootstrapOTP.Sha512Hash[:4])
 	}
 	logger.Debugf(1, "%v", displayData)
 
