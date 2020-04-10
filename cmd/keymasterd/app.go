@@ -12,7 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
+	htmltemplate "html/template"
 	"io/ioutil"
 	stdlog "log"
 	"net"
@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	texttemplate "text/template"
 	"time"
 
 	"golang.org/x/net/context"
@@ -33,6 +34,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	"github.com/Cloud-Foundations/golib/pkg/crypto/certmanager"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
@@ -174,10 +176,13 @@ type RuntimeState struct {
 	dbType               string
 	cacheDB              *sql.DB
 	remoteDBQueryTimeout time.Duration
-	htmlTemplate         *template.Template
+	htmlTemplate         *htmltemplate.Template
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
+	emailManager         configuredemail.EmailManager
+	emailAdminTemplate   *texttemplate.Template
+	emailUserTemplate    *texttemplate.Template
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex

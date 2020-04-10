@@ -500,6 +500,8 @@ type newBootstrapOTPPPageTemplateData struct {
 	ErrorMessage      string
 	Username          string
 	BootstrapOTPValue string
+	ExpiresAt         time.Time
+	Fingerprint       string
 }
 
 const newBootstrapOTPPHTML = `
@@ -529,7 +531,13 @@ const newBootstrapOTPPHTML = `
     {{end}}
 
     <div>
-    <p> New bootstrap OTP value for {{.Username}} is "{{.BootstrapOTPValue}}"</p>
+    <p>
+    New Bootstrap OTP for {{.Username}} registered, expires at {{.ExpiresAt}}<br>
+    {{if .BootstrapOTPValue}}
+    Bootstrap OTP value is "<code>{{.BootstrapOTPValue}}</code>"<br>
+    {{end}}
+    Bootstrap OTP fingerprint: <code>{{.Fingerprint}}</code>
+    </p>
     </div>
 
     </div>

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/metadata"
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/secretsmgr"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -25,11 +27,12 @@ func (state *RuntimeState) expandStorageUrl() error {
 	if config.AwsSecretId == "" {
 		return nil
 	}
-	metadataClient, err := getMetadataClient()
+	metadataClient, err := metadata.GetMetadataClient()
 	if err != nil {
 		return err
 	}
-	secrets, err := getAwsSecret(metadataClient, config.AwsSecretId)
+	secrets, err := secretsmgr.GetAwsSecret(metadataClient, config.AwsSecretId,
+		state.logger)
 	if err != nil {
 		return err
 	}

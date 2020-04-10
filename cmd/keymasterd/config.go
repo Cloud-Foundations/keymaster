@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
@@ -70,6 +71,11 @@ type baseConfig struct {
 	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
 	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
 	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
+}
+
+type emailConfig struct {
+	configuredemail.EmailConfig `yaml:",inline"`
+	Domain                      string
 }
 
 type GitDatabaseConfig struct {
@@ -146,6 +152,7 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	Email            emailConfig
 	Ldap             LdapConfig
 	Okta             OktaConfig
 	UserInfo         UserInfoSouces `yaml:"userinfo_sources"`
@@ -237,6 +244,7 @@ func loadVerifyConfigFile(configFilename string,
 		isAdminCache: admincache.New(5 * time.Minute),
 		logger:       logger,
 	}
+	runtimeState.initEmailDefaults()
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -368,6 +376,9 @@ func loadVerifyConfigFile(configFilename string,
 			logger.Println("No client CA: manual unsealing not possible")
 		}
 		runtimeState.beginAutoUnseal()
+	}
+	if err := runtimeState.setupEmail(); err != nil {
+		return nil, err
 	}
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {

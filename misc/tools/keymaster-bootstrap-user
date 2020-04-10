@@ -1,0 +1,54 @@
+#! /bin/bash --posix
+#
+# keymaster-bootstrap-user
+#
+# Usage: keymaster-bootstrap-user user...
+
+set -eu
+set -o pipefail
+
+# Constants.
+readonly certFile="$HOME/.ssl/keymaster.cert"
+readonly keyFile="$HOME/.ssl/keymaster.key"
+
+# Configuration defaults.
+duration=6h
+
+# Load (source) the configuration file. This must contain the following
+# variables:
+#   keymasterHostname
+# The following are optional variables:
+#   duration
+#
+eval "$(cat ~/.config/keymaster-bootstrap-user/flags.default | tr -d ' ')"
+
+add_user ()
+{
+    local -r user="$1"
+    curl --cert "$certFile" --key "$keyFile"       \
+	 -d "username=$user"                       \
+	 -s                                        \
+	"https://$keymasterHostname/admin/addUser"
+}
+
+process_user ()
+{
+    local -r user="$1"
+
+    add_user "$user" > /dev/null
+    out=$(curl	--cert "$certFile" --key "$keyFile"     \
+		-d "username=$user&duration=$duration"  \
+		-s                                      \
+		"https://$keymasterHostname/admin/newBoostrapOTP")
+    fingerprint=$(echo "$out" | tr ,}{ '\n' | tr -d '"' | tr : ' ' |\
+		  awk '/Fingerprint/ {print $2}')
+    if [ -z "$fingerprint" ]; then
+	echo "$out"
+	return 1
+    fi
+    echo "Bootstrap OTP fingerprint: $fingerprint"
+}
+
+for _user in "$@"; do
+    process_user "$_user"
+done
