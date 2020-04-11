@@ -46,7 +46,7 @@ process_user ()
 	echo "$out"
 	return 1
     fi
-    echo "Bootstrap OTP fingerprint: $fingerprint"
+    echo "Bootstrap OTP fingerprint for ${user}: $fingerprint"
 }
 
 for _user in "$@"; do
