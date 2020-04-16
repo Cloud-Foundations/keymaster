@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"sort"
 	"strings"
 	"text/template"
@@ -37,6 +38,8 @@ Please register your U2F security key after login.
 
 You have {{.Duration}} to complete this operation before this passcode expires.
 `
+
+const emailTimeout = time.Second * 15
 
 type bootstrapOtpEmailData struct {
 	AdminAddrs   string
@@ -115,8 +118,8 @@ func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	if err := state.emailAdminTemplate.Execute(buffer, emailData); err != nil {
 		return err
 	}
-	err := state.emailManager.SendMail(emailData.AdminAddr, adminAddrs,
-		buffer.Bytes())
+	err := state.sendMail(emailData.AdminAddr, adminAddrs, buffer.Bytes(),
+		emailTimeout)
 	if err != nil {
 		return err
 	}
@@ -124,10 +127,34 @@ func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	if err := state.emailUserTemplate.Execute(buffer, emailData); err != nil {
 		return err
 	}
-	err = state.emailManager.SendMail(emailData.AdminAddr,
-		[]string{emailData.UserAddr}, buffer.Bytes())
+	err = state.sendMail(emailData.AdminAddr, []string{emailData.UserAddr},
+		buffer.Bytes(), emailTimeout)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (state *RuntimeState) sendMail(from string, to []string, msg []byte,
+	timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	errorChan := make(chan error)
+	go func() {
+		err := state.emailManager.SendMail(from, to, msg)
+		select {
+		case errorChan <- err: // Status was consumed.
+		default: // Status consumer has gone. Log it.
+			if err != nil {
+				state.logger.Printf("late failure sending email: %s\n", err)
+			} else {
+				state.logger.Println("late success sending email")
+			}
+		}
+	}()
+	select {
+	case err := <-errorChan:
+		return err
+	case <-timer.C:
+		return errors.New("timed out sending email")
+	}
 }
