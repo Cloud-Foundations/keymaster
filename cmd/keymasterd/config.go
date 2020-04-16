@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"html/template"
+	htmltemplate "html/template"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
@@ -169,29 +170,49 @@ const (
 )
 
 func (state *RuntimeState) loadTemplates() (err error) {
-	//Load extra templates
-	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory, "customization_data", "templates")
+	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory,
+		"customization_data", "templates")
 	if _, err = os.Stat(templatesPath); err != nil {
 		return err
 	}
-	state.htmlTemplate = template.New("main")
-	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl", "login_extra.tmpl"}
-	for _, templateFilename := range templateFiles {
+	// Load HTML template files.
+	state.htmlTemplate = htmltemplate.New("main")
+	htmlTemplateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl",
+		"login_extra.tmpl"}
+	for _, templateFilename := range htmlTemplateFiles {
 		templatePath := filepath.Join(templatesPath, templateFilename)
-		_, err = state.htmlTemplate.ParseFiles(templatePath)
+		if _, err = state.htmlTemplate.ParseFiles(templatePath); err != nil {
+			return err
+		}
+	}
+	// Load the built-in HTML templates.
+	htmlTemplates := []string{footerTemplateText, loginFormText,
+		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
+		newTOTPHTML, newBootstrapOTPPHTML,
+	}
+	for _, templateString := range htmlTemplates {
+		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
 			return err
 		}
 	}
-	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
-		profileHTML, usersHTML, headerTemplateText, newTOTPHTML,
-		newBootstrapOTPPHTML,
-	}
-	for _, templateString := range extraTemplates {
-		_, err = state.htmlTemplate.Parse(templateString)
+	state.textTemplates = texttemplate.New("text")
+	// Load the built-in text templates.
+	textTemplates := []string{emailAdminTemplateData, emailUserTemplateData}
+	for _, templateString := range textTemplates {
+		_, err = state.textTemplates.Parse(templateString)
 		if err != nil {
 			return err
+		}
+	}
+	// Load text template files, which may override the built-in templates.
+	textTemplateFiles := []string{"bootstrapOtpEmail.tmpl"}
+	for _, templateFilename := range textTemplateFiles {
+		templatePath := filepath.Join(templatesPath, templateFilename)
+		if _, err = state.textTemplates.ParseFiles(templatePath); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
 		}
 	}
 	return nil

@@ -181,8 +181,7 @@ type RuntimeState struct {
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
 	emailManager         configuredemail.EmailManager
-	emailAdminTemplate   *texttemplate.Template
-	emailUserTemplate    *texttemplate.Template
+	textTemplates        *texttemplate.Template
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
