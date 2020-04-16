@@ -18,13 +18,12 @@ func TestGenKeyPairSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	defer os.Remove(tmpfile.Name()) // clean up
-
 	_, _, err = GenKeyPair(tmpfile.Name(), "test", testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer os.Remove(tmpfile.Name() + ".pub") // clean up
 	fileBytes, err := ioutil.ReadFile(tmpfile.Name())
 	if err != nil {
 		t.Fatal(err)
