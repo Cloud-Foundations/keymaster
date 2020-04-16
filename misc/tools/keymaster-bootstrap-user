@@ -42,11 +42,19 @@ process_user ()
 		"https://$keymasterHostname/admin/newBoostrapOTP")
     fingerprint=$(echo "$out" | tr ,}{ '\n' | tr -d '"' | tr : ' ' |\
 		  awk '/Fingerprint/ {print $2}')
-    if [ -z "$fingerprint" ]; then
-	echo "$out"
-	return 1
+    otp=$(echo "$out" | tr ,}{ '\n' | tr -d '"' | tr : ' ' |\
+	  awk '/BootstrapOTPValue/ {print $2}')
+    if [ -n "$fingerprint" ]; then
+	echo "Bootstrap OTP fingerprint for ${user}: $fingerprint"
+	return 0
     fi
-    echo "Bootstrap OTP fingerprint for ${user}: $fingerprint"
+    if [ -n "$otp" ]; then
+	echo "Bootstrap OTP for ${user}: $otp"
+	return 0
+    fi
+    echo "$out"
+    echo "No fingerprint or OTP for $user"
+    return 1
 }
 
 for _user in "$@"; do
