@@ -94,6 +94,8 @@ func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	for _, user := range state.Config.Base.AdminUsers {
 		adminUsers[user] = struct{}{}
 	}
+	// TODO(rgooch): refactor to use a UserInfo interface which is set up in
+	//               config.go. This will require changes in several files.
 	if state.gitDB != nil {
 		for _, adminGroup := range state.Config.Base.AdminGroups {
 			users, err := state.gitDB.GetUsersInGroup(adminGroup)
