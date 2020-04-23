@@ -6,8 +6,9 @@ base:
     aws_secret_id:          keymaster/x509
     challenge_type:         dns-01
     route53_hosted_zone_id: "ZoneID"
-  http_address: :443
-  admin_address: :6920
+  http_address:       :443
+  admin_address:      :6920
+  http_redirect_port: 80
   tls_cert_filename: /etc/keymaster/server.pem
   tls_key_filename:  /etc/keymaster/server.key
   ssh_ca_filename:   /etc/keymaster/masterKey.asc
@@ -29,6 +30,11 @@ base:
   automation_user_groups: []
   automation_users: []
   disable_username_normalization: false
+
+email:
+  aws_secret_id: email/company.com
+  domain:        company.com
+  smtp_server:   smtp.company.com
 
 okta:
   domain: "company"
