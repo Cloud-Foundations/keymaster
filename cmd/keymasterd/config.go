@@ -14,9 +14,11 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	texttemplate "text/template"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
+	dnslbcfg "github.com/Cloud-Foundations/golib/pkg/loadbalancing/dnslb/config"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
@@ -153,6 +156,7 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
 	Email            emailConfig
 	Ldap             LdapConfig
 	Okta             OktaConfig
@@ -448,6 +452,31 @@ func loadVerifyConfigFile(configFilename string,
 		return nil, err
 	}
 
+	if hasDNS, err := runtimeState.Config.DnsLoadBalancer.HasDNS(); err != nil {
+		return nil, err
+	} else if hasDNS {
+		runtimeState.Config.DnsLoadBalancer.DoTLS = true
+		if runtimeState.Config.DnsLoadBalancer.TcpPort < 1 {
+			_, portString, err :=
+				net.SplitHostPort(runtimeState.Config.Base.AdminAddress)
+			if err != nil {
+				return nil, err
+			}
+			port, err := strconv.ParseUint(portString, 10, 16)
+			if err != nil {
+				return nil, err
+			}
+			runtimeState.Config.DnsLoadBalancer.TcpPort = uint16(port)
+			if runtimeState.Config.DnsLoadBalancer.FQDN == "" {
+				runtimeState.Config.DnsLoadBalancer.FQDN =
+					runtimeState.Config.Base.HostIdentity
+			}
+		}
+		_, err := dnslbcfg.New(runtimeState.Config.DnsLoadBalancer, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
 	// hacky and is limited to only one authentication backend.
