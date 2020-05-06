@@ -35,7 +35,8 @@ Subject: Welcome to Keymaster
 Hi, {{.Username}}. Welcome to Keymaster. Please log in to:
 {{.HostIdentity}}
 
-Your one-time passcode (Bootstrap OTP) is:
+with your username and password. After this step you will be asked to enter
+your one-time passcode (Bootstrap OTP) which is:
 {{.OTP}}
 
 In case of debugging, your OTP fingerprint is: {{printf "%x" .Fingerprint}}
