@@ -451,31 +451,8 @@ func loadVerifyConfigFile(configFilename string,
 	if err != nil {
 		return nil, err
 	}
-
-	if hasDNS, err := runtimeState.Config.DnsLoadBalancer.HasDNS(); err != nil {
+	if err := runtimeState.setupHA(); err != nil {
 		return nil, err
-	} else if hasDNS {
-		runtimeState.Config.DnsLoadBalancer.DoTLS = true
-		if runtimeState.Config.DnsLoadBalancer.TcpPort < 1 {
-			_, portString, err :=
-				net.SplitHostPort(runtimeState.Config.Base.AdminAddress)
-			if err != nil {
-				return nil, err
-			}
-			port, err := strconv.ParseUint(portString, 10, 16)
-			if err != nil {
-				return nil, err
-			}
-			runtimeState.Config.DnsLoadBalancer.TcpPort = uint16(port)
-			if runtimeState.Config.DnsLoadBalancer.FQDN == "" {
-				runtimeState.Config.DnsLoadBalancer.FQDN =
-					runtimeState.Config.Base.HostIdentity
-			}
-		}
-		_, err := dnslbcfg.New(runtimeState.Config.DnsLoadBalancer, logger)
-		if err != nil {
-			return nil, err
-		}
 	}
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
@@ -567,6 +544,35 @@ func (state *RuntimeState) setupCertificateManager() error {
 		return err
 	}
 	state.certManager = cm
+	return nil
+}
+
+func (state *RuntimeState) setupHA() error {
+	if hasDnsLB, err := state.Config.DnsLoadBalancer.HasDNS(); err != nil {
+		return err
+	} else if hasDnsLB {
+		state.Config.DnsLoadBalancer.DoTLS = true
+		if state.Config.DnsLoadBalancer.TcpPort < 1 {
+			_, portString, err :=
+				net.SplitHostPort(state.Config.Base.AdminAddress)
+			if err != nil {
+				return err
+			}
+			port, err := strconv.ParseUint(portString, 10, 16)
+			if err != nil {
+				return err
+			}
+			state.Config.DnsLoadBalancer.TcpPort = uint16(port)
+			if state.Config.DnsLoadBalancer.FQDN == "" {
+				state.Config.DnsLoadBalancer.FQDN =
+					state.Config.Base.HostIdentity
+			}
+		}
+		_, err := dnslbcfg.New(state.Config.DnsLoadBalancer, logger)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
