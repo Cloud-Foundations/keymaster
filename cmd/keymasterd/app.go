@@ -37,6 +37,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	"github.com/Cloud-Foundations/golib/pkg/crypto/certmanager"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
@@ -1674,7 +1675,12 @@ func main() {
 		}
 
 	}()
-
+	if runtimeState.Config.Watchdog.CheckInterval > 0 {
+		_, err := watchdog.New(runtimeState.Config.Watchdog, logger)
+		if err != nil {
+			logger.Fatalln(err)
+		}
+	}
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
 		panic("got bad signer ready data")
