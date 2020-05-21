@@ -548,7 +548,7 @@ func (state *RuntimeState) setupCertificateManager() error {
 }
 
 func (state *RuntimeState) setupHA() error {
-	if hasDnsLB, err := state.Config.DnsLoadBalancer.HasDNS(); err != nil {
+	if hasDnsLB, err := state.Config.DnsLoadBalancer.Check(); err != nil {
 		return err
 	} else if hasDnsLB {
 		state.Config.DnsLoadBalancer.DoTLS = true
