@@ -28,6 +28,7 @@ import (
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
 	dnslbcfg "github.com/Cloud-Foundations/golib/pkg/loadbalancing/dnslb/config"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
@@ -157,6 +158,7 @@ type SymantecVIPConfig struct {
 type AppConfigFile struct {
 	Base             baseConfig
 	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
+	Watchdog         watchdog.Config `yaml:"watchdog"`
 	Email            emailConfig
 	Ldap             LdapConfig
 	Okta             OktaConfig
@@ -270,6 +272,7 @@ func loadVerifyConfigFile(configFilename string,
 		logger:       logger,
 	}
 	runtimeState.initEmailDefaults()
+	runtimeState.Config.Watchdog.SetDefaults()
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -548,21 +551,20 @@ func (state *RuntimeState) setupCertificateManager() error {
 }
 
 func (state *RuntimeState) setupHA() error {
+	_, portString, err := net.SplitHostPort(state.Config.Base.AdminAddress)
+	if err != nil {
+		return err
+	}
+	adminPort, err := strconv.ParseUint(portString, 10, 16)
+	if err != nil {
+		return err
+	}
 	if hasDnsLB, err := state.Config.DnsLoadBalancer.Check(); err != nil {
 		return err
 	} else if hasDnsLB {
 		state.Config.DnsLoadBalancer.DoTLS = true
 		if state.Config.DnsLoadBalancer.TcpPort < 1 {
-			_, portString, err :=
-				net.SplitHostPort(state.Config.Base.AdminAddress)
-			if err != nil {
-				return err
-			}
-			port, err := strconv.ParseUint(portString, 10, 16)
-			if err != nil {
-				return err
-			}
-			state.Config.DnsLoadBalancer.TcpPort = uint16(port)
+			state.Config.DnsLoadBalancer.TcpPort = uint16(adminPort)
 			if state.Config.DnsLoadBalancer.FQDN == "" {
 				state.Config.DnsLoadBalancer.FQDN =
 					state.Config.Base.HostIdentity
@@ -572,6 +574,11 @@ func (state *RuntimeState) setupHA() error {
 		if err != nil {
 			return err
 		}
+	}
+	state.Config.Watchdog.DoTLS = true
+	if state.Config.Watchdog.CheckInterval > 0 &&
+		state.Config.Watchdog.TcpPort < 1 {
+		state.Config.Watchdog.TcpPort = uint16(adminPort)
 	}
 	return nil
 }
