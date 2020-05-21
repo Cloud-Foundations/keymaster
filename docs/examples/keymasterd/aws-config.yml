@@ -22,7 +22,7 @@ base:
   shared_data_directory: "/usr/share/keymasterd/"
   hide_standard_login: false
   allowed_auth_backends_for_certs: ["U2F"]
-  allowed_auth_backends_for_webui: ["U2F"]
+  allowed_auth_backends_for_webui: ["U2F", "BootstrapOTP"]
   admin_users: []
   admin_groups: ["infra-team", "security-team"]
   public_logs: false
@@ -30,6 +30,9 @@ base:
   automation_user_groups: []
   automation_users: []
   disable_username_normalization: false
+
+dns_load_balancer:
+  route53_hosted_zone_id: "ZoneID"
 
 email:
   aws_secret_id: email/company.com
