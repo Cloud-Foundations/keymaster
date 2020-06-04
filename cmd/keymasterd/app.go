@@ -130,6 +130,7 @@ type userProfile struct {
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
+	UserHasRegistered2ndFactor bool
 }
 
 type localUserData struct {
