@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -166,14 +167,14 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		CreatedAt:    time.Now(),
 		CreatorAddr:  r.RemoteAddr,
 	}
+	if authUser != assumedUser {
+		newReg.Name = fmt.Sprintf("Registered by %s", authUser)
+	}
 	newIndex := newReg.CreatedAt.Unix()
 	profile.U2fAuthData[newIndex] = &newReg
-	//registrations = append(registrations, *reg)
-	//counter = 0
-
 	logger.Printf("Registration success: %+v", reg)
-
 	profile.RegistrationChallenge = nil
+	profile.UserHasRegistered2ndFactor = true
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)

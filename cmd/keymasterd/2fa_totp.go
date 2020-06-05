@@ -220,6 +220,7 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 	newIndex := newTOTPAuthData.CreatedAt.Unix()
 	profile.TOTPAuthData[newIndex] = &newTOTPAuthData
 	profile.PendingTOTPSecret = nil
+	profile.UserHasRegistered2ndFactor = true
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
