@@ -1,7 +1,6 @@
 # Keymaster: Usable Short-term Credentials with Multi-Factor Authentication
 
 #### Camilo Viecco[[1]](#footnote1), Richard Gooch
-#### Symantec Corporation
 
 [https://github.com/Cloud-Foundations/keymaster]()
 
