@@ -21,7 +21,7 @@ In general, the relationship between components is shown here:
 ![keymaster-keymasterd interaction image](website/overview.png)
 
 Please see the
-[design document](website/Keymaster-DesignDoc.md) for more information.
+[design document](website/DesignDoc.md) for more information.
 
 ## Getting Started
 Pre-build binaries (both RPM and DEB) can be found here: [releases page](https://github.com/Cloud-Foundations/keymaster/releases) or you can build it from source (please see instructions below). The RPM and DEB packages contain both server and client binaries. The tarballs only contain the client binaries.
