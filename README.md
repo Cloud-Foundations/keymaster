@@ -18,7 +18,7 @@ For the service operators it requires adding the Keymaster certificates to the s
 
 In general, the relationship between components is shown here:
 
-![keymaster-keymasterd interaction image](docs/keymaster-overview.png)
+![keymaster-keymasterd interaction image](website/overview.png)
 
 Please see the
 [design document](website/Keymaster-DesignDoc.md) for more information.
@@ -74,7 +74,8 @@ Several authentication methods are supported by the `keymasterd` service. You ca
 Keymaster supports SQLite and PostgreSQL to store u2f tokens or username and passwords. The `storage_url` field in `config.yml` contains the connection information for the database. If no `storage_url` is defined Keymaster will use an SQLite database located in the configured data directory for Keymaster. An example of a PostgreSQL url is: `postgresql://dbusername:dbpassword.example.com/keymasterdbname`
 
 ##### Openid Connect IDP
-To use keymasterd as an openid connect IDP please consult the documents [here](docs/keymaster-openidc-idp.md)
+To use keymasterd as an openid connect IDP please consult the documents
+[here](website/openidc-idp.md)
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
