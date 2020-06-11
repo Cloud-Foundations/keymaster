@@ -18,10 +18,10 @@ For the service operators it requires adding the Keymaster certificates to the s
 
 In general, the relationship between components is shown here:
 
-![keymaster-keymasterd interaction image](website/overview.png)
+![keymaster-keymasterd interaction image](docs/website/overview.png)
 
 Please see the
-[design document](website/DesignDoc.md) for more information.
+[design document](docs/website/DesignDoc.md) for more information.
 
 ## Getting Started
 Pre-build binaries (both RPM and DEB) can be found here: [releases page](https://github.com/Cloud-Foundations/keymaster/releases) or you can build it from source (please see instructions below). The RPM and DEB packages contain both server and client binaries. The tarballs only contain the client binaries.
@@ -75,7 +75,7 @@ Keymaster supports SQLite and PostgreSQL to store u2f tokens or username and pas
 
 ##### Openid Connect IDP
 To use keymasterd as an openid connect IDP please consult the documents
-[here](website/openidc-idp.md)
+[here](docs/website/openidc-idp.md)
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
