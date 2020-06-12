@@ -91,7 +91,9 @@ func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	}
 	copy(emailData.Fingerprint[:], hash[:4])
 	adminUsers := make(map[string]struct{})
-	adminUsers[initiatorUser] = struct{}{}
+	if initiatorUser != targetUser {
+		adminUsers[initiatorUser] = struct{}{}
+	}
 	for _, user := range state.Config.Base.AdminUsers {
 		adminUsers[user] = struct{}{}
 	}
