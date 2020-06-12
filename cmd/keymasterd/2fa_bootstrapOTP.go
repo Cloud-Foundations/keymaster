@@ -11,7 +11,10 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
-const bootstrapOtpAuthPath = "/api/v0/bootstrapOtpAuth"
+const (
+	bootstrapOtpAuthPath            = "/api/v0/bootstrapOtpAuth"
+	selfServiceBootstrapOtpLifetime = time.Minute * 5
+)
 
 func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	r *http.Request) {
@@ -112,19 +115,19 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 }
 
 func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
-	profile *userProfile) {
+	profile *userProfile) bool {
 	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
 		profile.UserHasRegistered2ndFactor ||
 		len(state.userBootstrapOtpHash(profile, false)) > 0 ||
 		state.emailManager == nil {
-		return
+		return false
 	}
 	bootstrapOtpValue, err := genRandomString()
 	if err != nil {
 		state.logger.Printf("error generating Bootstrap OTP: %s", err)
-		return
+		return false
 	}
-	duration := time.Minute * 5
+	duration := selfServiceBootstrapOtpLifetime
 	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
 	bootstrapOTP := bootstrapOTPData{
 		ExpiresAt:  time.Now().Add(duration),
@@ -137,16 +140,17 @@ func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
 		bootstrapOtpValue, duration, username, username)
 	if err != nil {
 		state.logger.Printf("error sending email: %s", err)
-		return
+		return false
 	}
 	err = state.SaveUserProfile(username, profile)
 	if err != nil {
 		state.logger.Printf("error saving profile: %s", err)
-		return
+		return false
 	}
 	state.logger.Debugf(0,
 		"generated bootstrap OTP by/for: %s, duration: %s, hash: %x\n",
 		duration, username, bootstrapOtpHash)
+	return true
 }
 
 func (state *RuntimeState) userBootstrapOtpHash(profile *userProfile,
