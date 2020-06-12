@@ -111,6 +111,44 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	}
 }
 
+func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
+	profile *userProfile) {
+	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
+		profile.UserHasRegistered2ndFactor ||
+		len(state.userBootstrapOtpHash(profile, false)) > 0 ||
+		state.emailManager == nil {
+		return
+	}
+	bootstrapOtpValue, err := genRandomString()
+	if err != nil {
+		state.logger.Printf("error generating Bootstrap OTP: %s", err)
+		return
+	}
+	duration := time.Minute * 5
+	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
+	bootstrapOTP := bootstrapOTPData{
+		ExpiresAt:  time.Now().Add(duration),
+		Sha512Hash: bootstrapOtpHash[:],
+	}
+	profile.BootstrapOTP = bootstrapOTP
+	var fingerprint [4]byte
+	copy(fingerprint[:], bootstrapOtpHash[:4])
+	err = state.sendBootstrapOtpEmail(bootstrapOtpHash[:],
+		bootstrapOtpValue, duration, username, username)
+	if err != nil {
+		state.logger.Printf("error sending email: %s", err)
+		return
+	}
+	err = state.SaveUserProfile(username, profile)
+	if err != nil {
+		state.logger.Printf("error saving profile: %s", err)
+		return
+	}
+	state.logger.Debugf(0,
+		"generated bootstrap OTP by/for: %s, duration: %s, hash: %x\n",
+		duration, username, bootstrapOtpHash)
+}
+
 func (state *RuntimeState) userBootstrapOtpHash(profile *userProfile,
 	fromCache bool) []byte {
 	if len(profile.U2fAuthData) > 0 || len(profile.TOTPAuthData) > 0 {
