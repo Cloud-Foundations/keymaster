@@ -21,7 +21,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if r.Method != "POST" {
+	if r.Method != "GET" && r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
