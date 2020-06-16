@@ -117,6 +117,8 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
 	profile *userProfile) bool {
 	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
+		len(profile.U2fAuthData) > 0 ||
+		len(profile.TOTPAuthData) > 0 ||
 		profile.UserHasRegistered2ndFactor ||
 		len(state.userBootstrapOtpHash(profile, false)) > 0 ||
 		state.emailManager == nil {
