@@ -115,12 +115,13 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 }
 
 func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
-	profile *userProfile) bool {
+	inputProfile *userProfile) bool {
+	profile := *inputProfile
 	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
 		len(profile.U2fAuthData) > 0 ||
 		len(profile.TOTPAuthData) > 0 ||
 		profile.UserHasRegistered2ndFactor ||
-		len(state.userBootstrapOtpHash(profile, false)) > 0 ||
+		len(state.userBootstrapOtpHash(&profile, false)) > 0 ||
 		state.emailManager == nil {
 		return false
 	}
@@ -144,7 +145,7 @@ func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
 		state.logger.Printf("error sending email: %s", err)
 		return false
 	}
-	err = state.SaveUserProfile(username, profile)
+	err = state.SaveUserProfile(username, &profile)
 	if err != nil {
 		state.logger.Printf("error saving profile: %s", err)
 		return false
@@ -152,6 +153,7 @@ func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
 	state.logger.Debugf(0,
 		"generated bootstrap OTP by/for: %s, duration: %s, hash: %x\n",
 		duration, username, bootstrapOtpHash)
+	*inputProfile = profile
 	return true
 }
 
