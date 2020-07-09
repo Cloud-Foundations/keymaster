@@ -346,7 +346,9 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
-func checkUserPassword(username string, password string, config AppConfigFile, passwordChecker pwauth.PasswordAuthenticator, r *http.Request) (bool, error) {
+func checkUserPassword(username string, password string, config AppConfigFile,
+	passwordChecker pwauth.PasswordAuthenticator,
+	r *http.Request) (bool, error) {
 	clientType := getClientType(r)
 	if passwordChecker != nil {
 		logger.Debugf(3, "checking auth with passwordChecker")
@@ -354,9 +356,9 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if len(config.Ldap.LDAPTargetURLs) > 0 {
 			isLDAP = true
 		}
-
 		start := time.Now()
-		valid, err := passwordChecker.PasswordAuthenticate(username, []byte(password))
+		valid, err := passwordChecker.PasswordAuthenticate(username,
+			[]byte(password))
 		if err != nil {
 			return false, err
 		}
@@ -368,18 +370,18 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if isOktaPwAuth {
 			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
 		}
-		logger.Debugf(3, "pwdChaker output = %d", valid)
+		logger.Debugf(3, "pwdChecker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-
 	if config.Base.HtpasswdFilename != "" {
 		logger.Debugf(3, "I have htpasswed filename")
 		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
 			return false, err
 		}
-		valid, err := authutil.CheckHtpasswdUserPassword(username, password, buffer)
+		valid, err := authutil.CheckHtpasswdUserPassword(username, password,
+			buffer)
 		if err != nil {
 			return false, err
 		}
@@ -412,7 +414,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Presto/") {
 		return true
 	}
-	//Once FF support reaches main we can remove these silly checks
+	// Once FF support reaches main we can remove these silly checks.
 	if strings.Contains(r.UserAgent(), "Firefox/57") ||
 		strings.Contains(r.UserAgent(), "Firefox/58") ||
 		strings.Contains(r.UserAgent(), "Firefox/59") ||
@@ -1063,6 +1065,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusInternalServerError,
 			"cannot load user profile")
 		return
+	}
+	if !fromCache {
+		state.trySelfServiceGenerateBootstrapOTP(username, profile)
 	}
 	userHasBootstrapOTP := len(state.userBootstrapOtpHash(profile,
 		fromCache)) > 0

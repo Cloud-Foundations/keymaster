@@ -11,14 +11,17 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
-const bootstrapOtpAuthPath = "/api/v0/bootstrapOtpAuth"
+const (
+	bootstrapOtpAuthPath            = "/api/v0/bootstrapOtpAuth"
+	selfServiceBootstrapOtpLifetime = time.Minute * 5
+)
 
 func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if r.Method != "POST" {
+	if r.Method != "GET" && r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
@@ -109,6 +112,49 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(loginResponse)
 	}
+}
+
+func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
+	inputProfile *userProfile) bool {
+	profile := *inputProfile
+	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
+		len(profile.U2fAuthData) > 0 ||
+		len(profile.TOTPAuthData) > 0 ||
+		profile.UserHasRegistered2ndFactor ||
+		len(state.userBootstrapOtpHash(&profile, false)) > 0 ||
+		state.emailManager == nil {
+		return false
+	}
+	bootstrapOtpValue, err := genRandomString()
+	if err != nil {
+		state.logger.Printf("error generating Bootstrap OTP: %s", err)
+		return false
+	}
+	duration := selfServiceBootstrapOtpLifetime
+	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
+	bootstrapOTP := bootstrapOTPData{
+		ExpiresAt:  time.Now().Add(duration),
+		Sha512Hash: bootstrapOtpHash[:],
+	}
+	profile.BootstrapOTP = bootstrapOTP
+	var fingerprint [4]byte
+	copy(fingerprint[:], bootstrapOtpHash[:4])
+	err = state.sendBootstrapOtpEmail(bootstrapOtpHash[:],
+		bootstrapOtpValue, duration, username, username)
+	if err != nil {
+		state.logger.Printf("error sending email: %s", err)
+		return false
+	}
+	err = state.SaveUserProfile(username, &profile)
+	if err != nil {
+		state.logger.Printf("error saving profile: %s", err)
+		return false
+	}
+	state.logger.Debugf(0,
+		"generated bootstrap OTP by/for: %s, duration: %s, hash: %x\n",
+		duration, username, bootstrapOtpHash)
+	*inputProfile = profile
+	return true
 }
 
 func (state *RuntimeState) userBootstrapOtpHash(profile *userProfile,

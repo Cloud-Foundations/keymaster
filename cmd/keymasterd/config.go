@@ -67,6 +67,7 @@ type baseConfig struct {
 	HideStandardLogin            bool       `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP bool       `yaml:"allow_self_service_bootstrap_otp"`
 	AdminUsers                   []string   `yaml:"admin_users"`
 	AdminGroups                  []string   `yaml:"admin_groups"`
 	PublicLogs                   bool       `yaml:"public_logs"`

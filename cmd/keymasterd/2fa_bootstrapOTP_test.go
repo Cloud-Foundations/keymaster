@@ -49,7 +49,7 @@ func testCreateRuntimeStateWithBootstrapOTP(t *testing.T,
 	return state, tmpdir, nil
 }
 
-func TestBootstrapOtpAuthNotPost(t *testing.T) {
+func TestBootstrapOtpAuthNotGetOrPost(t *testing.T) {
 	state, tmpdir, err := testCreateRuntimeStateForBootstrapOTP(t)
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestBootstrapOtpAuthNotPost(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 	recorder := httptest.NewRecorder()
 	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("PUT", "/", nil)
 	state.BootstrapOtpAuthHandler(w, req)
 	resp := recorder.Result()
 	body, _ := ioutil.ReadAll(resp.Body)

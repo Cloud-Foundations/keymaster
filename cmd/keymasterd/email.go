@@ -32,10 +32,14 @@ From: {{.InitiatorAddr}}
 To: {{.UserAddr}}
 Subject: Welcome to Keymaster
 
-Hi, {{.Username}}. Welcome to Keymaster. Please log in to:
+Hi, {{.Username}}. Welcome to Keymaster. To complete your registration, please
+use the direct login link:
+{{.LoginLink}}
+
+If the direct login link does not work, please log in to:
 {{.HostIdentity}}
 
-with your username and password. After this step you will be asked to enter
+with your username and password. On the next screen you will be asked to enter
 your one-time passcode (Bootstrap OTP) which is:
 {{.OTP}}
 
@@ -56,6 +60,7 @@ type bootstrapOtpEmailData struct {
 	HostIdentity  string
 	InitiatorAddr string
 	InitiatorUser string
+	LoginLink     string
 	OTP           string
 	UserAddr      string
 	Username      string
@@ -81,8 +86,10 @@ func (state *RuntimeState) setupEmail() error {
 func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	duration time.Duration, initiatorUser, targetUser string) error {
 	emailData := bootstrapOtpEmailData{
-		Duration:      duration,
-		HostIdentity:  state.Config.Base.HostIdentity,
+		Duration:     duration,
+		HostIdentity: state.Config.Base.HostIdentity,
+		LoginLink: "https://" + state.Config.Base.HostIdentity +
+			bootstrapOtpAuthPath + "?OTP=" + OTP,
 		OTP:           OTP,
 		InitiatorAddr: initiatorUser + "@" + state.Config.Email.Domain,
 		InitiatorUser: initiatorUser,
@@ -91,7 +98,9 @@ func (state *RuntimeState) sendBootstrapOtpEmail(hash []byte, OTP string,
 	}
 	copy(emailData.Fingerprint[:], hash[:4])
 	adminUsers := make(map[string]struct{})
-	adminUsers[initiatorUser] = struct{}{}
+	if initiatorUser != targetUser {
+		adminUsers[initiatorUser] = struct{}{}
+	}
 	for _, user := range state.Config.Base.AdminUsers {
 		adminUsers[user] = struct{}{}
 	}
