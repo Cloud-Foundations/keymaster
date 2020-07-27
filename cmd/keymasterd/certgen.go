@@ -199,11 +199,11 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 	}
 
-	var cert string
-	var certBytes []byte
+	var certString string
+	var cert ssh.Certificate
 	switch r.Method {
 	case "GET":
-		cert, certBytes, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
+		certString, cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -232,7 +232,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 			return
 		}
 
-		cert, certBytes, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
+		certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("signUserPubkey Err")
@@ -244,13 +244,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
-	eventNotifier.PublishSSH(certBytes)
+	eventNotifier.PublishSSH(cert.Marshal())
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "%s", cert)
-	logger.Printf("Generated SSH Certifcate for %s", targetUser)
+	fmt.Fprintf(w, "%s", certString)
+	logger.Printf("Generated SSH Certifcate for %s. Serial:%d", targetUser, cert.Serial)
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
