@@ -440,7 +440,7 @@ func getClientType(r *http.Request) string {
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
-	JSSources := []string{"/static/jquery-3.4.1.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-3.5.1.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
@@ -1275,7 +1275,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 
-	JSSources := []string{"/static/jquery-3.4.1.min.js"}
+	JSSources := []string{"/static/jquery-3.5.1.min.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
 		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
