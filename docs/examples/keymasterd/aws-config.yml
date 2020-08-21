@@ -6,8 +6,9 @@ base:
     aws_secret_id:          keymaster/x509
     challenge_type:         dns-01
     route53_hosted_zone_id: "ZoneID"
-  http_address: :443
-  admin_address: :6920
+  http_address:       :443
+  admin_address:      :6920
+  http_redirect_port: 80
   tls_cert_filename: /etc/keymaster/server.pem
   tls_key_filename:  /etc/keymaster/server.key
   ssh_ca_filename:   /etc/keymaster/masterKey.asc
@@ -21,7 +22,7 @@ base:
   shared_data_directory: "/usr/share/keymasterd/"
   hide_standard_login: false
   allowed_auth_backends_for_certs: ["U2F"]
-  allowed_auth_backends_for_webui: ["U2F"]
+  allowed_auth_backends_for_webui: ["U2F", "BootstrapOTP"]
   admin_users: []
   admin_groups: ["infra-team", "security-team"]
   public_logs: false
@@ -29,6 +30,14 @@ base:
   automation_user_groups: []
   automation_users: []
   disable_username_normalization: false
+
+dns_load_balancer:
+  route53_hosted_zone_id: "ZoneID"
+
+email:
+  aws_secret_id: email/company.com
+  domain:        company.com
+  smtp_server:   smtp.company.com
 
 okta:
   domain: "company"

@@ -12,7 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
+	htmltemplate "html/template"
 	"io/ioutil"
 	stdlog "log"
 	"net"
@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	texttemplate "text/template"
 	"time"
 
 	"golang.org/x/net/context"
@@ -33,8 +34,10 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
 	"github.com/Cloud-Foundations/Dominator/lib/srpc"
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	"github.com/Cloud-Foundations/golib/pkg/crypto/certmanager"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
@@ -116,8 +119,8 @@ type totpAuthData struct {
 }
 
 type bootstrapOTPData struct {
-	ExpiresAt time.Time
-	Value     string
+	ExpiresAt  time.Time
+	Sha512Hash []byte
 }
 
 type userProfile struct {
@@ -127,6 +130,7 @@ type userProfile struct {
 	LastSuccessfullTOTPCounter int64
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
+	UserHasRegistered2ndFactor bool
 }
 
 type localUserData struct {
@@ -174,10 +178,12 @@ type RuntimeState struct {
 	dbType               string
 	cacheDB              *sql.DB
 	remoteDBQueryTimeout time.Duration
-	htmlTemplate         *template.Template
+	htmlTemplate         *htmltemplate.Template
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
+	emailManager         configuredemail.EmailManager
+	textTemplates        *texttemplate.Template
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
@@ -340,7 +346,9 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
-func checkUserPassword(username string, password string, config AppConfigFile, passwordChecker pwauth.PasswordAuthenticator, r *http.Request) (bool, error) {
+func checkUserPassword(username string, password string, config AppConfigFile,
+	passwordChecker pwauth.PasswordAuthenticator,
+	r *http.Request) (bool, error) {
 	clientType := getClientType(r)
 	if passwordChecker != nil {
 		logger.Debugf(3, "checking auth with passwordChecker")
@@ -348,9 +356,9 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if len(config.Ldap.LDAPTargetURLs) > 0 {
 			isLDAP = true
 		}
-
 		start := time.Now()
-		valid, err := passwordChecker.PasswordAuthenticate(username, []byte(password))
+		valid, err := passwordChecker.PasswordAuthenticate(username,
+			[]byte(password))
 		if err != nil {
 			return false, err
 		}
@@ -362,18 +370,18 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if isOktaPwAuth {
 			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
 		}
-		logger.Debugf(3, "pwdChaker output = %d", valid)
+		logger.Debugf(3, "pwdChecker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-
 	if config.Base.HtpasswdFilename != "" {
 		logger.Debugf(3, "I have htpasswed filename")
 		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
 			return false, err
 		}
-		valid, err := authutil.CheckHtpasswdUserPassword(username, password, buffer)
+		valid, err := authutil.CheckHtpasswdUserPassword(username, password,
+			buffer)
 		if err != nil {
 			return false, err
 		}
@@ -406,7 +414,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Presto/") {
 		return true
 	}
-	//Once FF support reaches main we can remove these silly checks
+	// Once FF support reaches main we can remove these silly checks.
 	if strings.Contains(r.UserAgent(), "Firefox/57") ||
 		strings.Contains(r.UserAgent(), "Firefox/58") ||
 		strings.Contains(r.UserAgent(), "Firefox/59") ||
@@ -932,7 +940,7 @@ func genRandomString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(rb), nil
+	return base64.RawURLEncoding.EncodeToString(rb), nil
 }
 
 // We need to ensure that all login destinations are relative paths
@@ -1058,7 +1066,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			"cannot load user profile")
 		return
 	}
-	userHasBootstrapOTP := state.userBootstrapOtp(profile, fromCache) != ""
+	if !fromCache {
+		state.trySelfServiceGenerateBootstrapOTP(username, profile)
+	}
+	userHasBootstrapOTP := len(state.userBootstrapOtpHash(profile,
+		fromCache)) > 0
 	// Compute the cert prefs
 	var certBackends []string
 	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
@@ -1322,6 +1334,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
+	}
+	if time.Until(profile.BootstrapOTP.ExpiresAt) > 0 &&
+		len(profile.BootstrapOTP.Sha512Hash) >= 4 {
+		displayData.BootstrapOTP = &bootstrapOtpTemplateData{
+			ExpiresAt: profile.BootstrapOTP.ExpiresAt,
+		}
+		copy(displayData.BootstrapOTP.Fingerprint[:],
+			profile.BootstrapOTP.Sha512Hash[:4])
 	}
 	logger.Debugf(1, "%v", displayData)
 
@@ -1661,7 +1681,12 @@ func main() {
 		}
 
 	}()
-
+	if runtimeState.Config.Watchdog.CheckInterval > 0 {
+		_, err := watchdog.New(runtimeState.Config.Watchdog, logger)
+		if err != nil {
+			logger.Fatalln(err)
+		}
+	}
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
 		panic("got bad signer ready data")

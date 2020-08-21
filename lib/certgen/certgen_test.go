@@ -236,11 +236,15 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
+	certString, cert, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("got '%s'", c)
+	t.Logf("got '%s'", certString)
+	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
+		t.Fatal("invalid cert content, bad username")
+	}
+
 }
 
 func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {

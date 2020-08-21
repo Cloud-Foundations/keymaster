@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha512"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,8 @@ const (
 	testBootstrapOTP  = "S0MerAnDoMeK3y"
 	testBootstrapUser = "bob"
 )
+
+var testBootstrapOtpHash = sha512.Sum512([]byte(testBootstrapOTP))
 
 func testCreateRuntimeStateForBootstrapOTP(t *testing.T) (
 	*RuntimeState, string, error) {
@@ -36,8 +39,8 @@ func testCreateRuntimeStateWithBootstrapOTP(t *testing.T,
 		return nil, "", err
 	}
 	profile := &userProfile{BootstrapOTP: bootstrapOTPData{
-		ExpiresAt: time.Now().Add(expiresIn),
-		Value:     testBootstrapOTP,
+		ExpiresAt:  time.Now().Add(expiresIn),
+		Sha512Hash: testBootstrapOtpHash[:],
 	}}
 	if err := state.SaveUserProfile(testBootstrapUser, profile); err != nil {
 		os.RemoveAll(tmpdir)
@@ -46,7 +49,7 @@ func testCreateRuntimeStateWithBootstrapOTP(t *testing.T,
 	return state, tmpdir, nil
 }
 
-func TestBootstrapOtpAuthNotPost(t *testing.T) {
+func TestBootstrapOtpAuthNotGetOrPost(t *testing.T) {
 	state, tmpdir, err := testCreateRuntimeStateForBootstrapOTP(t)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +57,7 @@ func TestBootstrapOtpAuthNotPost(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 	recorder := httptest.NewRecorder()
 	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("PUT", "/", nil)
 	state.BootstrapOtpAuthHandler(w, req)
 	resp := recorder.Result()
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -201,8 +204,8 @@ func TestBootstrapOtpAuthGoodOTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.BootstrapOTP.Value != "" {
-		t.Errorf("User profile has lingering Bootstrap OTP: %s",
-			profile.BootstrapOTP.Value)
+	if len(profile.BootstrapOTP.Sha512Hash) > 0 {
+		t.Errorf("User profile has lingering Bootstrap OTP hash: %v",
+			profile.BootstrapOTP.Sha512Hash)
 	}
 }

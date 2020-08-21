@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -228,14 +229,41 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 			"Duration over 1 day not allowed")
 		return
 	}
-	bootstrapOTP := bootstrapOTPData{ExpiresAt: time.Now().Add(duration)}
-	bootstrapOTP.Value, err = genRandomString()
+	bootstrapOtpValue, err := genRandomString()
 	if err != nil {
 		state.logger.Printf("error generating randr=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
+	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
+	bootstrapOTP := bootstrapOTPData{
+		ExpiresAt:  time.Now().Add(duration),
+		Sha512Hash: bootstrapOtpHash[:],
+	}
 	profile.BootstrapOTP = bootstrapOTP
+	var fingerprint [4]byte
+	copy(fingerprint[:], bootstrapOtpHash[:4])
+	displayData := newBootstrapOTPPPageTemplateData{
+		Title:        "New Bootstrap OTP Value",
+		AuthUsername: authUser,
+		//JSSources         []string
+		//ErrorMessage      string
+		Username:    username,
+		ExpiresAt:   time.Now().Add(duration),
+		Fingerprint: fmt.Sprintf("%x", fingerprint),
+	}
+	if state.emailManager == nil {
+		displayData.BootstrapOTPValue = bootstrapOtpValue
+	} else {
+		err := state.sendBootstrapOtpEmail(bootstrapOtpHash[:],
+			bootstrapOtpValue, duration, authUser, username)
+		if err != nil {
+			state.logger.Printf("error sending email: %s", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError,
+				"error sending email")
+			return
+		}
+	}
 	err = state.SaveUserProfile(username, profile)
 	if err != nil {
 		state.logger.Printf("error saving profile randr=%s", err)
@@ -243,16 +271,8 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		return
 	}
 	state.logger.Debugf(0,
-		"%s: generated bootstrap OTP for: %s, duration: %s\n",
-		authUser, username, duration)
-	displayData := newBootstrapOTPPPageTemplateData{
-		Title:        "New Bootstrap OTP Value",
-		AuthUsername: authUser,
-		//JSSources         []string
-		//ErrorMessage      string
-		Username:          username,
-		BootstrapOTPValue: bootstrapOTP.Value,
-	}
+		"%s: generated bootstrap OTP for: %s, duration: %s, hash: %x\n",
+		authUser, username, duration, bootstrapOtpHash)
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
@@ -265,7 +285,9 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		}
 	default:
 		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(displayData)
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "    ")
+		encoder.Encode(displayData)
 	}
 	return
 }

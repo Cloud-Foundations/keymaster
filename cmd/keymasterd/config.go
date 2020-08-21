@@ -10,19 +10,25 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"html/template"
+	htmltemplate "html/template"
 	"io"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
+	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
+	dnslbcfg "github.com/Cloud-Foundations/golib/pkg/loadbalancing/dnslb/config"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
@@ -61,6 +67,7 @@ type baseConfig struct {
 	HideStandardLogin            bool       `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP bool       `yaml:"allow_self_service_bootstrap_otp"`
 	AdminUsers                   []string   `yaml:"admin_users"`
 	AdminGroups                  []string   `yaml:"admin_groups"`
 	PublicLogs                   bool       `yaml:"public_logs"`
@@ -70,6 +77,11 @@ type baseConfig struct {
 	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
 	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
 	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
+}
+
+type emailConfig struct {
+	configuredemail.EmailConfig `yaml:",inline"`
+	Domain                      string
 }
 
 type GitDatabaseConfig struct {
@@ -146,6 +158,9 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
+	Watchdog         watchdog.Config `yaml:"watchdog"`
+	Email            emailConfig
 	Ldap             LdapConfig
 	Okta             OktaConfig
 	UserInfo         UserInfoSouces `yaml:"userinfo_sources"`
@@ -162,29 +177,49 @@ const (
 )
 
 func (state *RuntimeState) loadTemplates() (err error) {
-	//Load extra templates
-	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory, "customization_data", "templates")
+	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory,
+		"customization_data", "templates")
 	if _, err = os.Stat(templatesPath); err != nil {
 		return err
 	}
-	state.htmlTemplate = template.New("main")
-	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl", "login_extra.tmpl"}
-	for _, templateFilename := range templateFiles {
+	// Load HTML template files.
+	state.htmlTemplate = htmltemplate.New("main")
+	htmlTemplateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl",
+		"login_extra.tmpl"}
+	for _, templateFilename := range htmlTemplateFiles {
 		templatePath := filepath.Join(templatesPath, templateFilename)
-		_, err = state.htmlTemplate.ParseFiles(templatePath)
+		if _, err = state.htmlTemplate.ParseFiles(templatePath); err != nil {
+			return err
+		}
+	}
+	// Load the built-in HTML templates.
+	htmlTemplates := []string{footerTemplateText, loginFormText,
+		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
+		newTOTPHTML, newBootstrapOTPPHTML,
+	}
+	for _, templateString := range htmlTemplates {
+		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
 			return err
 		}
 	}
-	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
-		profileHTML, usersHTML, headerTemplateText, newTOTPHTML,
-		newBootstrapOTPPHTML,
-	}
-	for _, templateString := range extraTemplates {
-		_, err = state.htmlTemplate.Parse(templateString)
+	state.textTemplates = texttemplate.New("text")
+	// Load the built-in text templates.
+	textTemplates := []string{emailAdminTemplateData, emailUserTemplateData}
+	for _, templateString := range textTemplates {
+		_, err = state.textTemplates.Parse(templateString)
 		if err != nil {
 			return err
+		}
+	}
+	// Load text template files, which may override the built-in templates.
+	textTemplateFiles := []string{"bootstrapOtpEmail.tmpl"}
+	for _, templateFilename := range textTemplateFiles {
+		templatePath := filepath.Join(templatesPath, templateFilename)
+		if _, err = state.textTemplates.ParseFiles(templatePath); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
 		}
 	}
 	return nil
@@ -237,6 +272,8 @@ func loadVerifyConfigFile(configFilename string,
 		isAdminCache: admincache.New(5 * time.Minute),
 		logger:       logger,
 	}
+	runtimeState.initEmailDefaults()
+	runtimeState.Config.Watchdog.SetDefaults()
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -369,6 +406,9 @@ func loadVerifyConfigFile(configFilename string,
 		}
 		runtimeState.beginAutoUnseal()
 	}
+	if err := runtimeState.setupEmail(); err != nil {
+		return nil, err
+	}
 	//create the oath2 config
 	if runtimeState.Config.Oauth2.Enabled == true {
 		logger.Printf("oath2 is enabled")
@@ -415,7 +455,9 @@ func loadVerifyConfigFile(configFilename string,
 	if err != nil {
 		return nil, err
 	}
-
+	if err := runtimeState.setupHA(); err != nil {
+		return nil, err
+	}
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
 	// hacky and is limited to only one authentication backend.
@@ -506,6 +548,39 @@ func (state *RuntimeState) setupCertificateManager() error {
 		return err
 	}
 	state.certManager = cm
+	return nil
+}
+
+func (state *RuntimeState) setupHA() error {
+	_, portString, err := net.SplitHostPort(state.Config.Base.AdminAddress)
+	if err != nil {
+		return err
+	}
+	adminPort, err := strconv.ParseUint(portString, 10, 16)
+	if err != nil {
+		return err
+	}
+	if hasDnsLB, err := state.Config.DnsLoadBalancer.Check(); err != nil {
+		return err
+	} else if hasDnsLB {
+		state.Config.DnsLoadBalancer.DoTLS = true
+		if state.Config.DnsLoadBalancer.TcpPort < 1 {
+			state.Config.DnsLoadBalancer.TcpPort = uint16(adminPort)
+			if state.Config.DnsLoadBalancer.FQDN == "" {
+				state.Config.DnsLoadBalancer.FQDN =
+					state.Config.Base.HostIdentity
+			}
+		}
+		_, err := dnslbcfg.New(state.Config.DnsLoadBalancer, logger)
+		if err != nil {
+			return err
+		}
+	}
+	state.Config.Watchdog.DoTLS = true
+	if state.Config.Watchdog.CheckInterval > 0 &&
+		state.Config.Watchdog.TcpPort < 1 {
+		state.Config.Watchdog.TcpPort = uint16(adminPort)
+	}
 	return nil
 }
 

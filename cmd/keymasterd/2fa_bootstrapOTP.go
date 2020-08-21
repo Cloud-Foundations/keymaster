@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -10,14 +11,17 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
-const bootstrapOtpAuthPath = "/api/v0/bootstrapOtpAuth"
+const (
+	bootstrapOtpAuthPath            = "/api/v0/bootstrapOtpAuth"
+	selfServiceBootstrapOtpLifetime = time.Minute * 5
+)
 
 func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if r.Method != "POST" {
+	if r.Method != "GET" && r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
@@ -34,7 +38,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	var inputOTP string
+	var inputOtpHash [sha512.Size]byte
 	if val, ok := r.Form["OTP"]; !ok {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"No OTP value provided")
@@ -47,7 +51,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 			state.logger.Printf("Bootstrap OTP login with multiple OTP values")
 			return
 		}
-		inputOTP = val[0]
+		inputOtpHash = sha512.Sum512([]byte(val[0]))
 	}
 	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
@@ -61,17 +65,19 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 			"Working in DB disconnected mode, try again later")
 		return
 	}
-	requiredOTP := state.userBootstrapOtp(profile, fromCache)
-	if requiredOTP == "" {
+	requiredOtpHash := state.userBootstrapOtpHash(profile, fromCache)
+	if len(requiredOtpHash) < 1 {
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed,
-			"No valid Bootstrap OTP saved")
+			"No valid Bootstrap OTP hash saved")
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(inputOTP), []byte(requiredOTP)) != 1 {
+	if subtle.ConstantTimeCompare(inputOtpHash[:], requiredOtpHash) != 1 {
 		state.logger.Debugf(0, "Invalid Bootstrap OTP value for %s\n",
 			authUser)
-		state.logger.Debugf(4, "  input: \"%s\" required: \"%s\"\n",
-			inputOTP, requiredOTP)
+		var tmp [sha512.Size]byte
+		copy(tmp[:], requiredOtpHash)
+		state.logger.Debugf(4, "  input: \"%v\" required: \"%v\"\n",
+			inputOtpHash, tmp)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"Invalid Bootstrap OTP")
 		return
@@ -108,19 +114,62 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	}
 }
 
-func (state *RuntimeState) userBootstrapOtp(profile *userProfile,
-	fromCache bool) string {
+func (state *RuntimeState) trySelfServiceGenerateBootstrapOTP(username string,
+	inputProfile *userProfile) bool {
+	profile := *inputProfile
+	if !state.Config.Base.AllowSelfServiceBootstrapOTP ||
+		len(profile.U2fAuthData) > 0 ||
+		len(profile.TOTPAuthData) > 0 ||
+		profile.UserHasRegistered2ndFactor ||
+		len(state.userBootstrapOtpHash(&profile, false)) > 0 ||
+		state.emailManager == nil {
+		return false
+	}
+	bootstrapOtpValue, err := genRandomString()
+	if err != nil {
+		state.logger.Printf("error generating Bootstrap OTP: %s", err)
+		return false
+	}
+	duration := selfServiceBootstrapOtpLifetime
+	bootstrapOtpHash := sha512.Sum512([]byte(bootstrapOtpValue))
+	bootstrapOTP := bootstrapOTPData{
+		ExpiresAt:  time.Now().Add(duration),
+		Sha512Hash: bootstrapOtpHash[:],
+	}
+	profile.BootstrapOTP = bootstrapOTP
+	var fingerprint [4]byte
+	copy(fingerprint[:], bootstrapOtpHash[:4])
+	err = state.sendBootstrapOtpEmail(bootstrapOtpHash[:],
+		bootstrapOtpValue, duration, username, username)
+	if err != nil {
+		state.logger.Printf("error sending email: %s", err)
+		return false
+	}
+	err = state.SaveUserProfile(username, &profile)
+	if err != nil {
+		state.logger.Printf("error saving profile: %s", err)
+		return false
+	}
+	state.logger.Debugf(0,
+		"generated bootstrap OTP by/for: %s, duration: %s, hash: %x\n",
+		duration, username, bootstrapOtpHash)
+	*inputProfile = profile
+	return true
+}
+
+func (state *RuntimeState) userBootstrapOtpHash(profile *userProfile,
+	fromCache bool) []byte {
 	if len(profile.U2fAuthData) > 0 || len(profile.TOTPAuthData) > 0 {
-		return ""
+		return nil
 	}
 	if fromCache { // Since we will want to clear the OTP, require connection.
-		return ""
+		return nil
 	}
-	if profile.BootstrapOTP.Value == "" {
-		return ""
+	if len(profile.BootstrapOTP.Sha512Hash) < 1 {
+		return nil
 	}
 	if time.Since(profile.BootstrapOTP.ExpiresAt) >= 0 {
-		return ""
+		return nil
 	}
-	return profile.BootstrapOTP.Value
+	return profile.BootstrapOTP.Sha512Hash
 }
