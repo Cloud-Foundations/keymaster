@@ -95,7 +95,7 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	JSSources := []string{"/static/jquery-3.4.1.min.js"}
+	JSSources := []string{"/static/jquery-3.5.1.min.js"}
 	displayData := usersPageTemplateData{
 		AuthUsername: authUser,
 		Title:        "Keymaster Users",
