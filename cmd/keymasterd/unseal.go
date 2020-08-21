@@ -11,6 +11,8 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/metadata"
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/secretsmgr"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 )
 
@@ -64,7 +66,7 @@ func (state *RuntimeState) autoUnsealAwsLoop() {
 	if state.Config.Base.AutoUnseal.AwsSecretId == "" {
 		return
 	}
-	metadataClient, err := getMetadataClient()
+	metadataClient, err := metadata.GetMetadataClient()
 	if err != nil {
 		state.logger.Println(err)
 		return
@@ -93,7 +95,8 @@ func (state *RuntimeState) isUnsealed() bool {
 func (state *RuntimeState) tryAwsUnseal(
 	metadataClient *ec2metadata.EC2Metadata) error {
 	config := state.Config.Base.AutoUnseal
-	secrets, err := getAwsSecret(metadataClient, config.AwsSecretId)
+	secrets, err := secretsmgr.GetAwsSecret(metadataClient, config.AwsSecretId,
+		state.logger)
 	if err != nil {
 		return err
 	}
