@@ -1,0 +1,18 @@
+# See ../../docs/docker for more info. This will not work without bootstrapping
+
+version: "2"
+
+services:
+  keymaster:
+    image: "local/keymaster"
+    container_name: "keymaster"
+    environment:
+      - "TZ=${TIMEZONE}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "6920:6920"
+    volumes:
+      - "${KEYMASTER_DATA}/conf/:/etc/keymaster/"
+      - "${KEYMASTER_DATA}/db/:/var/lib/keymaster/"
+    restart: "unless-stopped"
