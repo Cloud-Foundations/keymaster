@@ -61,8 +61,8 @@ This will generate a series of prompts. Here's how to answer them.
 Fix the config issues mentioned in the main README.md
 
    ```
-   $ sudo sed 's% data_directory:.*% data_directory: "/var/lib/keymaster"%g' ${KEYMASTER_DATA}/conf/config.yml
-   $ sudo sed 's% shared_data_directory:.*% shared_data_directory: "/usr/share/keymasterd/"%g' ${KEYMASTER_DATA}/conf/config.yml
+   $ sudo sed -i 's% data_directory:.*% data_directory: "/var/lib/keymaster"%g' ${KEYMASTER_DATA}/conf/config.yml
+   $ sudo sed -i 's% shared_data_directory:.*% shared_data_directory: "/usr/share/keymasterd/"%g' ${KEYMASTER_DATA}/conf/config.yml
    ```
 
 ## Start
