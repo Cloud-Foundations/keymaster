@@ -17,9 +17,11 @@ default config for bootstrapping the server.
 
    ```
    $ cd misc/docker
-   $ cp env.example .env    # Edit this file to set timezone and local data location
+   $ cp env.example .env    # Edit this file to set timezone and local dirs
    $ . .env
-   $ docker run --rm -it -v "${KEYMASTER_DATA}/conf/:/etc/keymaster/" -v "${KEYMASTER_DATA}/db/:/var/lib/keymaster/" -e  "TZ=${TIMEZONE}" local/keymaster /app/keymasterd -generateConfig
+   $ docker run --rm -it -v "${KEYMASTER_DATA}/conf/:/etc/keymaster/" -v \
+    "${KEYMASTER_DATA}/db/:/var/lib/keymaster/" -e  "TZ=${TIMEZONE}" \
+    local/keymaster /app/keymasterd -generateConfig
    ```
 
 This will generate a series of prompts. Here's how to answer them.
@@ -61,13 +63,16 @@ This will generate a series of prompts. Here's how to answer them.
 Fix the config issues mentioned in the main README.md
 
    ```
-   $ sudo sed -i 's% data_directory:.*% data_directory: "/var/lib/keymaster"%g' ${KEYMASTER_DATA}/conf/config.yml
-   $ sudo sed -i 's% shared_data_directory:.*% shared_data_directory: "/usr/share/keymasterd/"%g' ${KEYMASTER_DATA}/conf/config.yml
+   $ sudo sed -i 's% data_directory:.*% data_directory: "/var/lib/keymaster"%g' \
+    ${KEYMASTER_DATA}/conf/config.yml
+   $ sudo sed -i 's% shared_data_directory:.*% shared_data_directory: "/usr/share/keymasterd/"%g' \
+    ${KEYMASTER_DATA}/conf/config.yml
    ```
 
 ## Start
 
-After bootstrapping configs and keys you just start the container. This will start it sealed.
+After bootstrapping configs and keys you just start the container. This will
+start it sealed.
 
    ```
    $ docker-compose up -d
@@ -79,9 +84,20 @@ By default the CA will start in a sealed state. To unseal it you will need to
 enter your passphrase.
 
    ```
-   $ docker exec -it keymaster /bin/bash
-   root@docker:/# export SSL_CERT_FILE=/etc/keymaster/server.pem  
-   root@docker:/# /app/keymaster-unlocker -cert /etc/keymaster/adminClient.pem -key /etc/keymaster/adminClient.key -keymasterHostname localhost
+   $ docker exec -e SSL_CERT_FILE=/etc/keymaster/server.pem -it keymaster \
+    /app/keymaster-unlocker -cert /etc/keymaster/adminClient.pem \
+     -key /etc/keymaster/adminClient.key -keymasterHostname localhost
    Password for unlocking localhost: 
    OK
+   ```
+
+## Add users
+
+By default a user is created. Let's start by deleting this and creating our own
+user.
+
+   ```
+   $ rm -f ${KEYMASTER_DATA}/conf/passfile.htpass
+   $ docker exec -it keymaster /usr/bin/htpasswd -B -c \
+    /etc/keymaster/passfile.htpass $USERNAME
    ```

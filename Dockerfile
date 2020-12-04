@@ -25,7 +25,9 @@ RUN go get -d -v ./...
 ## Dirty Hack - Remove when https://github.com/golang/go/issues/37278 is closed
 # Compatibility with OpenSSH 8.2 and above
 WORKDIR /tmp/gocode/src/golang.org/x/crypto/
-RUN git pull https://go.googlesource.com/crypto refs/changes/37/220037/3; exit 0
+RUN git config user.email "you@example.com"
+RUN git config user.name "Your Name"
+RUN git pull --no-edit https://go.googlesource.com/crypto refs/changes/37/220037/3
 WORKDIR /tmp/gocode/src/github.com/Cloud-Foundations/keymaster
 ## Dirty Hack End
 
