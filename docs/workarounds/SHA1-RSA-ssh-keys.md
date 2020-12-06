@@ -1,7 +1,7 @@
 # SHA1 RSA SSH Keys
 
 ## Background
-With the release of [OpenSSH 8.2](https://www.openssh.com/txt/release-8.2], SHA1
+With the release of [OpenSSH 8.2](https://www.openssh.com/txt/release-8.2), SHA1
 RSA keys are disabled by default.
 
 Go currently generates [SHA1 keys](https://github.com/golang/go/issues/37278)
