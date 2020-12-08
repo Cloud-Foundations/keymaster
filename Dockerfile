@@ -12,8 +12,6 @@ WORKDIR /tmp/gocode/src/github.com/Cloud-Foundations/keymaster
 
 # Required envs for GO
 ENV GOPATH=/tmp/gocode
-ENV GOOS=linux
-ENV GOARCH=amd64
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update and confirm deps
@@ -52,12 +50,7 @@ COPY --from=build /tmp/gocode/src/github.com/Cloud-Foundations/keymaster/misc/do
 # Perform update and clear cache
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update
-RUN apt-get -y --no-install-recommends install procps apache2-utils ca-certificates
-RUN apt-get -y install wget
-RUN wget https://github.com/Yelp/dumb-init/releases/download/v1.2.3/dumb-init_1.2.3_amd64.deb
-RUN dpkg -i dumb-init_1.2.3_amd64.deb
-RUN rm -f dumb-init_1.2.3_amd64.deb
-RUN apt-get -y --purge autoremove wget
+RUN apt-get -y --no-install-recommends install procps apache2-utils ca-certificates dumb-init
 RUN apt-get -y dist-upgrade && rm -rf /var/cache/apt/*
 
 
