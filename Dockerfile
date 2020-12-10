@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get -y dist-upgrade && apt-get -y install build-essential
 
 # Install deps
-RUN go get -d -v ./...
+RUN make get-deps
 
 ## Dirty Hack - Remove when https://github.com/golang/go/issues/37278 is closed
 # Compatibility with OpenSSH 8.2 and above
