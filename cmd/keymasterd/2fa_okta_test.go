@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 var oktaTestAuthnURL string

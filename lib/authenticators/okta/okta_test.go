@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
-	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 var authnURL string
