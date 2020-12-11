@@ -15,6 +15,8 @@ var (
 	Duration = flag.Duration("duration", 16*time.Hour, "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
 	// If set, Do not use U2F as second factor
 	noU2F = flag.Bool("noU2F", false, "Don't use U2F as second factor")
+	// If set, Do not use TOTP as second factor
+	noTOTP = flag.Bool("noTOTP", false, "Don't use TOTP as second factor")
 	// If set, Do not use VIPAccess as second factor.
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
