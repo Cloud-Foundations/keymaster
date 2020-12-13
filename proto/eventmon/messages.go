@@ -7,6 +7,7 @@ const (
 	AuthTypePassword    = "Password"
 	AuthTypeSymantecVIP = "SymantecVIP"
 	AuthTypeU2F         = "U2F"
+	AuthTypeTOTP        = "TOTP"
 
 	EventTypeAuth                 = "Auth"
 	EventTypeServiceProviderLogin = "ServiceProviderLogin"
