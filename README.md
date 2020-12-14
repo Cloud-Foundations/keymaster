@@ -32,7 +32,7 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 ### Building from Source
 
 #### Prerequisites
-* go >= 1.8
+* go >= 1.13
 * make
 * gcc
 

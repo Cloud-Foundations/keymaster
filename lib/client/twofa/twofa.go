@@ -21,6 +21,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/pushtoken"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/totp"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
@@ -148,6 +149,7 @@ func getCertsFromServer(
 
 	allowVIP := false
 	allowU2F := false
+	allowTOTP := false
 	allowOkta2FA := false
 	for _, backend := range loginJSONResponse.CertAuthBackend {
 		if backend == proto.AuthTypePassword {
@@ -161,6 +163,9 @@ func getCertsFromServer(
 		if backend == proto.AuthTypeU2F {
 			allowU2F = true
 		}
+		if backend == proto.AuthTypeTOTP {
+			allowTOTP = true
+		}
 		if backend == proto.AuthTypeOkta2FA {
 			allowOkta2FA = true
 		}
@@ -169,6 +174,9 @@ func getCertsFromServer(
 	// Dont try U2F if chosen by user
 	if *noU2F {
 		allowU2F = false
+	}
+	if *noTOTP {
+		allowTOTP = false
 	}
 	if *noVIPAccess {
 		allowVIP = false
@@ -203,6 +211,15 @@ func getCertsFromServer(
 			}
 		}
 
+		if allowTOTP && !successful2fa {
+			err = totp.DoTOTPAuthenticate(
+				client, baseUrl, userAgentString, logger)
+			if err != nil {
+
+				return nil, nil, nil, err
+			}
+			successful2fa = true
+		}
 		if allowVIP && !successful2fa {
 			err = pushtoken.DoVIPAuthenticate(
 				client, baseUrl, userAgentString, logger)
