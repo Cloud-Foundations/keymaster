@@ -129,10 +129,9 @@ func getCertsFromServer(
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		if loginResp.StatusCode == http.StatusUnauthorized {
-			logger.Printf("UnAuthorized  response from server, check username/password")
-			return nil, nil, nil, fmt.Errorf("Unauthorized reponse from server")
+			return nil, nil, nil, fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
 		}
-		logger.Printf("got error from login call %s", loginResp.Status)
+		logger.Debugf(1, "got error from login call %s", loginResp.Status)
 		return nil, nil, nil, fmt.Errorf("got error from login call %s", loginResp.Status)
 	}
 	//Enusre we have at least one cookie
