@@ -69,6 +69,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeTOTP && ((authLevel & AuthTypeTOTP) == AuthTypeTOTP) {
+			sufficientAuthLevel = true
+		}
 		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
 			sufficientAuthLevel = true
 		}

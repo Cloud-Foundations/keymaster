@@ -13,6 +13,7 @@ const (
 	AuthTypePassword
 	AuthTypeSymantecVIP
 	AuthTypeU2F
+	AuthTypeTOTP
 )
 
 const (
