@@ -3,7 +3,9 @@
 [![Coverage Status](https://coveralls.io/repos/github/Cloud-Foundations/keymaster/badge.svg?branch=master)](https://coveralls.io/github/Cloud-Foundations/keymaster?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cloud-Foundations/keymaster)](https://goreportcard.com/report/github.com/Cloud-Foundations/keymaster)
 
-Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/) or [U2F](https://fidoalliance.org/specifications/overview/) tokens) for CLI operations (both SSHD and TLS).
+Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/), [U2F](https://fidoalliance.org/specifications/overview/) tokens or [TOTP](https://en.wikipedia.org/wiki/Time-based_One-time_Password_algorithm) compatible apps ([FreeOTP](https://freeotp.github.io/)/google authenticator ) ) for CLI operations (both SSHD and TLS).
+
+As a secondary role keymaster is compliant openidc provider intended for easy use for internal web based applications.
 
 This system is easy to use, configure and administer.
 Keymaster has the following components:

@@ -20,8 +20,8 @@ import (
 
 	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/pushtoken"
-	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/totp"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
@@ -128,8 +128,11 @@ func getCertsFromServer(
 	}
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
-		logger.Printf("got error from login call %s", loginResp.Status)
-		return nil, nil, nil, err
+		if loginResp.StatusCode == http.StatusUnauthorized {
+			return nil, nil, nil, fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
+		}
+		logger.Debugf(1, "got error from login call %s", loginResp.Status)
+		return nil, nil, nil, fmt.Errorf("got error from login call %s", loginResp.Status)
 	}
 	//Enusre we have at least one cookie
 	if len(loginResp.Cookies()) < 1 {
