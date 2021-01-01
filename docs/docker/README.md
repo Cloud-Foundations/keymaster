@@ -69,6 +69,18 @@ $ sudo sed -i 's% shared_data_directory:.*% shared_data_directory: "/usr/share/k
  ${KEYMASTER_DATA}/conf/config.yml
 ```
 
+## Configure Auth backend
+
+Edit ${KEYMASTER_DATA}/conf/config.yml and set up your Auth Backend. Visit
+[here](https://github.com/Cloud-Foundations/keymaster#supported-backend-authentication-methods)
+for more info.
+
+**NOTE**: "U2F", "TOTP" and "SymantecVIP" still need passwords in either LDAP or
+the passfile. For the webui you can also add "federated" and configure oauth2
+against another provider. Be sure to use an internal oauth token if using a big
+provider like Google for Auth because username@mydomain.com will register the same
+as username@gmail.com.
+
 ## Start
 
 After bootstrapping configs and keys you just start the container. This will
@@ -89,17 +101,6 @@ $ docker exec -e SSL_CERT_FILE=/etc/keymaster/server.pem -it keymaster \
   -key /etc/keymaster/adminClient.key -keymasterHostname localhost
 Password for unlocking localhost: 
 OK
-```
-
-## Add users
-
-By default a user is created. Let's start by deleting this and creating our own
-user.
-
-```
-$ rm -f ${KEYMASTER_DATA}/conf/passfile.htpass
-$ docker exec -it keymaster /usr/bin/htpasswd -B -c \
- /etc/keymaster/passfile.htpass $USERNAME
 ```
 
 ## Add users
