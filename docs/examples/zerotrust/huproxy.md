@@ -126,6 +126,8 @@ swap in your personal SSL certificates.
 # vim: syntax=apache ts=4 sw=4 sts=4 sr noet
 ```
 
+**Do not enable http2 until this [issue](https://github.com/gorilla/websocket/issues/417) is resolved.**
+
 6. Enable zerotrust.conf and start Apache
 
 ```
