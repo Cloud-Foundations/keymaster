@@ -11,4 +11,4 @@ files:
 - `permitted-groups.json`: containing a list of regular expressions for the
                            permitted groups in the `groups.json` file
 
-See examples and testdata [here](https://github.com/Cloud-Foundations/golib/blob/master/pkg/auth/userinfo/gitdb/README.md)
+See examples and testdata [here](https://github.com/Cloud-Foundations/golib/tree/master/pkg/auth/userinfo/gitdb)
