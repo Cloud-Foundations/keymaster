@@ -25,7 +25,7 @@ openid_connect_idp:
 
 Configure certificates and DNS as you would normally. You can get your own
 certificates, use certbot to obtain wildcards or enable autocert. Once you have
-that figured out, set up below is a good example.
+that figured out, the configurations below are a reasonable template to follow.
 
 ```
 authenticate_service_url: https://pomerium.example.com
