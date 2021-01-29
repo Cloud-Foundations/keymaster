@@ -22,6 +22,7 @@ import (
    openssl  x509 -req -sha256 -days 7300 -CAkey rootkey.pem -CA root.pem -set_serial 12312389324 -out localhost.pem -in example.csr
 */
 
+/*
 const rootCAPem = `-----BEGIN CERTIFICATE-----
 MIIE1jCCAr4CAQowDQYJKoZIhvcNAQELBQAwMTELMAkGA1UEBhMCVVMxEDAOBgNV
 BAoMB1Rlc3RPcmcxEDAOBgNVBAsMB1Rlc3QgQ0EwHhcNMTcwMTA1MTc0NzQ1WhcN
@@ -103,6 +104,7 @@ YwzyBA/WXBPve5qo17Bt91knZ4m+xOVmRcswNG2U0eFrm+nNlk84Kj3TMRAv8Stx
 GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
+*/
 
 const testLdapsURL = `ldaps://ldap.example.com`
 const testLdapURL = `ldap://ldap.example.com`
