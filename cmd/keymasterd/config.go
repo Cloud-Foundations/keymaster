@@ -524,7 +524,6 @@ func loadVerifyConfigFile(configFilename string,
 	warnInsecureConfiguration(&runtimeState)
 
 	// DB initialization
-	runtimeState.Config.ProfileStorage.applyDefaults()
 	if err := initDB(&runtimeState); err != nil {
 		return nil, err
 	}

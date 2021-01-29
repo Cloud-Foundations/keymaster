@@ -54,6 +54,7 @@ func (state *RuntimeState) expandStorageUrl() error {
 
 func initDB(state *RuntimeState) (err error) {
 	logger.Debugf(3, "Top of initDB")
+	state.Config.ProfileStorage.applyDefaults()
 	//open/create cache DB first
 	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory,
 		cachedDBFilename)
