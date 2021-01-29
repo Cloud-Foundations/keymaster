@@ -9,7 +9,7 @@ import (
 )
 
 //These are the same certs on authutil_test.go
-
+/*
 const testRootCAPem = `-----BEGIN CERTIFICATE-----
 MIIE1jCCAr4CAQowDQYJKoZIhvcNAQELBQAwMTELMAkGA1UEBhMCVVMxEDAOBgNV
 BAoMB1Rlc3RPcmcxEDAOBgNVBAsMB1Rlc3QgQ0EwHhcNMTcwMTA1MTc0NzQ1WhcN
@@ -91,6 +91,7 @@ YwzyBA/WXBPve5qo17Bt91knZ4m+xOVmRcswNG2U0eFrm+nNlk84Kj3TMRAv8Stx
 GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
+*/
 
 func getTLSconfig() (*tls.Config, error) {
 	cert, err := tls.X509KeyPair([]byte(localhostCertPem), []byte(localhostKeyPem))
@@ -130,7 +131,7 @@ func init() {
 
 func TestCheckLDAPURLsSuccess(t *testing.T) {
 	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
@@ -143,7 +144,7 @@ func TestCheckLDAPURLsSuccess(t *testing.T) {
 
 func TestCheckLDAPURLsFailNoValidTargets(t *testing.T) {
 	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
@@ -155,7 +156,7 @@ func TestCheckLDAPURLsFailNoValidTargets(t *testing.T) {
 
 func TestCheckLDAPConfigsSuccessBoth(t *testing.T) {
 	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
