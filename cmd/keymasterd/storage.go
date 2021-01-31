@@ -22,6 +22,15 @@ const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
 const cachedDBFilename = "cachedDB.sqlite3"
 
+func (config *ProfileStorageConfig) applyDefaults() {
+	if config.SyncDelay < 1 {
+		config.SyncDelay = time.Second * 3
+	}
+	if config.SyncInterval < 1 {
+		config.SyncInterval = time.Minute * 5
+	}
+}
+
 func (state *RuntimeState) expandStorageUrl() error {
 	config := &state.Config.ProfileStorage
 	if config.AwsSecretId == "" {
@@ -65,8 +74,7 @@ func initDB(state *RuntimeState) (err error) {
 		return err
 	}
 	state.remoteDBQueryTimeout = time.Second * 2
-	initialSleep := time.Second * 3
-	go state.BackgroundDBCopy(initialSleep)
+	go state.BackgroundDBCopy(state.Config.ProfileStorage.SyncDelay)
 	switch splitString[0] {
 	case "sqlite":
 		logger.Printf("doing sqlite")
@@ -175,7 +183,7 @@ func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 		}
 		cleanupDBData(state.db)
 		cleanupDBData(state.cacheDB)
-		time.Sleep(time.Second * 300)
+		time.Sleep(state.Config.ProfileStorage.SyncInterval)
 	}
 }
 
