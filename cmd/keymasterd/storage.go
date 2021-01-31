@@ -74,7 +74,9 @@ func initDB(state *RuntimeState) (err error) {
 		return err
 	}
 	state.remoteDBQueryTimeout = time.Second * 2
-	go state.BackgroundDBCopy(state.Config.ProfileStorage.SyncDelay)
+	if (state.Config.ProfileStorage.SyncInterval) > 0 {
+		go state.BackgroundDBCopy(state.Config.ProfileStorage.SyncDelay)
+	}
 	switch splitString[0] {
 	case "sqlite":
 		logger.Printf("doing sqlite")
