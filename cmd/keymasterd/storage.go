@@ -25,9 +25,13 @@ const cachedDBFilename = "cachedDB.sqlite3"
 func (config *ProfileStorageConfig) applyDefaults() {
 	if config.SyncDelay < 1 {
 		config.SyncDelay = time.Second * 3
+	} else if config.SyncDelay > time.Minute*15 {
+		config.SyncDelay = time.Minute * 15
 	}
 	if config.SyncInterval < 1 {
 		config.SyncInterval = time.Minute * 5
+	} else if config.SyncInterval > time.Hour {
+		config.SyncInterval = time.Hour
 	}
 }
 
