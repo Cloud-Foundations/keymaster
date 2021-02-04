@@ -17,17 +17,35 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const userProfilePrefix = "profile_"
-const userProfileSuffix = ".gob"
-const profileDBFilename = "userProfiles.sqlite3"
-const cachedDBFilename = "cachedDB.sqlite3"
+const (
+	userProfilePrefix = "profile_"
+	userProfileSuffix = ".gob"
+	profileDBFilename = "userProfiles.sqlite3"
+	cachedDBFilename  = "cachedDB.sqlite3"
 
-func (config *ProfileStorageConfig) applyDefaults() {
+	dbSyncDelayDefault = time.Second * 3
+	dbSyncDelayMinimum = time.Second
+	dbSyncDelayMaximum = time.Minute
+
+	dbSyncIntervalDefault = time.Minute * 5
+	dbSyncIntervalMinimum = time.Second * 5
+	dbSyncIntervalMaximum = time.Minute * 15
+)
+
+func (config *ProfileStorageConfig) setSyncLimits() {
 	if config.SyncDelay < 1 {
-		config.SyncDelay = time.Second * 3
+		config.SyncDelay = dbSyncDelayDefault
+	} else if config.SyncDelay < dbSyncDelayMinimum {
+		config.SyncDelay = dbSyncDelayMinimum
+	} else if config.SyncDelay > dbSyncDelayMaximum {
+		config.SyncDelay = dbSyncDelayMaximum
 	}
 	if config.SyncInterval < 1 {
-		config.SyncInterval = time.Minute * 5
+		config.SyncInterval = dbSyncIntervalDefault
+	} else if config.SyncInterval < dbSyncIntervalMinimum {
+		config.SyncInterval = dbSyncIntervalMinimum
+	} else if config.SyncInterval > dbSyncIntervalMaximum {
+		config.SyncInterval = dbSyncIntervalMaximum
 	}
 }
 
@@ -54,7 +72,7 @@ func (state *RuntimeState) expandStorageUrl() error {
 
 func initDB(state *RuntimeState) (err error) {
 	logger.Debugf(3, "Top of initDB")
-	state.Config.ProfileStorage.applyDefaults()
+	state.Config.ProfileStorage.setSyncLimits()
 	//open/create cache DB first
 	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory,
 		cachedDBFilename)
