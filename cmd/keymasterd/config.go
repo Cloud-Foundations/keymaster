@@ -143,9 +143,11 @@ type OpenIDConnectIDPConfig struct {
 }
 
 type ProfileStorageConfig struct {
-	AwsSecretId         string `yaml:"aws_secret_id"`
-	StorageUrl          string `yaml:"storage_url"`
-	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
+	AwsSecretId         string        `yaml:"aws_secret_id"`
+	StorageUrl          string        `yaml:"storage_url"`
+	SyncDelay           time.Duration `yaml:"sync_delay"`
+	SyncInterval        time.Duration `yaml:"sync_interval"`
+	TLSRootCertFilename string        `yaml:"tls_root_cert_filename"`
 }
 
 type SymantecVIPConfig struct {
@@ -522,8 +524,7 @@ func loadVerifyConfigFile(configFilename string,
 	warnInsecureConfiguration(&runtimeState)
 
 	// DB initialization
-	err = initDB(&runtimeState)
-	if err != nil {
+	if err := initDB(&runtimeState); err != nil {
 		return nil, err
 	}
 
