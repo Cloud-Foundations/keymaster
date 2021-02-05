@@ -48,6 +48,7 @@ rpm:	${BINARY}-${VERSION}.tar.gz
 tar:	${BINARY}-${VERSION}.tar.gz
 
 test:	init-config-host
+	make -f makefile.certs
 	go test ./...
 
 verbose-test:	init-config-host
