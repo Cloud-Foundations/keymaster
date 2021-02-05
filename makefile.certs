@@ -1,8 +1,19 @@
 #this is macos/linux makefile to build the test keys
 
 
-all: cmd/keymaster/testcerts_test.go cmd/keymasterd/testcerts_test.go
+all: cmd/keymaster/testcerts_test.go cmd/keymasterd/testcerts_test.go lib/vip/testcerts_test.go lib/authutil/testcerts_test.go lib/pwauth/ldap/testcerts_test.go lib/client/twofa/testcerts_test.go
+	
+lib/client/twofa/testcerts_test.go:
+	echo "package twofa\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/client/twofa/testcerts_test.go
 
+lib/pwauth/ldap/testcerts_test.go:
+	echo "package ldap\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/pwauth/ldap/testcerts_test.go
+
+lib/authutil/testcerts_test.go:
+	echo "package authutil\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/authutil/testcerts_test.go
+
+lib/vip/testcerts_test.go:
+	echo "package vip\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/vip/testcerts_test.go
 
 cmd/keymasterd/testcerts_test.go: misc/testcerts/localhost.pem misc/testcerts/root.pem misc/testcerts/eekey.pem
 	echo "package main\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > cmd/keymasterd/testcerts_test.go
@@ -41,6 +52,10 @@ clean-all: clean cleanint
 clean: 
 	rm -f cmd/keymaster/testcerts_test.go
 	rm -f cmd/keymasterd/testcerts_test.go
+	rm -f lib/vip/testcerts_test.go
+	rm -f lib/authutil/testcerts_test.go
+	rm -f lib/pwauth/ldap/testcerts_test.go
+	rm -f lib/client/twofa/testcerts_test.go
 
 
 cleanint:
