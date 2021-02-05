@@ -1,0 +1,4 @@
+basicConstraints = CA:FALSE
+subjectAltName =DNS:localhost
+extendedKeyUsage =serverAuth
+
