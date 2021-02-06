@@ -138,6 +138,7 @@ func initDBSQlite(state *RuntimeState) (err error) {
 	dbFilename := filepath.Join(state.Config.Base.DataDirectory,
 		profileDBFilename)
 	state.db, err = initFileDBSQLite(dbFilename, state.db)
+	state.db.SetMaxIdleConns(0) // Make the DB NFS-friendly.
 	return err
 }
 
