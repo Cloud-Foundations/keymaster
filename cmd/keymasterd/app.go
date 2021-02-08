@@ -870,6 +870,7 @@ func (state *RuntimeState) reprocessUsername(username string) string {
 }
 
 const secretInjectorPath = "/admin/inject"
+const checkSealedPath = "/admin/checkSealed"
 
 const publicPath = "/public/"
 
@@ -1588,6 +1589,7 @@ func main() {
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
+	http.HandleFunc(checkSealedPath, runtimeState.checkSealedHandler)
 
 	serviceMux := http.NewServeMux()
 	serviceMux.HandleFunc(certgenPath, runtimeState.certGenHandler)

@@ -22,6 +22,16 @@ func (config *autoUnseal) applyDefaults() {
 	}
 }
 
+func (state *RuntimeState) checkSealedHandler(w http.ResponseWriter,
+	r *http.Request) {
+	w.WriteHeader(200)
+	if state.Signer == nil {
+		fmt.Fprintf(w, "SEALED\n")
+	} else {
+		fmt.Fprintf(w, "UNSEALED\n")
+	}
+}
+
 func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter,
 	r *http.Request) {
 	// checks this is only allowed when using TLS client certs.. all other authn
