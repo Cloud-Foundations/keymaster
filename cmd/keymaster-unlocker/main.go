@@ -58,12 +58,12 @@ func main() {
 	clients := makeClients(addrs, tlsConfig)
 	var password string
 	for index, client := range clients {
-		unsealed, err := testUnsealed(client)
+		ready, err := testReady(client)
 		if err != nil {
 			logger.Printf("%s: %s\n", addrs[index], err)
 			continue
 		}
-		if unsealed {
+		if ready {
 			logger.Printf("%s: already unsealed\n", addrs[index])
 			continue
 		}
@@ -115,19 +115,13 @@ func makeClients(addrs []string, tlsConfig *tls.Config) []*http.Client {
 	return clients
 }
 
-func testUnsealed(client *http.Client) (bool, error) {
+func testReady(client *http.Client) (bool, error) {
 	resp, err := client.Get("https://" + *keymasterHostname + ":" +
-		strconv.Itoa(*keymasterPort) + "/admin/checkSealed")
+		strconv.Itoa(*keymasterPort) + "/readyz")
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(string(data)) == "UNSEALED" {
-		return true, nil
-	}
-	return false, nil // Older keymasters are assumed to be sealed.
+	// Older keymasters are assumed to not be ready.
+	return resp.StatusCode == 200, nil
 }

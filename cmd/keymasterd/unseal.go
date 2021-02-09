@@ -22,13 +22,14 @@ func (config *autoUnseal) applyDefaults() {
 	}
 }
 
-func (state *RuntimeState) checkSealedHandler(w http.ResponseWriter,
+func (state *RuntimeState) readyzHandler(w http.ResponseWriter,
 	r *http.Request) {
-	w.WriteHeader(200)
 	if state.Signer == nil {
-		fmt.Fprintf(w, "SEALED\n")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "not ready\n")
 	} else {
-		fmt.Fprintf(w, "UNSEALED\n")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "OK\n")
 	}
 }
 
