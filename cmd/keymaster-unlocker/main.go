@@ -1,25 +1,32 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/howeyc/gopass"
 )
 
 var (
-	Version    = "No version provided"
-	certFile   = flag.String("cert", "client.pem", "A PEM eoncoded certificate file.")
-	keyFile    = flag.String("key", "key.pem", "A PEM encoded private key file.")
-	targetHost = flag.String("keymasterHostname", "", "The hostname/port for keymaster")
-	targetPort = flag.Int("keymasterPort", 6920, "The port for keymaster control port")
+	Version  = "No version provided"
+	certFile = flag.String("cert", "client.pem",
+		"A PEM encoded certificate file.")
+	keyFile = flag.String("key", "key.pem",
+		"A PEM encoded private key file.")
+	keymasterHostname = flag.String("keymasterHostname", "",
+		"The hostname for keymaster")
+	keymasterPort = flag.Int("keymasterPort", 6920,
+		"The keymaster control port")
 )
 
 func Usage() {
@@ -30,45 +37,91 @@ func Usage() {
 func main() {
 	flag.Parse()
 	logger := cmdlogger.New()
-
-	if len(*targetHost) < 1 {
+	if len(*keymasterHostname) < 1 {
 		logger.Fatal("keymasterHostname paramteter  is required")
 	}
-
+	addrs, err := net.LookupHost(*keymasterHostname)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	if len(addrs) < 1 {
+		logger.Fatalf("no addresses for: %s\n", *keymasterHostname)
+	}
 	// Load client cert
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
 		logger.Fatal(err)
 	}
-
-	fmt.Printf("Password for unlocking %s: ", *targetHost)
-	password, err := gopass.GetPasswd()
-	if err != nil {
-		logger.Fatal(err)
-		// Handle gopass.ErrInterrupted or getch() read error
-	}
-
-	// Setup HTTPS client
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	}
+	// Setup HTTPS clients.
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 	tlsConfig.BuildNameToCertificate()
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
-	client := &http.Client{Transport: transport}
+	clients := makeClients(addrs, tlsConfig)
+	var password string
+	for index, client := range clients {
+		ready, err := testReady(client)
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		if ready {
+			logger.Printf("%s: already unsealed\n", addrs[index])
+			continue
+		}
+		if password == "" {
+			fmt.Printf("Password for unlocking %s: ", *keymasterHostname)
+			passwd, err := gopass.GetPasswd()
+			if err != nil {
+				logger.Fatal(err)
+				// Handle gopass.ErrInterrupted or getch() read error
+			}
+			password = string(passwd)
+		}
+		resp, err := client.PostForm("https://"+*keymasterHostname+":"+
+			strconv.Itoa(*keymasterPort)+"/admin/inject",
+			url.Values{"ssh_ca_password": {password}})
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		defer resp.Body.Close()
+		// Show response.
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		logger.Printf("%s: %s\n", addrs[index], strings.TrimSpace(string(data)))
+	}
+}
 
-	// Do GET something
-	resp, err := client.PostForm("https://"+*targetHost+":"+strconv.Itoa(*targetPort)+"/admin/inject",
-		url.Values{"ssh_ca_password": {string(password[:])}})
-	//resp, err := client.Get("https://goldportugal.local:8443")
+func makeClients(addrs []string, tlsConfig *tls.Config) []*http.Client {
+	clients := make([]*http.Client, 0, len(addrs))
+	dialer := &net.Dialer{}
+	for _, addr := range addrs {
+		addr := addr // Make a unique copy for the closure.
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+			DialContext: func(ctx context.Context, network, hAddr string) (
+				net.Conn, error) {
+				_, port, err := net.SplitHostPort(hAddr)
+				if err != nil {
+					return nil, err
+				}
+				return dialer.DialContext(ctx, network, addr+":"+port)
+			},
+		}
+		clients = append(clients, &http.Client{Transport: transport})
+	}
+	return clients
+}
+
+func testReady(client *http.Client) (bool, error) {
+	resp, err := client.Get("https://" + *keymasterHostname + ":" +
+		strconv.Itoa(*keymasterPort) + "/readyz")
 	if err != nil {
-		logger.Fatal(err)
+		return false, err
 	}
 	defer resp.Body.Close()
-
-	// Dump response
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	logger.Println(string(data))
+	// Older keymasters are assumed to not be ready.
+	return resp.StatusCode == 200, nil
 }
