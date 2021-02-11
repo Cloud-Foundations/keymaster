@@ -12,8 +12,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/howeyc/gopass"
 )
 
@@ -27,11 +29,27 @@ var (
 		"The hostname for keymaster")
 	keymasterPort = flag.Int("keymasterPort", 6920,
 		"The keymaster control port")
+	retryInterval = flag.Duration("retryInterval", 0, "If > 0: retry")
+
+	_password string
 )
 
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
 	flag.PrintDefaults()
+}
+
+func getPassword() (string, error) {
+	if _password == "" {
+		fmt.Printf("Password for unlocking %s: ", *keymasterHostname)
+		passwd, err := gopass.GetPasswd()
+		if err != nil {
+			return "", err
+			// Handle gopass.ErrInterrupted or getch() read error
+		}
+		_password = string(passwd)
+	}
+	return _password, nil
 }
 
 func main() {
@@ -56,41 +74,19 @@ func main() {
 	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 	tlsConfig.BuildNameToCertificate()
 	clients := makeClients(addrs, tlsConfig)
-	var password string
-	for index, client := range clients {
-		ready, err := testReady(client)
-		if err != nil {
-			logger.Printf("%s: %s\n", addrs[index], err)
-			continue
+	if *retryInterval > 0 {
+		if _, err := getPassword(); err != nil {
+			logger.Fatal(err)
 		}
-		if ready {
-			logger.Printf("%s: already unsealed\n", addrs[index])
-			continue
+		if *retryInterval < time.Second {
+			*retryInterval = time.Second
 		}
-		if password == "" {
-			fmt.Printf("Password for unlocking %s: ", *keymasterHostname)
-			passwd, err := gopass.GetPasswd()
-			if err != nil {
-				logger.Fatal(err)
-				// Handle gopass.ErrInterrupted or getch() read error
-			}
-			password = string(passwd)
+		for {
+			unseal(addrs, clients, logger)
+			time.Sleep(*retryInterval)
 		}
-		resp, err := client.PostForm("https://"+*keymasterHostname+":"+
-			strconv.Itoa(*keymasterPort)+"/admin/inject",
-			url.Values{"ssh_ca_password": {password}})
-		if err != nil {
-			logger.Printf("%s: %s\n", addrs[index], err)
-			continue
-		}
-		defer resp.Body.Close()
-		// Show response.
-		data, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			logger.Printf("%s: %s\n", addrs[index], err)
-			continue
-		}
-		logger.Printf("%s: %s\n", addrs[index], strings.TrimSpace(string(data)))
+	} else {
+		unseal(addrs, clients, logger)
 	}
 }
 
@@ -124,4 +120,37 @@ func testReady(client *http.Client) (bool, error) {
 	defer resp.Body.Close()
 	// Older keymasters are assumed to not be ready.
 	return resp.StatusCode == 200, nil
+}
+
+func unseal(addrs []string, clients []*http.Client, logger log.Logger) {
+	for index, client := range clients {
+		ready, err := testReady(client)
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		if ready {
+			logger.Printf("%s: already unsealed\n", addrs[index])
+			continue
+		}
+		password, err := getPassword()
+		if err != nil {
+			logger.Fatal(err)
+		}
+		resp, err := client.PostForm("https://"+*keymasterHostname+":"+
+			strconv.Itoa(*keymasterPort)+"/admin/inject",
+			url.Values{"ssh_ca_password": {password}})
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		defer resp.Body.Close()
+		// Show response.
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			logger.Printf("%s: %s\n", addrs[index], err)
+			continue
+		}
+		logger.Printf("%s: %s\n", addrs[index], strings.TrimSpace(string(data)))
+	}
 }
