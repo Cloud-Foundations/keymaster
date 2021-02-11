@@ -30,8 +30,6 @@ var (
 	keymasterPort = flag.Int("keymasterPort", 6920,
 		"The keymaster control port")
 	retryInterval = flag.Duration("retryInterval", 0, "If > 0: retry")
-
-	_password string
 )
 
 func Usage() {
@@ -39,17 +37,17 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func getPassword() (string, error) {
-	if _password == "" {
+func getPassword(password string) (string, error) {
+	if password == "" {
 		fmt.Printf("Password for unlocking %s: ", *keymasterHostname)
 		passwd, err := gopass.GetPasswd()
 		if err != nil {
 			return "", err
 			// Handle gopass.ErrInterrupted or getch() read error
 		}
-		_password = string(passwd)
+		password = string(passwd)
 	}
-	return _password, nil
+	return password, nil
 }
 
 func main() {
@@ -74,19 +72,20 @@ func main() {
 	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 	tlsConfig.BuildNameToCertificate()
 	clients := makeClients(addrs, tlsConfig)
+	var password string
 	if *retryInterval > 0 {
-		if _, err := getPassword(); err != nil {
+		if password, err = getPassword(password); err != nil {
 			logger.Fatal(err)
 		}
 		if *retryInterval < time.Second {
 			*retryInterval = time.Second
 		}
 		for {
-			unseal(addrs, clients, logger)
+			unseal(addrs, clients, password, logger)
 			time.Sleep(*retryInterval)
 		}
 	} else {
-		unseal(addrs, clients, logger)
+		unseal(addrs, clients, password, logger)
 	}
 }
 
@@ -122,7 +121,8 @@ func testReady(client *http.Client) (bool, error) {
 	return resp.StatusCode == 200, nil
 }
 
-func unseal(addrs []string, clients []*http.Client, logger log.Logger) {
+func unseal(addrs []string, clients []*http.Client, password string,
+	logger log.Logger) {
 	for index, client := range clients {
 		ready, err := testReady(client)
 		if err != nil {
@@ -133,7 +133,7 @@ func unseal(addrs []string, clients []*http.Client, logger log.Logger) {
 			logger.Printf("%s: already unsealed\n", addrs[index])
 			continue
 		}
-		password, err := getPassword()
+		password, err = getPassword(password)
 		if err != nil {
 			logger.Fatal(err)
 		}
