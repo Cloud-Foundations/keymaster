@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
 	libnet "github.com/Cloud-Foundations/keymaster/lib/client/net"
 	"github.com/Cloud-Foundations/keymaster/lib/client/sshagent"

@@ -4,7 +4,7 @@ package pushtoken
 import (
 	"net/http"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
 // DoVIPAuthenticate performs two factor authentication with Symantec VIP
