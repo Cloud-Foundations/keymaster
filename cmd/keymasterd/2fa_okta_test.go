@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 var oktaTestAuthnURL string

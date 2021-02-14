@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 var authnURL string

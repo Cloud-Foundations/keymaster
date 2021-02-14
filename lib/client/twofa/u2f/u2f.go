@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/u2ftoken"
 	"github.com/tstranex/u2f"

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 

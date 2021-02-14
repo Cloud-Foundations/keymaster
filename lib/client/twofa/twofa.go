@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/pushtoken"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/totp"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
