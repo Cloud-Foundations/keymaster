@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"os"
 	"os/user"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,11 +256,28 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", certString)
+	if !strings.HasPrefix(certString, "ssh-rsa-cert-v01@openssh.com ") {
+		t.Logf("wrong prefix on stringification rsa-cert")
+	}
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
 		t.Fatal("invalid cert content, bad username")
 	}
 	// now test with an Ed25519
-
+	goodEd25519Signer, err := ssh.ParsePrivateKey([]byte(pkcs8Ed25519PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got '%s'", certString)
+	if !strings.HasPrefix(certString, "ssh-ed25519-cert-v01@openssh.com ") {
+		t.Logf("wrong prefix on stringification for ed25519")
+	}
+	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
+		t.Fatal("invalid cert content, bad username")
+	}
 }
 
 func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {

@@ -40,7 +40,7 @@ func GetUserPubKeyFromSSSD(username string) (string, error) {
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 	certBytes := c.Marshal()
 	encoded := base64.StdEncoding.EncodeToString(certBytes)
-	fileComment := "/tmp/" + username + "-cert.pub"
+	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
 	return c.Type() + " " + encoded + " " + fileComment, nil
 }
 
