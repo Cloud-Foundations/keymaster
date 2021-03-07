@@ -144,16 +144,15 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 			return nil, err
 		}
 		switch v := parsedIface.(type) {
-		case *ed25519.PrivateKey:
-			return v, nil
 		case *rsa.PrivateKey:
 			return v, nil
 		case *ecdsa.PrivateKey:
 			return v, nil
+		case *ed25519.PrivateKey:
+			return v, nil
 		default:
 			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
 		}
-
 	default:
 		err := errors.New("Cannot process that key")
 		return nil, err
