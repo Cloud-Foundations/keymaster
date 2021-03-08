@@ -40,8 +40,8 @@ func GetUserPubKeyFromSSSD(username string) (string, error) {
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 	certBytes := c.Marshal()
 	encoded := base64.StdEncoding.EncodeToString(certBytes)
-	fileComment := "/tmp/" + username + "-cert.pub"
-	return "ssh-rsa-cert-v01@openssh.com " + encoded + " " + fileComment, nil
+	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
+	return c.Type() + " " + encoded + " " + fileComment, nil
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
@@ -133,6 +133,23 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 			return v, nil
 		case *ecdsa.PrivateKey:
 			return v, nil
+		case ed25519.PrivateKey:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+		}
+	case "OPENSSH PRIVATE KEY":
+		parsedIface, err := ssh.ParseRawPrivateKey(privateKey)
+		if err != nil {
+			return nil, err
+		}
+		switch v := parsedIface.(type) {
+		case *rsa.PrivateKey:
+			return v, nil
+		case *ecdsa.PrivateKey:
+			return v, nil
+		case *ed25519.PrivateKey:
+			return v, nil
 		default:
 			return nil, fmt.Errorf("Type not recognized  %T!\n", v)
 		}
@@ -150,6 +167,8 @@ func publicKey(priv interface{}) interface{} {
 	// TODO: eventaully we need to suport ecdsa for CA
 	// case *ecdsa.PrivateKey:
 	//	return &k.PublicKey
+	case ed25519.PrivateKey:
+		return k.Public().(ed25519.PublicKey)
 	default:
 		return nil
 	}

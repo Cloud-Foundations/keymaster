@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"os"
 	"os/user"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,6 +200,20 @@ RBm1g0vfLOjV1tPs5/0QMy7ANExMLGtzIJidWWWzIzw2rx4WC7xcIkJ+iWFIIFNy
 S9RSPfwJS7+Zr8LP4H6APpstQWZEXOo=
 -----END EC PRIVATE KEY-----`
 
+//openssl genpkey  -algorithm ED25519 -out key.pem
+const pkcs8Ed25519PrivateKey = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIHoHbl2RwHwmyWtXVLroUZEI+d/SqL3RKmECM5P7o7D5
+-----END PRIVATE KEY-----`
+
+// ssh-keygen -t ed25519
+const keygenEd25519PrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACDICn5DsRIjR4GyKVUPucWJ7A3+7TKoNfK/ImglUc6shQAAAKDzYr6j82K+
+owAAAAtzc2gtZWQyNTUxOQAAACDICn5DsRIjR4GyKVUPucWJ7A3+7TKoNfK/ImglUc6shQ
+AAAECdSciYZnODYp2QC0s838bYh8d2XEOuvBOqcOEA6MUjL8gKfkOxEiNHgbIpVQ+5xYns
+Df7tMqg18r8iaCVRzqyFAAAAHWN2aWVjY29AY3ZpZWNjby0tTWFjQm9va1BybzE1
+-----END OPENSSH PRIVATE KEY-----`
+
 const testDuration = time.Duration(120 * time.Second)
 
 // SSSD tests do require some setup... in this case we do some checks to ensure
@@ -241,10 +256,28 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", certString)
+	if !strings.HasPrefix(certString, "ssh-rsa-cert-v01@openssh.com ") {
+		t.Logf("wrong prefix on stringification rsa-cert")
+	}
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
 		t.Fatal("invalid cert content, bad username")
 	}
-
+	// now test with an Ed25519
+	goodEd25519Signer, err := ssh.ParsePrivateKey([]byte(pkcs8Ed25519PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got '%s'", certString)
+	if !strings.HasPrefix(certString, "ssh-ed25519-cert-v01@openssh.com ") {
+		t.Logf("wrong prefix on stringification for ed25519")
+	}
+	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
+		t.Fatal("invalid cert content, bad username")
+	}
 }
 
 func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
@@ -528,6 +561,16 @@ func TestGetSignerFromPEMBytesSuccess(t *testing.T) {
 	}
 	//rawECPrivateKey
 	_, err = GetSignerFromPEMBytes([]byte(rawECPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ed25519 from openssl
+	_, err = GetSignerFromPEMBytes([]byte(pkcs8Ed25519PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// keygenEd25519PrivateKey
+	_, err = GetSignerFromPEMBytes([]byte(keygenEd25519PrivateKey))
 	if err != nil {
 		t.Fatal(err)
 	}
