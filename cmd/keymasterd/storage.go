@@ -129,6 +129,8 @@ func initDBPostgres(state *RuntimeState) (err error) {
 			return err
 		}
 	}
+	// Ensure that broken connections are replaced.
+	state.db.SetConnMaxLifetime(state.Config.ProfileStorage.SyncInterval >> 1)
 	return nil
 }
 
