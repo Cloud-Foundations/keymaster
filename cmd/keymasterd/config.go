@@ -55,6 +55,7 @@ type baseConfig struct {
 	TLSKeyFilename               string `yaml:"tls_key_filename"`
 	ACME                         acmecfg.AcmeConfig
 	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
+	Ed25519CAFilename            string     `yaml:"ed25519_ca_keyfilename"`
 	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
 	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
 	ExternalAuthCmd              string     `yaml:"external_auth_command"`
@@ -197,7 +198,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	// Load the built-in HTML templates.
 	htmlTemplates := []string{footerTemplateText, loginFormText,
 		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
-		newTOTPHTML, newBootstrapOTPPHTML,
+		newTOTPHTML, newBootstrapOTPPHTML, otpProfileSectionHTML,
 	}
 	for _, templateString := range htmlTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
@@ -328,6 +329,13 @@ func loadVerifyConfigFile(configFilename string,
 	if err != nil {
 		logger.Printf("Cannot load ssh CA File")
 		return nil, err
+	}
+	if len(runtimeState.Config.Base.Ed25519CAFilename) > 0 {
+		runtimeState.Ed25519CAFileContent, err = exitsAndCanRead(runtimeState.Config.Base.Ed25519CAFilename, "ssh CA File")
+		if err != nil {
+			logger.Printf("Cannot load Ed25519 CA File")
+			return nil, err
+		}
 	}
 
 	if len(runtimeState.Config.Base.ClientCAFilename) > 0 {
