@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -198,7 +199,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	// Load the built-in HTML templates.
 	htmlTemplates := []string{footerTemplateText, loginFormText,
 		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
-		newTOTPHTML, newBootstrapOTPPHTML, otpProfileSectionHTML,
+		newTOTPHTML, newBootstrapOTPPHTML,
 	}
 	for _, templateString := range htmlTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
@@ -267,6 +268,79 @@ func warnInsecureConfiguration(state *RuntimeState) {
 		logger.Printf("At least some client openid configurations do NOT have domains attached. "+
 			"This is dangerous. Affected clients: %v", insecureClientID)
 	}
+}
+
+// Loads the verifies consistency of signers and loads them if plaintext
+// or starts the autounselaing if encrypted
+func (state *RuntimeState) tryLoadAndVerifySigners() error {
+	state.logger.Debugf(0, "Top of tryLoadAndVerifySigners")
+	signerBlock, _ := pem.Decode(state.SSHCARawFileContent)
+	if signerBlock == nil {
+		// it is not PEM.. probably armor.. ie encrypted?
+		decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
+		armorSignerBlock, err := armor.Decode(decbuf)
+		if err != nil {
+			return fmt.Errorf("signer content is not pem encoded or armor decocable")
+		}
+		if len(state.Ed25519CAFileContent) > 0 {
+			ed255buf := bytes.NewBuffer(state.Ed25519CAFileContent)
+			ed255ArmorBlock, err := armor.Decode(ed255buf)
+			if err != nil {
+				return fmt.Errorf("Signer is armored but Ed25519 is not, will not start")
+			}
+			if ed255ArmorBlock.Type != armorSignerBlock.Type {
+				return fmt.Errorf("Ed25519 and Signer blocks do not match will not start")
+			}
+		}
+		state.logger.Debugf(0, "tryLoadAndVerifySigners: PEM is PGP")
+		logger.Println("Starting up in sealed state")
+		if state.ClientCAPool == nil {
+			state.logger.Println("No client CA: manual unsealing not possible")
+		}
+		state.beginAutoUnseal()
+		return nil
+	}
+	if len(state.Ed25519CAFileContent) > 0 {
+		ed25518FileBlock, _ := pem.Decode(state.Ed25519CAFileContent)
+		if ed25518FileBlock == nil {
+			return fmt.Errorf("Ed25519 file content is not pem encoded and Signer is")
+		}
+		edSigner, err := getSignerFromPEMBytes(state.Ed25519CAFileContent)
+		if err != nil {
+			return err
+		}
+		switch v := edSigner.(type) {
+		case ed25519.PrivateKey, *ed25519.PrivateKey:
+			state.logger.Debugf(2, "Got an Ed25519 Private key")
+		default:
+			return fmt.Errorf("Ed2559 configred file is not really an Ed25519 key. Type is %T!\n", v)
+		}
+		state.Ed25519Signer = edSigner
+	}
+
+	signer, err := getSignerFromPEMBytes(state.SSHCARawFileContent)
+	if err != nil {
+		state.logger.Printf("Cannot parse Private Key file")
+		return err
+	}
+	switch v := signer.(type) {
+	case *rsa.PrivateKey:
+		state.logger.Debugf(1, "Signer is RSA")
+	default:
+		return fmt.Errorf("Signer file is a valid Signer key. Type is %T!\n", v)
+	}
+	state.caCertDer, err = generateCADer(state, signer)
+	if err != nil {
+		state.logger.Printf("Cannot generate CA DER")
+		return err
+	}
+	// Assignment of signer MUST be the last operation after
+	// all error checks
+	state.Signer = signer
+	state.signerPublicKeyToKeymasterKeys()
+	state.SignerIsReady <- true
+	state.logger.Debugf(0, "End of tryLoadAndVerifySigners")
+	return nil
 }
 
 func loadVerifyConfigFile(configFilename string,
@@ -386,35 +460,9 @@ func loadVerifyConfigFile(configFilename string,
 
 		}
 	}
-
-	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
-		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
-		if err != nil {
-			logger.Printf("Cannot parse Private Key file")
-			return nil, err
-		}
-		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
-		if err != nil {
-			logger.Printf("Cannot generate CA DER")
-			return nil, err
-		}
-		// Assignment of signer MUST be the last operation after
-		// all error checks
-		runtimeState.Signer = signer
-		runtimeState.signerPublicKeyToKeymasterKeys()
-		runtimeState.SignerIsReady <- true
-
-	} else {
-		//check that the loaded data seems like an openpgp armored file
-		fileAsString := string(runtimeState.SSHCARawFileContent[:])
-		if !strings.HasPrefix(fileAsString, "-----BEGIN PGP MESSAGE-----") {
-			return nil, errors.New("CA private key file does NOT look like PGP")
-		}
-		logger.Println("Starting up in sealed state")
-		if runtimeState.ClientCAPool == nil {
-			logger.Println("No client CA: manual unsealing not possible")
-		}
-		runtimeState.beginAutoUnseal()
+	err = runtimeState.tryLoadAndVerifySigners()
+	if err != nil {
+		return nil, err
 	}
 	if err := runtimeState.setupEmail(); err != nil {
 		return nil, err
