@@ -144,6 +144,7 @@ type OpenIDConnectIDPConfig struct {
 
 type ProfileStorageConfig struct {
 	AwsSecretId         string        `yaml:"aws_secret_id"`
+	ConnectionLifetime  time.Duration `yaml:"connection_lifetime"`
 	StorageUrl          string        `yaml:"storage_url"`
 	SyncDelay           time.Duration `yaml:"sync_delay"`
 	SyncInterval        time.Duration `yaml:"sync_interval"`

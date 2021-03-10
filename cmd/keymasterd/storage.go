@@ -23,6 +23,9 @@ const (
 	profileDBFilename = "userProfiles.sqlite3"
 	cachedDBFilename  = "cachedDB.sqlite3"
 
+	dbConnectionLifetimeDefault = time.Minute * 15
+	dbConnectionLifetimeMaximum = time.Hour
+
 	dbSyncDelayDefault = time.Second * 3
 	dbSyncDelayMinimum = time.Second
 	dbSyncDelayMaximum = time.Minute
@@ -46,6 +49,14 @@ func (config *ProfileStorageConfig) setSyncLimits() {
 		config.SyncInterval = dbSyncIntervalMinimum
 	} else if config.SyncInterval > dbSyncIntervalMaximum {
 		config.SyncInterval = dbSyncIntervalMaximum
+	}
+	if config.ConnectionLifetime < 1 {
+		config.ConnectionLifetime = dbConnectionLifetimeDefault
+	}
+	if config.ConnectionLifetime < config.SyncInterval {
+		config.ConnectionLifetime = config.SyncInterval
+	} else if config.ConnectionLifetime > dbConnectionLifetimeMaximum {
+		config.ConnectionLifetime = dbConnectionLifetimeMaximum
 	}
 }
 
@@ -130,7 +141,7 @@ func initDBPostgres(state *RuntimeState) (err error) {
 		}
 	}
 	// Ensure that broken connections are replaced.
-	state.db.SetConnMaxLifetime(state.Config.ProfileStorage.SyncInterval >> 1)
+	state.db.SetConnMaxLifetime(state.Config.ProfileStorage.ConnectionLifetime)
 	return nil
 }
 
