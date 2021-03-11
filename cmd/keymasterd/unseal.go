@@ -150,21 +150,31 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	if err != nil {
 		return err
 	}
-	signer, err := getSignerFromPEMBytes(plaintextBytes)
-	if err != nil {
-		fmt.Errorf("cannot parse Private Key file: %s", err)
-	}
-	logger.Printf("About to generate CA DER %s", clientName)
-	state.caCertDer, err = generateCADer(state, signer)
-	if err != nil {
-		return fmt.Errorf("cannot generate CA DER: %s", err)
-	}
 	sendMessage := false
 	if state.Signer == nil {
 		sendMessage = true
 	}
-	// Assignment of signer MUST be the last operation after all error checks.
-	state.Signer = signer
+	err = state.loadSignersFromPemData(plaintextBytes, nil)
+	if err != nil {
+		return err
+	}
+	/*
+		signer, err := getSignerFromPEMBytes(plaintextBytes)
+		if err != nil {
+			fmt.Errorf("cannot parse Private Key file: %s", err)
+		}
+		logger.Printf("About to generate CA DER %s", clientName)
+		state.caCertDer, err = generateCADer(state, signer)
+		if err != nil {
+			return fmt.Errorf("cannot generate CA DER: %s", err)
+		}
+		sendMessage := false
+		if state.Signer == nil {
+			sendMessage = true
+		}
+		// Assignment of signer MUST be the last operation after all error checks.
+		state.Signer = signer
+	*/
 	state.signerPublicKeyToKeymasterKeys()
 	if sendMessage {
 		state.SignerIsReady <- true
