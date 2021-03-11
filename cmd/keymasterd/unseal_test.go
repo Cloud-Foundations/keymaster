@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 )
 
-// symmtrically gpg encrypted with password "password"
+// symmtrically gpg encrypted RSA private key with password "password"
 const encryptedTestSignerPrivateKey = `-----BEGIN PGP MESSAGE-----
 Version: GnuPG v2.0.22 (GNU/Linux)
 
@@ -44,6 +45,18 @@ B6TBdSkIkx6wGwrmAgtQ7D3A1PdFVDOdgQ72qWXzcDBAa5+ev9XefLdfmcbe726o
 H75JiRm3pbOn5cE5lux680VJLITirQRFwR1/8lYfTLBisX44VIdmFRcFQDXrRqBU
 WUGURkRA8g==
 =ym0B
+-----END PGP MESSAGE-----`
+
+// symmtrically gpg encrypted ED25519 private key with password "password"
+// openssl genpkey  -algorithm ED25519 -out ed25519.pem
+// gpg --symmetric --cipher-algo AES256 --armor ed_25519.pem
+const encryptedTestEd25519PrivateKey = `-----BEGIN PGP MESSAGE-----
+
+jA0ECQMCoPd2XFiFYsX/0p8B1yj+/IkHDf5vQcmCo5W2D/iW2JfWpymSNKCvtXdW
+m+ycZoG7b1+m/ybqM/plBv1n7t9+53yzVdwhB1mMFVYKvGAYmbiQIdme8pJwY4vy
+VKKOvkE6n1XtjsKrQVh+om9rort85dI+YzU/py17b5Vm4NKbQdUi0DQPLYk2djEK
+TZefF/kZQbQUhZY7E9Dj3wqUwIcixVTanxSXg3Et3Uo=
+=tKeJ
 -----END PGP MESSAGE-----`
 
 func TestInjectingSecret(t *testing.T) {
@@ -125,5 +138,49 @@ func TestInjectingSecret(t *testing.T) {
 	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUsealCASuccess(t *testing.T) {
+	state := RuntimeState{logger: testlogger.New(t)}
+	state.SSHCARawFileContent = []byte(encryptedTestSignerPrivateKey)
+	state.SignerIsReady = make(chan bool, 1)
+
+	err := state.unsealCA([]byte("password"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Signer == nil {
+		t.Fatalf("The signer should now be loaded")
+	}
+	select {
+	case res := <-state.SignerIsReady:
+		if res != true {
+			t.Fatalf("Was not unsealed")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Unsealer did not send signal")
+	}
+	// Now we clear the signer and retry with both ed25519 and sealer
+	state.Signer = nil
+	state.Ed25519Signer = nil
+	state.Ed25519CAFileContent = []byte(encryptedTestEd25519PrivateKey)
+	err = state.unsealCA([]byte("password"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Signer == nil {
+		t.Fatalf("The signer should now be loaded")
+	}
+	if state.Ed25519Signer == nil {
+		t.Fatalf("The Ed25519 signer should now be loaded")
+	}
+	select {
+	case res := <-state.SignerIsReady:
+		if res != true {
+			t.Fatalf("Was not unsealed")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Unsealer did not send signal")
 	}
 }
