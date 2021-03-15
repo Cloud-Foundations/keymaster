@@ -7,9 +7,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +40,10 @@ a0fmpm1BG1ZrT2Vp4cb50VeFH+oZn9UW6j+w3Lx4D6pwJvJ11MFjkIfw7Q1hl0j9
 Unc9jsYhX7DR3SV8vcFqduUmSH8vdc/zJEk76T2D+qe1aWqtr84QpxXBTrIKvSXD
 igkmavdG2gu3SpbFzNxuVCrxQ88Kte0xYJTe7vY=
 -----END CERTIFICATE-----`
+
+// Ed25519 ones is copied from lib/certgent_test.go
+
+const testEd25519PublicSSH = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDdNbfR67CJ0/iB5a5lQfZowi3VTrkDu7/rpMNKfHFPs cviecco@cviecco--MacBookPro15`
 
 // we do not support dsa
 const dsaPublicSSH = `ssh-dss AAAAB3NzaC1kc3MAAACBALd5BLQoXxeJHHMQpJzk283nbne65LQiFNPeH6VuNiNEGZI6N3KlQsijYK1oJX2R3oTDEhqEjQsdNa6s++eGbh2z6U3Xwu34odNCFJekKB3qZN7/gqWXzBcgFvir//edTCrN0evzbTedtjz3pB5KlB6OSsnntm/y6E/j45Q3ijGTAAAAFQCjyfpjPi4gmdskz5/cQZbGirVzmwAAAIEAr/LZ7rvsgdnQ1/x5NpJAGEy7QlxfjGfIUo2a57WpDvcjiQmpa9VRCF0ziF3XSv2iDfWZ19qPrbxAp4FIe+xXF3kR0XMmDQzeEZsBzl8pNe7ZxLBHKFX8ZL66VBngYJL2a4v84QoPCpXDJ1hWd7t+okqkFj/a+99cuWj65jk2zLkAAACAPbtpnU39ZioS+9HolaGqudhTfToNAVsVPwj7uiuqiR2OTywbR0WpDPs7zrYsJTzIviuuEXzTVLFWBDR6EwXQdg9Acz+uRRiiZ58e7kN7qv+hQ3FBT3W214A0EVkRJMozowYhzS4HM0x/LrxlNHHFpzMu/njkNfNYDJTK4I47BO0= cviecco@cviecco--MacBookPro15`
@@ -168,6 +174,55 @@ func TestGetValidSSHPublicKey(t *testing.T) {
 		if userSSH != nil {
 			t.Fatal("the usekey MUST be null")
 		}
+	}
+
+}
+
+func TestGenSSHEd25519(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	err = state.loadSignersFromPemData([]byte(testSignerPrivateKey), []byte(pkcs8Ed25519PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypePassword)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+
+	// Get request
+	req, err := createKeyBodyRequest("POST", "/certgen/username", testEd25519PublicSSH, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+
+	rr, err := checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := rr.Result()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("EdCert=%s", string(body))
+	if !strings.HasPrefix(string(body), "ssh-ed25519-cert-v01@openssh.com") {
+		t.Fatal("Return valued does not look like ed25519 cert")
+	}
+	// Now we disable the Ed signer and it should fail
+	state.Ed25519Signer = nil
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusUnprocessableEntity)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 }
