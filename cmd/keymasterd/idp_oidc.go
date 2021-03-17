@@ -114,8 +114,8 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 }
 
 type keymasterdIDPCodeProtectedData struct {
-	CodeChallenge       string `json:"code_challenge,omitEmpty"`
-	CodeChallengeMethod string `json:"code_challenge_method,omitEmpty"`
+	CodeChallenge       string `json:"code_challenge,omitempty"`
+	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
 }
 
 type keymasterdCodeToken struct {
@@ -130,8 +130,8 @@ type keymasterdCodeToken struct {
 	Scope         string `json:"scope"`
 	Type          string `json:"type"`
 	JWTId         string `json:"jti,omitEmpty"`
-	DataKeyID     string `json:"data_key_id,omitEmpty"`
-	ProtectedData string `json:"protected_data,omitEmpty"`
+	DataKeyID     string `json:"data_key_id,omitempty"`
+	ProtectedData string `json:"protected_data,omitempty"`
 }
 
 func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
@@ -495,14 +495,26 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		logger.Debugf(1, "warn: basic auth Missing")
 		clientID = r.Form.Get("client_id")
 		pass = r.Form.Get("client_secret")
-		if len(clientID) < 1 || len(pass) < 1 {
-			logger.Printf("Missing client_id in auth request")
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			return
-		}
 		if len(pass) < 1 && len(codeVerifier) < 1 {
 			logger.Printf("Cannot get auth credentials in auth request")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			return
+		}
+		if len(clientID) < 1 {
+			// This section is kind of unclear. The original rfc6749 spec
+			// Did not had this mandatory, however given the need for password
+			// based auth it was prety much mandatory.
+			// However... with PKCE  the issue is murkier:
+			// not mandatory: login.gov (https://developers.login.gov/oidc/)
+			// on-docs: auth0, okta,
+			// mandatory: onlogin.com
+			// In our implementation we ARE explicitly making it mandatory for
+			// the PKCE flow.
+			// Thus for clarity we are also explicily sending the error cause to
+			// help developers debug and be able to potentially enumerate interoperativity
+			// issues
+			logger.Printf("Missing client_id in auth request")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Missing client_id")
 			return
 		}
 		unescapeAuthCredentials = false
