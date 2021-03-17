@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,19 +113,25 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 	out.WriteTo(w)
 }
 
+type keymasterdIDPCodeProtectedData struct {
+	CodeChallenge       string `json:"code_challenge,omitEmpty"`
+	CodeChallengeMethod string `json:"code_challenge_method,omitEmpty"`
+}
+
 type keymasterdCodeToken struct {
-	Issuer     string `json:"iss"` //keymasterd
-	Subject    string `json:"sub"` //clientID
-	IssuedAt   int64  `json:"iat"`
-	Expiration int64  `json:"exp"`
-	Username   string `json:"username"`
-	AuthLevel  int64  `json:"auth_level"`
-	Nonce      string `json:"nonce,omitEmpty"`
-	//State      string `json:"state,omitEmpty"`
-	//ClientID    string `json:"client_id"`
-	RedirectURI string `json:"redirect_uri"`
-	Scope       string `json:"scope"`
-	Type        string `json:"type"`
+	Issuer        string `json:"iss"` //keymasterd
+	Subject       string `json:"sub"` //clientID
+	IssuedAt      int64  `json:"iat"`
+	Expiration    int64  `json:"exp"`
+	Username      string `json:"username"`
+	AuthLevel     int64  `json:"auth_level"`
+	Nonce         string `json:"nonce,omitEmpty"`
+	RedirectURI   string `json:"redirect_uri"`
+	Scope         string `json:"scope"`
+	Type          string `json:"type"`
+	JWTId         string `json:"jti,omitEmpty"`
+	DataKeyID     string `json:"data_key_id,omitEmpty"`
+	ProtectedData string `json:"protected_data,omitEmpty"`
 }
 
 func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
@@ -169,6 +179,55 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 		return matchedDomain && matchedRE, nil
 	}
 	return false, nil
+}
+
+// TODO: before making it a feature we must agree on these, for stage 1 is only
+func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, authUser string) ([][]byte, error) {
+	var result [][]byte
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID != clientId {
+			continue
+		}
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s", client.ClientID, client.ClientSecret)))
+		result = append(result, sum[:])
+		return result, nil
+
+	}
+	return nil, fmt.Errorf("client not found")
+}
+
+func sealEncodeData(plaintext, nonce, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	trimmedNonce := nonce[:aesgcm.NonceSize()]
+	ciphertext := aesgcm.Seal(nil, trimmedNonce, plaintext, nil)
+	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
+}
+
+func decodeOpenData(cipherText string, nonce, key []byte) ([]byte, error) {
+	var err error
+	decodedCipherText, err := base64.RawURLEncoding.DecodeString(cipherText)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	trimmedNonce := nonce[:aesgcm.NonceSize()]
+	return aesgcm.Open(nil, trimmedNonce, decodedCipherText, nil)
 }
 
 func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +293,42 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		return
 	}
 
+	jwtId, err := genRandomString()
+	if err != nil {
+		logger.Printf("Error getting random string %v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	var protectedData keymasterdIDPCodeProtectedData
+	protectedData.CodeChallenge = r.Form.Get("code_challenge")
+	protectedData.CodeChallengeMethod = r.Form.Get("code_challenge_method")
+	var protectedCipherText string
+	if len(protectedData.CodeChallenge) > 0 {
+		if len(protectedData.CodeChallengeMethod) > 0 && protectedData.CodeChallengeMethod != "S256" {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Requested Code Challenge, but challenge method is invalid")
+			return
+		}
+		jsonEncodedData, err := json.Marshal(protectedData)
+		if err != nil {
+			logger.Printf("Error json encoding data %v", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		keys, err := state.idpOpenIDCGetClientEncryptionKeys(clientID, authUser)
+		if err != nil {
+			logger.Printf("Error getting random string %v", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), keys[0])
+		if err != nil {
+			logger.Printf("Error getting random string %v", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+
+	}
+
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -243,11 +338,13 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		return
 	}
 	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
+	codeToken.JWTId = jwtId
 	codeToken.Scope = scope
 	codeToken.Expiration = time.Now().Unix() + maxAgeSecondsAuthCookie
 	codeToken.Username = authUser
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
+	codeToken.ProtectedData = protectedCipherText
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
 	if len(codeToken.Nonce) < 6 && len(codeToken.Nonce) != 0 {
@@ -293,13 +390,47 @@ type userInfoToken struct {
 	Type       string `json:"type"`
 }
 
-func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, client_secret string) bool {
+func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientSecret string) bool {
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
 		if client.ClientID != client_id {
 			continue
 		}
-		return client_secret == client.ClientSecret
+		return clientSecret == client.ClientSecret
 	}
+	return false
+}
+
+func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
+	keySet, err := state.idpOpenIDCGetClientEncryptionKeys(clientId, codeToken.Username)
+	if err != nil {
+		logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
+		return false
+	}
+	for _, key := range keySet {
+		plainTextJson, err := decodeOpenData(codeToken.ProtectedData, []byte(codeToken.JWTId), key)
+		if err != nil {
+			continue
+		}
+		var protectedData keymasterdIDPCodeProtectedData
+		err = json.Unmarshal([]byte(plainTextJson), &protectedData)
+		if err != nil {
+			return false
+		}
+		state.logger.Debugf(0, "Protected Data Found=%+v", protectedData)
+		// https://tools.ietf.org/html/rfc7636 section 4.6
+		switch protectedData.CodeChallengeMethod {
+		case "", "plain":
+			return codeVerifier == protectedData.CodeChallenge
+		case "S256":
+			// BASE64URL-ENCODE(SHA256(ASCII(code_verifier))) == code_challenge
+			sum := sha256.Sum256([]byte(codeVerifier))
+			return base64.RawURLEncoding.EncodeToString(sum[:]) == protectedData.CodeChallenge
+
+		default:
+			return false
+		}
+	}
+	logger.Debugf(0, "idpOpenIDCValidCodeVerifier: No valid key found")
 	return false
 }
 
@@ -357,6 +488,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	//formClientID := r.Form.Get("clientID")
 	logger.Debugf(2, "%+v", r)
 
+	codeVerifier := r.Form.Get("code_verifier")
 	unescapeAuthCredentials := true
 	clientID, pass, ok := r.BasicAuth()
 	if !ok {
@@ -364,6 +496,11 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		clientID = r.Form.Get("client_id")
 		pass = r.Form.Get("client_secret")
 		if len(clientID) < 1 || len(pass) < 1 {
+			logger.Printf("Missing client_id in auth request")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			return
+		}
+		if len(pass) < 1 && len(codeVerifier) < 1 {
 			logger.Printf("Cannot get auth credentials in auth request")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
@@ -382,9 +519,15 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 			pass = unescapedPass
 		}
 	}
-	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
+	valid := false
+	if len(codeVerifier) > 0 {
+		valid = state.idpOpenIDCValidCodeVerifier(clientID, codeVerifier, keymasterToken)
+	}
+	if !valid && len(pass) > 0 {
+		valid = state.idpOpenIDCValidClientSecret(clientID, pass)
+	}
 	if !valid {
-		logger.Debugf(0, "Error invalid client secret")
+		logger.Debugf(0, "Error invalid client secret or code verifier")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}

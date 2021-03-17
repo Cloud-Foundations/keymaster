@@ -254,5 +254,41 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestIdpSealUnsealRoundTrip(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	onlyDomainConfig := OpenIDConnectClientConfig{
+		ClientID:               "onlyWithDomains",
+		AllowedRedirectDomains: []string{"example.com"},
+	}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, onlyDomainConfig)
+
+	keys, err := state.idpOpenIDCGetClientEncryptionKeys(onlyDomainConfig.ClientID, "username")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nonceStr, err := genRandomString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPlainText := "hello world"
+	nonce := []byte(nonceStr)
+
+	cipherText, err := sealEncodeData([]byte(originalPlainText), nonce, keys[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("ciphertext=%s", cipherText)
+	plainText, err := decodeOpenData(cipherText, nonce, keys[0])
+	plainTextStr := string(plainText)
+	if plainTextStr != originalPlainText {
+		t.Fatalf("texts do not match original=%s recovered=%s", originalPlainText, plainTextStr)
+	}
 
 }
