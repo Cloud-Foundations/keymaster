@@ -146,7 +146,7 @@ func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
 func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	state.Mutex.Lock()
 	defer state.Mutex.Unlock()
-	// TODO.. make network error blocks to goroutines
+	// TODO.. move network error blocks to goroutines
 	if state.Signer != nil {
 		return errors.New("signer not null, already unlocked")
 	}
