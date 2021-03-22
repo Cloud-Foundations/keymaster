@@ -157,6 +157,10 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	var ed25519PlaintextBytes []byte
 	if state.Ed25519CAFileContent != nil && len(state.Ed25519CAFileContent) > 0 {
 		ed25519PlaintextBytes, err = pgpDecryptFileData(state.Ed25519CAFileContent, password)
+		if err != nil {
+			state.logger.Printf("failed to decrypt Ed25519 key file")
+			return err
+		}
 	}
 
 	sendMessage := false
