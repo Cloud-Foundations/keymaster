@@ -164,11 +164,12 @@ func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey
-	// TODO: eventaully we need to suport ecdsa for CA
-	// case *ecdsa.PrivateKey:
-	//	return &k.PublicKey
+	case *ecdsa.PrivateKey:
+		return &k.PublicKey
 	case ed25519.PrivateKey:
 		return k.Public().(ed25519.PublicKey)
+	case *ed25519.PrivateKey:
+		return k.Public().(*ed25519.PublicKey)
 	default:
 		return nil
 	}

@@ -161,6 +161,8 @@ type RuntimeState struct {
 	Config               AppConfigFile
 	SSHCARawFileContent  []byte
 	Signer               crypto.Signer
+	Ed25519CAFileContent []byte
+	Ed25519Signer        crypto.Signer
 	ClientCAPool         *x509.CertPool
 	HostIdentity         string
 	KerberosRealm        *string

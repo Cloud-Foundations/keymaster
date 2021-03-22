@@ -118,17 +118,11 @@ func (state *RuntimeState) tryAwsUnseal(
 	return state.unsealCA([]byte(password), "AWS Secrets Manager")
 }
 
-func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-	// TODO.. make network error blocks to goroutines
-	if state.Signer != nil {
-		return errors.New("signer not null, already unlocked")
-	}
-	decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
+func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
+	decbuf := bytes.NewBuffer(cipherText)
 	armorBlock, err := armor.Decode(decbuf)
 	if err != nil {
-		return errors.New("cannot decode armored file")
+		return nil, errors.New("cannot decode armored file")
 	}
 	failed := false
 	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
@@ -144,27 +138,39 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	}
 	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
 	if err != nil {
-		return fmt.Errorf("cannot decrypt key: %s", err)
+		return nil, fmt.Errorf("cannot decrypt key: %s", err)
 	}
-	plaintextBytes, err := ioutil.ReadAll(md.UnverifiedBody)
+	return ioutil.ReadAll(md.UnverifiedBody)
+}
+
+func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	// TODO.. move network error blocks to goroutines
+	if state.Signer != nil {
+		return errors.New("signer not null, already unlocked")
+	}
+	signerPlaintextBytes, err := pgpDecryptFileData(state.SSHCARawFileContent, password)
 	if err != nil {
 		return err
 	}
-	signer, err := getSignerFromPEMBytes(plaintextBytes)
-	if err != nil {
-		fmt.Errorf("cannot parse Private Key file: %s", err)
+	var ed25519PlaintextBytes []byte
+	if state.Ed25519CAFileContent != nil && len(state.Ed25519CAFileContent) > 0 {
+		ed25519PlaintextBytes, err = pgpDecryptFileData(state.Ed25519CAFileContent, password)
+		if err != nil {
+			state.logger.Printf("failed to decrypt Ed25519 key file")
+			return err
+		}
 	}
-	logger.Printf("About to generate CA DER %s", clientName)
-	state.caCertDer, err = generateCADer(state, signer)
-	if err != nil {
-		return fmt.Errorf("cannot generate CA DER: %s", err)
-	}
+
 	sendMessage := false
 	if state.Signer == nil {
 		sendMessage = true
 	}
-	// Assignment of signer MUST be the last operation after all error checks.
-	state.Signer = signer
+	err = state.loadSignersFromPemData(signerPlaintextBytes, ed25519PlaintextBytes)
+	if err != nil {
+		return err
+	}
 	state.signerPublicKeyToKeymasterKeys()
 	if sendMessage {
 		state.SignerIsReady <- true
