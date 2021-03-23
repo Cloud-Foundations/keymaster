@@ -23,6 +23,9 @@ const (
 	profileDBFilename = "userProfiles.sqlite3"
 	cachedDBFilename  = "cachedDB.sqlite3"
 
+	dbConnectionLifetimeDefault = time.Minute * 15
+	dbConnectionLifetimeMaximum = time.Hour
+
 	dbSyncDelayDefault = time.Second * 3
 	dbSyncDelayMinimum = time.Second
 	dbSyncDelayMaximum = time.Minute
@@ -46,6 +49,14 @@ func (config *ProfileStorageConfig) setSyncLimits() {
 		config.SyncInterval = dbSyncIntervalMinimum
 	} else if config.SyncInterval > dbSyncIntervalMaximum {
 		config.SyncInterval = dbSyncIntervalMaximum
+	}
+	if config.ConnectionLifetime < 1 {
+		config.ConnectionLifetime = dbConnectionLifetimeDefault
+	}
+	if config.ConnectionLifetime < config.SyncInterval {
+		config.ConnectionLifetime = config.SyncInterval
+	} else if config.ConnectionLifetime > dbConnectionLifetimeMaximum {
+		config.ConnectionLifetime = dbConnectionLifetimeMaximum
 	}
 }
 
@@ -129,6 +140,8 @@ func initDBPostgres(state *RuntimeState) (err error) {
 			return err
 		}
 	}
+	// Ensure that broken connections are replaced.
+	state.db.SetConnMaxLifetime(state.Config.ProfileStorage.ConnectionLifetime)
 	return nil
 }
 
@@ -382,7 +395,7 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		}
 		return dbMessage.Names, false, dbMessage.Err
 	case <-time.After(state.remoteDBQueryTimeout):
-		logger.Printf("GOT a timeout")
+		logger.Println("GetUsers: timed out on primary DB")
 		stmtText := getUsersStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
@@ -395,7 +408,7 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		if dbErr != nil {
 			logger.Printf("Problem with db = '%s'", err)
 		} else {
-			logger.Println("GOT data from db cache")
+			logger.Println("GetUsers: got data from DB cache")
 		}
 		return names, true, dbErr
 	}
@@ -463,7 +476,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (
 		metricLogExternalServiceDuration("storage-read", time.Since(start))
 		profileBytes = dbMessage.ProfileBytes
 	case <-time.After(state.remoteDBQueryTimeout):
-		logger.Printf("GOT a timeout")
+		logger.Println("LoadUserProfile: timed out on primary DB")
 		fromCache = true
 		// load from cache
 		stmtText := loadUserProfileStmt["sqlite"]
@@ -484,7 +497,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (
 				return nil, false, true, err
 			}
 		}
-		logger.Printf("GOT data from db cache")
+		logger.Println("LoadUserProfile: got data from DB cache")
 	}
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
@@ -643,7 +656,7 @@ func (state *RuntimeState) GetSigned(username string,
 		}
 		jwsData = dbMessage.JWSData
 	case <-time.After(state.remoteDBQueryTimeout):
-		logger.Printf("GOT a timeout")
+		logger.Println("GetSigned: timed out on primary DB")
 		// load from cache
 		stmtText := getSignedUserDataStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
@@ -664,9 +677,9 @@ func (state *RuntimeState) GetSigned(username string,
 				return false, "", err
 			}
 		}
-		logger.Printf("GOT data from db cache")
+		logger.Println("GetSigned: got data from DB cache")
 	}
-	logger.Printf("GOT some jwsdata data")
+	logger.Println("GetSigned: got jwsdata")
 	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jwsData)
 	if err != nil {
 		logger.Debugf(2, "failed to get storage data %s data=%s", err, jwsData)
