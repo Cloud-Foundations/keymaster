@@ -975,7 +975,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 
 	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
 	if err != nil {
-		logger.Printf("Error checking Origin")
+		logger.Printf("Error checking Origin, allowind to continue without origin header")
 	}
 	if originIsValid {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
