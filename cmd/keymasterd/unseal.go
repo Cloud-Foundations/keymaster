@@ -146,7 +146,7 @@ func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
 func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	state.Mutex.Lock()
 	defer state.Mutex.Unlock()
-	// TODO.. make network error blocks to goroutines
+	// TODO.. move network error blocks to goroutines
 	if state.Signer != nil {
 		return errors.New("signer not null, already unlocked")
 	}
@@ -157,6 +157,10 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	var ed25519PlaintextBytes []byte
 	if state.Ed25519CAFileContent != nil && len(state.Ed25519CAFileContent) > 0 {
 		ed25519PlaintextBytes, err = pgpDecryptFileData(state.Ed25519CAFileContent, password)
+		if err != nil {
+			state.logger.Printf("failed to decrypt Ed25519 key file")
+			return err
+		}
 	}
 
 	sendMessage := false
