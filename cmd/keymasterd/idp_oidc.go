@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -181,19 +182,137 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 	return false, nil
 }
 
+const PKCESecretClientDataType = 2
+const PKCESecretExpirationSeconds = 18 * 3600
+
+func genRandomBytes() ([]byte, error) {
+	size := randomStringEntropyBytes
+	rb := make([]byte, size)
+	_, err := rand.Read(rb)
+	if err != nil {
+		return nil, err
+	}
+	return rb, nil
+}
+
+type EncodedBackendPKCEKeys struct {
+	Base64Keys []string
+}
+
+func (keyset *EncodedBackendPKCEKeys) DecodeIntoArray() ([][]byte, error) {
+	var result [][]byte
+	for _, base64key := range keyset.Base64Keys {
+
+		key, err := base64.URLEncoding.DecodeString(base64key)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, key)
+	}
+	return result, nil
+}
+func (keyset *EncodedBackendPKCEKeys) EncodefromArray(inKeys [][]byte) error {
+	for _, key := range inKeys {
+		base64Key := base64.URLEncoding.EncodeToString(key)
+		keyset.Base64Keys = append(keyset.Base64Keys, base64Key)
+	}
+	return nil
+}
+
+func (state *RuntimeState) deserializeKeysetIntoPlaintextKeys(serializedKeySet string) ([][]byte, error) {
+	var encodedKeySet EncodedBackendPKCEKeys
+	err := json.Unmarshal([]byte(serializedKeySet), &encodedKeySet)
+	if err != nil {
+		return nil, err
+	}
+	encryptedKeys, err := encodedKeySet.DecodeIntoArray()
+	if err != nil {
+		return nil, err
+	}
+	key, err := state.decryptWithPublicKeys(encryptedKeys)
+	if err != nil {
+		//probably at this stage, regenerate?
+		return nil, err
+	}
+	var result [][]byte
+	result = append(result, key)
+	return result, nil
+}
+
 // TODO: before making it a feature we must agree on these, for stage 1 is only
 func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, authUser string) ([][]byte, error) {
-	var result [][]byte
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != clientId {
-			continue
+	clientFound := false
+	var client OpenIDConnectClientConfig
+	for _, client = range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID == clientId {
+			clientFound = true
+			break
 		}
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s", client.ClientID, client.ClientSecret)))
-		result = append(result, sum[:])
-		return result, nil
-
 	}
-	return nil, fmt.Errorf("client not found")
+	if !clientFound {
+		return nil, fmt.Errorf("client not found")
+	}
+	var result [][]byte
+	//fetch from DB.. if none create them
+
+	// This is argumentable... shouldbe authUser?
+	dbStringIndex := clientId
+
+	ok, keyJSON, err := state.GetSigned(dbStringIndex, PKCESecretClientDataType)
+	if err != nil {
+		return nil, err
+	}
+
+	var encodedKeySet EncodedBackendPKCEKeys
+	if ok {
+		return state.deserializeKeysetIntoPlaintextKeys(keyJSON)
+		/*
+			err := json.Unmarshal([]byte(keyJSON), &encodedKeySet)
+			if err != nil {
+				return nil, err
+			}
+			encryptedKeys, err := encodedKeySet.DecodeIntoArray()
+			if err != nil {
+				return nil, err
+			}
+			key, err := state.decryptWithPublicKeys(encryptedKeys)
+			if err != nil {
+				//probably at this stage, regenerate?
+				return nil, err
+			}
+			result = append(result, key)
+			return result, nil
+		*/
+	}
+	// it does not exist we need to create our own... we will ignore the race condition of set/get for now
+
+	//write our own!
+	key, err := genRandomBytes()
+	if err != nil {
+		return nil, err
+	}
+	encryptedKeys, err := state.encryptWithPublicKeys(key)
+	if err != nil {
+		return nil, err
+	}
+	err = encodedKeySet.EncodefromArray(encryptedKeys)
+	if err != nil {
+		return nil, err
+	}
+	serializedKeySet, err := json.Marshal(encodedKeySet)
+	if err != nil {
+		return nil, err
+	}
+
+	err = state.UpsertSigned(dbStringIndex, PKCESecretClientDataType, time.Now().Unix()+PKCESecretExpirationSeconds, string(serializedKeySet))
+	if err != nil {
+		return nil, err
+	}
+	// it would be better to go to the DB and get the latest one there... since we know know that there is one
+	result = append(result, key)
+
+	return result, nil
+
 }
 
 func sealEncodeData(plaintext, nonce, key []byte) (string, error) {
