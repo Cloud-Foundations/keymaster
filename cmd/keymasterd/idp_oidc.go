@@ -72,6 +72,7 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
 }
@@ -111,6 +112,7 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	out.WriteTo(w)
 }
 
@@ -178,6 +180,30 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 			}
 		}
 		return matchedDomain && matchedRE, nil
+	}
+	return false, nil
+}
+
+func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId string) (bool, error) {
+	parsedURL, err := url.Parse(origin)
+	if err != nil {
+		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+		return false, nil
+	}
+	if parsedURL.Scheme != "https" {
+		return false, nil
+	}
+
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if clientId != "" && client.ClientID != clientId {
+			continue
+		}
+		for _, domain := range client.AllowedRedirectDomains {
+			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+			if matched {
+				return true, nil
+			}
+		}
 	}
 	return false, nil
 }
@@ -266,23 +292,6 @@ func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, au
 	var encodedKeySet EncodedBackendPKCEKeys
 	if ok {
 		return state.deserializeKeysetIntoPlaintextKeys(keyJSON)
-		/*
-			err := json.Unmarshal([]byte(keyJSON), &encodedKeySet)
-			if err != nil {
-				return nil, err
-			}
-			encryptedKeys, err := encodedKeySet.DecodeIntoArray()
-			if err != nil {
-				return nil, err
-			}
-			key, err := state.decryptWithPublicKeys(encryptedKeys)
-			if err != nil {
-				//probably at this stage, regenerate?
-				return nil, err
-			}
-			result = append(result, key)
-			return result, nil
-		*/
 	}
 	// it does not exist we need to create our own... we will ignore the race condition of set/get for now
 
@@ -663,7 +672,13 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	//validity checks
+	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(r.Header.Get("Origin"), clientID)
+	if err != nil {
+		logger.Printf("Error checking Origin")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+
 	// 1. Ensure authoriation client was issued to the authenticated client
 	if clientID != keymasterToken.Subject {
 		logger.Debugf(0, "Unmatching token Value")
@@ -743,6 +758,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if originIsValid {
+		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+	}
 	out.WriteTo(w)
 
 }
@@ -830,13 +848,34 @@ type openidConnectUserInfo struct {
 
 func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	r *http.Request) {
-	if !(r.Method == "GET" || r.Method == "POST") {
+	if !(r.Method == "GET" || r.Method == "POST" || r.Method == "OPTIONS") {
 		logger.Printf("Invalid Method for Userinfo Handler")
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Invalid Method for Userinfo Handler")
 		return
 	}
 	logger.Debugf(2, "userinfo request=%+v", r)
+
+	if r.Method == "OPTIONS" {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Options MUST contain origin")
+		}
+		originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+		if err != nil {
+			logger.Printf("Error checking Origin")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if originIsValid {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		}
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization")
+
+		return
+
+	}
+
 	var accessToken string
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
