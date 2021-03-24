@@ -856,8 +856,8 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	logger.Debugf(2, "userinfo request=%+v", r)
 
+	origin := r.Header.Get("Origin")
 	if r.Method == "OPTIONS" {
-		origin := r.Header.Get("Origin")
 		if origin == "" {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Options MUST contain origin")
 		}
@@ -972,6 +972,15 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
+
+	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+	if err != nil {
+		logger.Printf("Error checking Origin")
+	}
+	if originIsValid {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+
 	out.WriteTo(w)
 	logger.Printf("200 Successful userinfo request")
 	logger.Debugf(0, " Userinfo response =  %s", b)
