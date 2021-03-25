@@ -122,19 +122,19 @@ type keymasterdIDPCodeProtectedData struct {
 }
 
 type keymasterdCodeToken struct {
-	Issuer        string `json:"iss"` //keymasterd
-	Subject       string `json:"sub"` //clientID
-	IssuedAt      int64  `json:"iat"`
-	Expiration    int64  `json:"exp"`
-	Username      string `json:"username"`
-	AuthLevel     int64  `json:"auth_level"`
-	Nonce         string `json:"nonce,omitEmpty"`
-	RedirectURI   string `json:"redirect_uri"`
-	Scope         string `json:"scope"`
-	Type          string `json:"type"`
-	JWTId         string `json:"jti,omitEmpty"`
-	DataKeyID     string `json:"data_key_id,omitempty"`
-	ProtectedData string `json:"protected_data,omitempty"`
+	Issuer           string `json:"iss"` //keymasterd
+	Subject          string `json:"sub"` //clientID
+	IssuedAt         int64  `json:"iat"`
+	Expiration       int64  `json:"exp"`
+	Username         string `json:"username"`
+	AuthLevel        int64  `json:"auth_level"`
+	Nonce            string `json:"nonce,omitEmpty"`
+	RedirectURI      string `json:"redirect_uri"`
+	Scope            string `json:"scope"`
+	Type             string `json:"type"`
+	JWTId            string `json:"jti,omitEmpty"`
+	ProtectedDataKey string `json:"protected_data_key,omitempty"`
+	ProtectedData    string `json:"protected_data,omitempty"`
 }
 
 func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
@@ -245,9 +245,9 @@ func (keyset *EncodedBackendPKCEKeys) EncodefromArray(inKeys [][]byte) error {
 	return nil
 }
 
-func (state *RuntimeState) deserializeKeysetIntoPlaintextKeys(serializedKeySet string) ([][]byte, error) {
+func (state *RuntimeState) deserializeKeysetIntoPlaintextKey(serializedKeySet []byte) ([]byte, error) {
 	var encodedKeySet EncodedBackendPKCEKeys
-	err := json.Unmarshal([]byte(serializedKeySet), &encodedKeySet)
+	err := json.Unmarshal(serializedKeySet, &encodedKeySet)
 	if err != nil {
 		return nil, err
 	}
@@ -255,14 +255,30 @@ func (state *RuntimeState) deserializeKeysetIntoPlaintextKeys(serializedKeySet s
 	if err != nil {
 		return nil, err
 	}
-	key, err := state.decryptWithPublicKeys(encryptedKeys)
+	return state.decryptWithPublicKeys(encryptedKeys)
+	/*
+		key, err := state.decryptWithPublicKeys(encryptedKeys)
+
+		if err != nil {
+			return nil, err
+		}
+		var result [][]byte
+		result = append(result, key)
+		return result, nil
+	*/
+}
+
+func (state *RuntimeState) encryptKeyAndSerialize(key []byte) ([]byte, error) {
+	encryptedKeys, err := state.encryptWithPublicKeys(key)
 	if err != nil {
-		//probably at this stage, regenerate?
 		return nil, err
 	}
-	var result [][]byte
-	result = append(result, key)
-	return result, nil
+	var encodedKeySet EncodedBackendPKCEKeys
+	err = encodedKeySet.EncodefromArray(encryptedKeys)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(encodedKeySet)
 }
 
 // TODO: before making it a feature we must agree on these, for stage 1 is only
@@ -289,9 +305,12 @@ func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, au
 		return nil, err
 	}
 
-	var encodedKeySet EncodedBackendPKCEKeys
 	if ok {
-		return state.deserializeKeysetIntoPlaintextKeys(keyJSON)
+		key, err := state.deserializeKeysetIntoPlaintextKey([]byte(keyJSON))
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, key)
 	}
 	// it does not exist we need to create our own... we will ignore the race condition of set/get for now
 
@@ -300,15 +319,17 @@ func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, au
 	if err != nil {
 		return nil, err
 	}
-	encryptedKeys, err := state.encryptWithPublicKeys(key)
-	if err != nil {
-		return nil, err
-	}
-	err = encodedKeySet.EncodefromArray(encryptedKeys)
-	if err != nil {
-		return nil, err
-	}
-	serializedKeySet, err := json.Marshal(encodedKeySet)
+	/*
+		encryptedKeys, err := state.encryptWithPublicKeys(key)
+		if err != nil {
+			return nil, err
+		}
+		err = encodedKeySet.EncodefromArray(encryptedKeys)
+		if err != nil {
+			return nil, err
+		}
+	*/
+	serializedKeySet, err := state.encryptKeyAndSerialize(key) //json.Marshal(encodedKeySet)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +452,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	protectedData.CodeChallenge = r.Form.Get("code_challenge")
 	protectedData.CodeChallengeMethod = r.Form.Get("code_challenge_method")
 	var protectedCipherText string
+	var protectedCipherTextKeys string
 	if len(protectedData.CodeChallenge) > 0 {
 		if len(protectedData.CodeChallengeMethod) > 0 && protectedData.CodeChallengeMethod != "S256" {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Requested Code Challenge, but challenge method is invalid")
@@ -442,13 +464,29 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
-		keys, err := state.idpOpenIDCGetClientEncryptionKeys(clientID, authUser)
+		key, err := genRandomBytes()
 		if err != nil {
-			logger.Printf("Error getting random string %v", err)
+			logger.Printf("Error generating PKCE encryption key %v", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
-		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), keys[0])
+		serializedKeySet, err := state.encryptKeyAndSerialize(key) //json.Marshal(encodedKeySet)
+		if err != nil {
+			logger.Printf("Error encrpyting PKCE encryption key %v", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		protectedCipherTextKeys = string(serializedKeySet)
+
+		/*
+			keys, err := state.idpOpenIDCGetClientEncryptionKeys(clientID, authUser)
+			if err != nil {
+				logger.Printf("Error getting random string %v", err)
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				return
+			}
+		*/
+		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), key)
 		if err != nil {
 			logger.Printf("Error getting random string %v", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -473,6 +511,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
 	codeToken.ProtectedData = protectedCipherText
+	codeToken.ProtectedDataKey = protectedCipherTextKeys
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
 	if len(codeToken.Nonce) < 6 && len(codeToken.Nonce) != 0 {
@@ -529,37 +568,47 @@ func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientS
 }
 
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
-	keySet, err := state.idpOpenIDCGetClientEncryptionKeys(clientId, codeToken.Username)
+	//key, err :=
+	//codeToken.ProtectedDataKey = protectedCipherTextKeys
+
+	key, err := state.deserializeKeysetIntoPlaintextKey([]byte(codeToken.ProtectedDataKey))
 	if err != nil {
 		logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
 		return false
 	}
-	for _, key := range keySet {
-		plainTextJson, err := decodeOpenData(codeToken.ProtectedData, []byte(codeToken.JWTId), key)
+	/*
+		keySet, err := state.idpOpenIDCGetClientEncryptionKeys(clientId, codeToken.Username)
 		if err != nil {
-			continue
-		}
-		var protectedData keymasterdIDPCodeProtectedData
-		err = json.Unmarshal([]byte(plainTextJson), &protectedData)
-		if err != nil {
+			logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
 			return false
 		}
-		state.logger.Debugf(0, "Protected Data Found=%+v", protectedData)
-		// https://tools.ietf.org/html/rfc7636 section 4.6
-		switch protectedData.CodeChallengeMethod {
-		case "", "plain":
-			return codeVerifier == protectedData.CodeChallenge
-		case "S256":
-			// BASE64URL-ENCODE(SHA256(ASCII(code_verifier))) == code_challenge
-			sum := sha256.Sum256([]byte(codeVerifier))
-			return base64.RawURLEncoding.EncodeToString(sum[:]) == protectedData.CodeChallenge
-
-		default:
-			return false
-		}
+	*/
+	//for _, key := range keySet {
+	plainTextJson, err := decodeOpenData(codeToken.ProtectedData, []byte(codeToken.JWTId), key)
+	if err != nil {
+		return false
 	}
-	logger.Debugf(0, "idpOpenIDCValidCodeVerifier: No valid key found")
-	return false
+	var protectedData keymasterdIDPCodeProtectedData
+	err = json.Unmarshal([]byte(plainTextJson), &protectedData)
+	if err != nil {
+		return false
+	}
+	state.logger.Debugf(0, "Protected Data Found=%+v", protectedData)
+	// https://tools.ietf.org/html/rfc7636 section 4.6
+	switch protectedData.CodeChallengeMethod {
+	case "", "plain":
+		return codeVerifier == protectedData.CodeChallenge
+	case "S256":
+		// BASE64URL-ENCODE(SHA256(ASCII(code_verifier))) == code_challenge
+		sum := sha256.Sum256([]byte(codeVerifier))
+		return base64.RawURLEncoding.EncodeToString(sum[:]) == protectedData.CodeChallenge
+
+	default:
+		return false
+	}
+	//}
+	//logger.Debugf(0, "idpOpenIDCValidCodeVerifier: No valid key found")
+	//return false
 }
 
 func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -760,6 +809,8 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	w.Header().Set("Pragma", "no-cache")
 	if originIsValid {
 		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Max-Age", "7200")
 	}
 	out.WriteTo(w)
 
@@ -869,6 +920,8 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		}
 		if originIsValid {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Max-Age", "7200")
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization")
 
@@ -979,6 +1032,8 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	if originIsValid {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Max-Age", "7200")
 	}
 
 	out.WriteTo(w)
