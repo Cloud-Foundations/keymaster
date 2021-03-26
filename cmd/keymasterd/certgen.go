@@ -101,28 +101,18 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 	logger.Debugf(3, "auth succedded for %s", authUser)
 
-	switch r.Method {
-	case "GET":
-		logger.Debugf(3, "Got client GET connection")
-		err = r.ParseForm()
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-			return
-		}
-	case "POST":
-		logger.Debugf(3, "Got client POST connection")
-		err = r.ParseMultipartForm(1e7)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-			return
-		}
-	default:
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
 
+	logger.Debugf(3, "Got client POST connection")
+	err = r.ParseMultipartForm(1e7)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return
+	}
 	duration := time.Duration(24 * time.Hour)
 	if formDuration, ok := r.Form["duration"]; ok {
 		stringDuration := formDuration[0]
@@ -149,7 +139,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 	switch certType {
 	case "ssh":
-		state.postAuthSSHCertHandler(w, r, targetUser, keySigner, duration)
+		state.postAuthSSHCertHandler(w, r, targetUser, duration)
 		return
 	case "x509":
 		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, false)
@@ -194,63 +184,67 @@ func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
 
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
-	keySigner crypto.Signer, duration time.Duration) {
-	signer, err := ssh.NewSignerFromSigner(keySigner)
+	duration time.Duration) {
+
+	var certString string
+	var cert ssh.Certificate
+	if r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	file, _, err := r.FormFile("pubkeyfile")
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
+		return
+	}
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(file)
+	userPubKey := buf.String()
+
+	sshUserPublicKey, userErr, err := getValidSSHPublicKey(userPubKey)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if userErr != nil {
+		logger.Printf("validating Error err: %s", userErr)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
+		return
+	}
+	var cryptoSigner crypto.Signer
+	switch sshUserPublicKey.Type() {
+	case ssh.KeyAlgoED25519:
+		if state.Ed25519Signer == nil {
+			logger.Printf("requesting an Ed25519 cert, but no such ca defined")
+			state.writeFailureResponse(w, r, http.StatusUnprocessableEntity, "key type not allowed")
+			return
+		}
+		cryptoSigner = state.Ed25519Signer
+	default:
+		cryptoSigner = state.Signer
+	}
+	signer, err := ssh.NewSignerFromSigner(cryptoSigner)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("Signer failed to load")
 		return
 	}
 
-	var certString string
-	var cert ssh.Certificate
-	switch r.Method {
-	case "GET":
-		certString, cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-	case "POST":
-		file, _, err := r.FormFile("pubkeyfile")
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
-			return
-		}
-		defer file.Close()
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(file)
-		userPubKey := buf.String()
-
-		_, userErr, err := getValidSSHPublicKey(userPubKey)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if userErr != nil {
-			logger.Printf("validating Error err: %s", userErr)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
-			return
-		}
-
-		certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("signUserPubkey Err")
-			return
-		}
-
-	default:
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("signUserPubkey Err")
 		return
-
 	}
+
 	eventNotifier.PublishSSH(cert.Marshal())
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
-	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+cert.Type()+"-cert.pub\"")
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", certString)
 	logger.Printf("Generated SSH Certifcate for %s. Serial:%d", targetUser, cert.Serial)
