@@ -208,9 +208,6 @@ func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId
 	return false, nil
 }
 
-const PKCESecretClientDataType = 2
-const PKCESecretExpirationSeconds = 18 * 3600
-
 func genRandomBytes() ([]byte, error) {
 	size := randomStringEntropyBytes
 	rb := make([]byte, size)
@@ -221,128 +218,28 @@ func genRandomBytes() ([]byte, error) {
 	return rb, nil
 }
 
-type EncodedBackendPKCEKeys struct {
-	Base64Keys []string
-}
-
-func (keyset *EncodedBackendPKCEKeys) DecodeIntoArray() ([][]byte, error) {
-	var result [][]byte
-	for _, base64key := range keyset.Base64Keys {
-
-		key, err := base64.URLEncoding.DecodeString(base64key)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, key)
-	}
-	return result, nil
-}
-func (keyset *EncodedBackendPKCEKeys) EncodefromArray(inKeys [][]byte) error {
-	for _, key := range inKeys {
-		base64Key := base64.URLEncoding.EncodeToString(key)
-		keyset.Base64Keys = append(keyset.Base64Keys, base64Key)
-	}
-	return nil
+type EncryptedKeySet struct {
+	RsaOaep [][]byte `json:"rsa_oaep"`
 }
 
 func (state *RuntimeState) deserializeKeysetIntoPlaintextKey(serializedKeySet []byte) ([]byte, error) {
-	var encodedKeySet EncodedBackendPKCEKeys
-	err := json.Unmarshal(serializedKeySet, &encodedKeySet)
+	var encodedKeySet EncryptedKeySet
+	var err error
+	err = json.Unmarshal(serializedKeySet, &encodedKeySet)
 	if err != nil {
 		return nil, err
 	}
-	encryptedKeys, err := encodedKeySet.DecodeIntoArray()
-	if err != nil {
-		return nil, err
-	}
-	return state.decryptWithPublicKeys(encryptedKeys)
-	/*
-		key, err := state.decryptWithPublicKeys(encryptedKeys)
-
-		if err != nil {
-			return nil, err
-		}
-		var result [][]byte
-		result = append(result, key)
-		return result, nil
-	*/
+	return state.decryptWithPublicKeys(encodedKeySet.RsaOaep)
 }
 
 func (state *RuntimeState) encryptKeyAndSerialize(key []byte) ([]byte, error) {
-	encryptedKeys, err := state.encryptWithPublicKeys(key)
-	if err != nil {
-		return nil, err
-	}
-	var encodedKeySet EncodedBackendPKCEKeys
-	err = encodedKeySet.EncodefromArray(encryptedKeys)
+	var encodedKeySet EncryptedKeySet
+	var err error
+	encodedKeySet.RsaOaep, err = state.encryptWithPublicKeys(key)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(encodedKeySet)
-}
-
-// TODO: before making it a feature we must agree on these, for stage 1 is only
-func (state *RuntimeState) idpOpenIDCGetClientEncryptionKeys(clientId string, authUser string) ([][]byte, error) {
-	clientFound := false
-	var client OpenIDConnectClientConfig
-	for _, client = range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID == clientId {
-			clientFound = true
-			break
-		}
-	}
-	if !clientFound {
-		return nil, fmt.Errorf("client not found")
-	}
-	var result [][]byte
-	//fetch from DB.. if none create them
-
-	// This is argumentable... shouldbe authUser?
-	dbStringIndex := clientId
-
-	ok, keyJSON, err := state.GetSigned(dbStringIndex, PKCESecretClientDataType)
-	if err != nil {
-		return nil, err
-	}
-
-	if ok {
-		key, err := state.deserializeKeysetIntoPlaintextKey([]byte(keyJSON))
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, key)
-	}
-	// it does not exist we need to create our own... we will ignore the race condition of set/get for now
-
-	//write our own!
-	key, err := genRandomBytes()
-	if err != nil {
-		return nil, err
-	}
-	/*
-		encryptedKeys, err := state.encryptWithPublicKeys(key)
-		if err != nil {
-			return nil, err
-		}
-		err = encodedKeySet.EncodefromArray(encryptedKeys)
-		if err != nil {
-			return nil, err
-		}
-	*/
-	serializedKeySet, err := state.encryptKeyAndSerialize(key) //json.Marshal(encodedKeySet)
-	if err != nil {
-		return nil, err
-	}
-
-	err = state.UpsertSigned(dbStringIndex, PKCESecretClientDataType, time.Now().Unix()+PKCESecretExpirationSeconds, string(serializedKeySet))
-	if err != nil {
-		return nil, err
-	}
-	// it would be better to go to the DB and get the latest one there... since we know know that there is one
-	result = append(result, key)
-
-	return result, nil
-
 }
 
 func sealEncodeData(plaintext, nonce, key []byte) (string, error) {
@@ -478,14 +375,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 		protectedCipherTextKeys = string(serializedKeySet)
 
-		/*
-			keys, err := state.idpOpenIDCGetClientEncryptionKeys(clientID, authUser)
-			if err != nil {
-				logger.Printf("Error getting random string %v", err)
-				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-				return
-			}
-		*/
 		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), key)
 		if err != nil {
 			logger.Printf("Error getting random string %v", err)
@@ -568,22 +457,12 @@ func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientS
 }
 
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
-	//key, err :=
-	//codeToken.ProtectedDataKey = protectedCipherTextKeys
 
 	key, err := state.deserializeKeysetIntoPlaintextKey([]byte(codeToken.ProtectedDataKey))
 	if err != nil {
 		logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
 		return false
 	}
-	/*
-		keySet, err := state.idpOpenIDCGetClientEncryptionKeys(clientId, codeToken.Username)
-		if err != nil {
-			logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
-			return false
-		}
-	*/
-	//for _, key := range keySet {
 	plainTextJson, err := decodeOpenData(codeToken.ProtectedData, []byte(codeToken.JWTId), key)
 	if err != nil {
 		return false
@@ -594,6 +473,7 @@ func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVeri
 		return false
 	}
 	state.logger.Debugf(0, "Protected Data Found=%+v", protectedData)
+
 	// https://tools.ietf.org/html/rfc7636 section 4.6
 	switch protectedData.CodeChallengeMethod {
 	case "", "plain":
@@ -606,9 +486,6 @@ func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVeri
 	default:
 		return false
 	}
-	//}
-	//logger.Debugf(0, "idpOpenIDCValidCodeVerifier: No valid key found")
-	//return false
 }
 
 func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
