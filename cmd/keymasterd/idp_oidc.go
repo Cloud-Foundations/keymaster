@@ -128,6 +128,7 @@ type keymasterdCodeToken struct {
 	Expiration       int64  `json:"exp"`
 	Username         string `json:"username"`
 	AuthLevel        int64  `json:"auth_level"`
+	AuthExpiration   int64  `json:"auth_exp"`
 	Nonce            string `json:"nonce,omitEmpty"`
 	RedirectURI      string `json:"redirect_uri"`
 	Scope            string `json:"scope"`
@@ -276,6 +277,8 @@ func decodeOpenData(cipherText string, nonce, key []byte) ([]byte, error) {
 	return aesgcm.Open(nil, trimmedNonce, decodedCipherText, nil)
 }
 
+const idpOpenIDCMaxAuthProcessMaxDurationSeconds = 300
+
 func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
@@ -395,7 +398,8 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
 	codeToken.JWTId = jwtId
 	codeToken.Scope = scope
-	codeToken.Expiration = time.Now().Unix() + maxAgeSecondsAuthCookie
+	codeToken.AuthExpiration = time.Now().Unix() + maxAgeSecondsAuthCookie
+	codeToken.Expiration = time.Now().Unix() + idpOpenIDCMaxAuthProcessMaxDurationSeconds
 	codeToken.Username = authUser
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
@@ -647,7 +651,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 	idToken := openIDConnectIDToken{Issuer: state.idpGetIssuer(), Subject: keymasterToken.Username, Audience: []string{clientID}}
 	idToken.Nonce = keymasterToken.Nonce
-	idToken.Expiration = keymasterToken.Expiration
+	idToken.Expiration = keymasterToken.AuthExpiration
 	idToken.IssuedAt = time.Now().Unix()
 
 	signedIdToken, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()

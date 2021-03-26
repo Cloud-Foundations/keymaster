@@ -260,38 +260,6 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 }
 
 func TestIdpSealUnsealRoundTrip(t *testing.T) {
-	/*
-		state, passwdFile, err := setupValidRuntimeStateSigner(t)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer os.Remove(passwdFile.Name()) // clean up
-	*/
-	/*
-		/// we also need to setup the DB:
-		tmpdir, err := ioutil.TempDir("", "keymasterd")
-		if err != nil {
-			t.Fatal(err)
-		}
-		state.Config.Base.DataDirectory = tmpdir
-
-		defer os.RemoveAll(tmpdir)
-		err = initDB(state)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		onlyDomainConfig := OpenIDConnectClientConfig{
-			ClientID:               "onlyWithDomains",
-			AllowedRedirectDomains: []string{"example.com"},
-		}
-		state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, onlyDomainConfig)
-
-		keys, err := state.idpOpenIDCGetClientEncryptionKeys(onlyDomainConfig.ClientID, "username")
-		if err != nil {
-			t.Fatal(err)
-		}
-	*/
 	key, err := genRandomBytes()
 	if err != nil {
 		t.Fatal(err)
