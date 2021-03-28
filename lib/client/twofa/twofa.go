@@ -137,6 +137,10 @@ func authenticateUser(
 	userAgentString string,
 	logger log.DebugLogger) (err error) {
 
+	if client == nil {
+		return fmt.Errorf("http client is nil")
+	}
+
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
 	form.Add("username", userName)
@@ -313,55 +317,20 @@ func getCertsFromServer(
 		return nil, nil, nil, err
 	}
 
-	//now get x509 cert
-	pubKey := signer.Public()
-	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
+	x509Cert, err = doCertRequest(signer, client, userName, baseUrl, "x509",
+		addGroups, userAgentString, logger)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
-
-	var urlPostfix string
-	if addGroups {
-		urlPostfix = "&addGroups=true"
-		logger.Debugln(0, "adding \"addGroups\" to request")
-	}
-	// TODO: urlencode the userName
-	x509Cert, err = doCertRequestInternal(
-		client,
-		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
-		pemKey,
-		userAgentString,
-		logger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	kubernetesCert, err = doCertRequestInternal(
-		client,
-		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
-		pemKey,
-		userAgentString,
-		logger)
+	kubernetesCert, err = doCertRequest(signer, client, userName, baseUrl, "x509-kubernetes",
+		addGroups, userAgentString, logger)
 	if err != nil {
 		//logger.Printf("Warning: could not get the kubernets cert (old server?) err=%s \n", err)
 		kubernetesCert = nil
 		//return nil, nil, nil, err
 	}
-
-	//// Now we do sshCert!
-	// generate and write public key
-	sshPub, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
-	sshCert, err = doCertRequestInternal(
-		client,
-		baseUrl+"/certgen/"+userName+"?type=ssh",
-		sshAuthFile,
-		userAgentString,
-		logger)
+	sshCert, err = doCertRequest(signer, client, userName, baseUrl, "ssh",
+		addGroups, userAgentString, logger)
 	if err != nil {
 		return nil, nil, nil, err
 	}

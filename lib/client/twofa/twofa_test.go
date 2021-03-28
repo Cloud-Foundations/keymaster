@@ -23,8 +23,8 @@ func getTLSconfig() (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS11,
-		MaxVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS12,
+		MaxVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
 		ServerName:   "localhost",
 	}, nil

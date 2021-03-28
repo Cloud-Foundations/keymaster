@@ -36,3 +36,25 @@ func GetCertFromTargetUrls(
 		signer, userName, password, targetUrls, skipu2f, addGroups,
 		client, userAgentString, logger)
 }
+
+func AuthenticateToTargetUrls(
+	userName string,
+	password []byte,
+	targetUrls []string,
+	skip2fa bool,
+	client *http.Client,
+	userAgentString string,
+	logger log.DebugLogger) (baseUrl string, err error) {
+	return authenticateToTargetUrls(userName, password, targetUrls, skip2fa, client,
+		userAgentString, logger)
+}
+
+func DoCertRequest(signer crypto.Signer, client *http.Client, userName string,
+	baseUrl,
+	certType string,
+	addGroups bool,
+	userAgentString string, logger log.DebugLogger) ([]byte, error) {
+	return doCertRequest(signer, client, userName, baseUrl,
+		certType, addGroups,
+		userAgentString, logger)
+}
