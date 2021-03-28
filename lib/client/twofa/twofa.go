@@ -66,23 +66,42 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	return req, nil
 }
 
-func doCertRequest(client *http.Client,
-	url, serializedPubkey string,
+func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
+	baseUrl,
 	certType string,
 	addGroups bool,
-	userAgentString string, logger log.Logger) ([]byte, error) {
+	userAgentString string, logger log.DebugLogger) ([]byte, error) {
 
+	pubKey := signer.Public()
+	var serializedPubkey string
 	switch certType {
-	case "x509-kubernetes", "x509":
-		//logger.Debugf(1, "requesting x509 cert family, type=%s", certType)
+	case "x509", "x509-kubernetes":
+		derKey, err := x509.MarshalPKIXPublicKey(pubKey)
+		if err != nil {
+			return nil, err
+		}
+		serializedPubkey = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
 	case "ssh":
-		//logger.Debugf(1, "requesting ssh cert family, type=%s", certType)
+		sshPub, err := ssh.NewPublicKey(pubKey)
+		if err != nil {
+			return nil, err
+		}
+		serializedPubkey = string(ssh.MarshalAuthorizedKey(sshPub))
 	default:
 		return nil, fmt.Errorf("invalid certType requested '%s'", certType)
 
 	}
 
-	return nil, fmt.Errorf("Not implemented")
+	var urlPostfix string
+	// addgroups only makes sense for x509 plain .. maybe set as a check insetad of dropping?
+	if certType == "x509" && addGroups {
+		urlPostfix = "&addGroups=true"
+		logger.Debugln(0, "adding \"addGroups\" to request")
+	}
+
+	requestURL := baseUrl + "/certgen/" + userName + "?type=" + certType + urlPostfix
+
+	return doCertRequestInternal(client, requestURL, serializedPubkey, userAgentString, logger)
 }
 
 func doCertRequestInternal(client *http.Client,
