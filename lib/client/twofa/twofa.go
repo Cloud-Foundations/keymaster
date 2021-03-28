@@ -67,6 +67,25 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 }
 
 func doCertRequest(client *http.Client,
+	url, serializedPubkey string,
+	certType string,
+	addGroups bool,
+	userAgentString string, logger log.Logger) ([]byte, error) {
+
+	switch certType {
+	case "x509-kubernetes", "x509":
+		//logger.Debugf(1, "requesting x509 cert family, type=%s", certType)
+	case "ssh":
+		//logger.Debugf(1, "requesting ssh cert family, type=%s", certType)
+	default:
+		return nil, fmt.Errorf("invalid certType requested '%s'", certType)
+
+	}
+
+	return nil, fmt.Errorf("Not implemented")
+}
+
+func doCertRequestInternal(client *http.Client,
 	url, filedata string,
 	userAgentString string, logger log.Logger) ([]byte, error) {
 
@@ -289,9 +308,8 @@ func getCertsFromServer(
 		logger.Debugln(0, "adding \"addGroups\" to request")
 	}
 	// TODO: urlencode the userName
-	x509Cert, err = doCertRequest(
+	x509Cert, err = doCertRequestInternal(
 		client,
-		//loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
 		pemKey,
 		userAgentString,
@@ -300,9 +318,8 @@ func getCertsFromServer(
 		return nil, nil, nil, err
 	}
 
-	kubernetesCert, err = doCertRequest(
+	kubernetesCert, err = doCertRequestInternal(
 		client,
-		//loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
 		pemKey,
 		userAgentString,
@@ -320,7 +337,7 @@ func getCertsFromServer(
 		return nil, nil, nil, err
 	}
 	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
-	sshCert, err = doCertRequest(
+	sshCert, err = doCertRequestInternal(
 		client,
 		baseUrl+"/certgen/"+userName+"?type=ssh",
 		sshAuthFile,
@@ -364,4 +381,32 @@ func getCertFromTargetUrls(
 	}
 
 	return sshCert, x509Cert, kubernetesCert, nil
+}
+
+func authenticateToTargetUrls(
+	userName string,
+	password []byte,
+	targetUrls []string,
+	skip2fa bool,
+	client *http.Client,
+	userAgentString string,
+	logger log.DebugLogger) (baseUrl string, err error) {
+
+	for _, baseUrl = range targetUrls {
+		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
+		err = authenticateUser(
+			userName,
+			password,
+			baseUrl,
+			skip2fa,
+			client,
+			userAgentString,
+			logger)
+		if err != nil {
+			continue
+		}
+		return baseUrl, nil
+
+	}
+	return "", fmt.Errorf("Failed to Authenticate to any URL")
 }
