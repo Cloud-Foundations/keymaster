@@ -66,16 +66,13 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	return req, nil
 }
 
-func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string,
+func doCertRequest(client *http.Client,
+	url, filedata string,
 	userAgentString string, logger log.Logger) ([]byte, error) {
 
 	req, err := createKeyBodyRequest("POST", url, filedata)
 	if err != nil {
 		return nil, err
-	}
-	// Add the login cookies
-	for _, cookie := range authCookies {
-		req.AddCookie(cookie)
 	}
 	req.Header.Set("User-Agent", userAgentString)
 	resp, err := client.Do(req) // Client.Get(targetUrl)
@@ -92,16 +89,15 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 
 }
 
-func getCertsFromServer(
-	signer crypto.Signer,
+// This assumes the http client has a non-nul cookie jar
+func authenticateUser(
 	userName string,
 	password []byte,
 	baseUrl string,
 	skip2fa bool,
-	addGroups bool,
 	client *http.Client,
 	userAgentString string,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
+	logger log.DebugLogger) (err error) {
 
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
@@ -110,7 +106,7 @@ func getCertsFromServer(
 	req, err := http.NewRequest("POST", loginUrl,
 		strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, nil, nil, err
+		return err
 	}
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -124,27 +120,27 @@ func getCertsFromServer(
 		logger.Println(err)
 		// TODO: differentiate between 400 and 500 errors
 		// is OK to fail.. try next
-		return nil, nil, nil, err
+		return err
 	}
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		if loginResp.StatusCode == http.StatusUnauthorized {
-			return nil, nil, nil, fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
+			return fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
 		}
 		logger.Debugf(1, "got error from login call %s", loginResp.Status)
-		return nil, nil, nil, fmt.Errorf("got error from login call %s", loginResp.Status)
+		return fmt.Errorf("got error from login call %s", loginResp.Status)
 	}
 	//Enusre we have at least one cookie
 	if len(loginResp.Cookies()) < 1 {
 		err = errors.New("No cookies from login")
-		return nil, nil, nil, err
+		return err
 	}
 
 	loginJSONResponse := proto.LoginResponse{}
 	//body := jsonrr.Result().Body
 	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
 	if err != nil {
-		return nil, nil, nil, err
+		return err
 	}
 	io.Copy(ioutil.Discard, loginResp.Body) // We also need to read ALL of the body
 	loginResp.Body.Close()                  //so that we can reuse the channel
@@ -192,7 +188,6 @@ func getCertsFromServer(
 		}
 
 	}
-
 	// upgrade to u2f
 	successful2fa := false
 	if !skip2fa {
@@ -200,7 +195,7 @@ func getCertsFromServer(
 			devices, err := u2fhid.Devices()
 			if err != nil {
 				logger.Fatal(err)
-				return nil, nil, nil, err
+				return err
 			}
 			if len(devices) > 0 {
 
@@ -208,7 +203,7 @@ func getCertsFromServer(
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
 
-					return nil, nil, nil, err
+					return err
 				}
 				successful2fa = true
 			}
@@ -219,7 +214,7 @@ func getCertsFromServer(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
@@ -228,7 +223,7 @@ func getCertsFromServer(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
@@ -237,19 +232,48 @@ func getCertsFromServer(
 			err = pushtoken.DoOktaAuthenticate(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
 
 		if !successful2fa {
 			err = errors.New("Failed to Pefrom 2FA (as requested from server)")
-			return nil, nil, nil, err
+			return err
 		}
 
 	}
 
 	logger.Debugf(1, "Authentication Phase complete")
+
+	return nil
+
+}
+
+func getCertsFromServer(
+	signer crypto.Signer,
+	userName string,
+	password []byte,
+	baseUrl string,
+	skip2fa bool,
+	addGroups bool,
+	client *http.Client,
+	userAgentString string,
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
+
+	//This requires an http client with valid cookie jar
+
+	err = authenticateUser(
+		userName,
+		password,
+		baseUrl,
+		skip2fa,
+		client,
+		userAgentString,
+		logger)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	//now get x509 cert
 	pubKey := signer.Public()
@@ -267,7 +291,7 @@ func getCertsFromServer(
 	// TODO: urlencode the userName
 	x509Cert, err = doCertRequest(
 		client,
-		loginResp.Cookies(),
+		//loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
 		pemKey,
 		userAgentString,
@@ -278,7 +302,7 @@ func getCertsFromServer(
 
 	kubernetesCert, err = doCertRequest(
 		client,
-		loginResp.Cookies(),
+		//loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
 		pemKey,
 		userAgentString,
@@ -298,7 +322,6 @@ func getCertsFromServer(
 	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
 	sshCert, err = doCertRequest(
 		client,
-		loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=ssh",
 		sshAuthFile,
 		userAgentString,
