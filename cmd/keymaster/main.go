@@ -30,6 +30,7 @@ import (
 
 const DefaultSSHKeysLocation = "/.ssh/"
 const DefaultTLSKeysLocation = "/.ssl/"
+const DefaultTMPKeysLocation = "/.keymaster/"
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
@@ -210,8 +211,14 @@ func setupCerts(
 		logger.Fatal(err)
 	}
 
+	tempPrivateKeyPath := filepath.Join(homeDir, DefaultTMPKeysLocation, "keymaster-temp")
+	tempPrivateConfigPath, _ := filepath.Split(tlsKeyPath)
+	err = os.MkdirAll(tempPrivateConfigPath, 0700)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// get signer
-	tempPrivateKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, "keymaster-temp")
 	signer, tempPublicKeyPath, err := util.GenKeyPair(
 		tempPrivateKeyPath, userName+"@keymaster", logger)
 	if err != nil {

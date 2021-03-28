@@ -320,7 +320,7 @@ func (state *RuntimeState) tryLoadAndVerifySigners() error {
 		decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
 		armorSignerBlock, err := armor.Decode(decbuf)
 		if err != nil {
-			return fmt.Errorf("signer content is not pem encoded or armor decocable")
+			return fmt.Errorf("signer content is not pem encoded or armor encoded")
 		}
 		if len(state.Ed25519CAFileContent) > 0 {
 			ed255buf := bytes.NewBuffer(state.Ed25519CAFileContent)
