@@ -601,7 +601,7 @@ func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username stri
 		return "", err
 	}
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: 4}
 
 	//use handler with original request.
 	if w != nil {
@@ -629,7 +629,7 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 		return "", err
 	}
 
-	updatedAuthCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: authCookie.Expires, Path: "/", HttpOnly: true, Secure: true}
+	updatedAuthCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: authCookie.Expires, Path: "/", HttpOnly: true, Secure: true, SameSite: 4}
 	logger.Debugf(3, "about to update authCookie")
 	http.SetCookie(w, &updatedAuthCookie)
 	return authCookie.Value, nil
@@ -1174,7 +1174,7 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 
 	if authCookie != nil {
 		expiration := time.Unix(0, 0)
-		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: 4}
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
