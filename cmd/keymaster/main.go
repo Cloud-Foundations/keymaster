@@ -330,7 +330,7 @@ func setupCerts2(
 		return err
 	}
 	err = ioutil.WriteFile(
-		tlsKeyPath,
+		tlsKeyPath+".key",
 		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedx509Signer}),
 		0600)
 	if err != nil {
