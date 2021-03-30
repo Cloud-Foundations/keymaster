@@ -212,7 +212,7 @@ func setupCerts(
 	}
 
 	tempPrivateKeyPath := filepath.Join(homeDir, DefaultTMPKeysLocation, "keymaster-temp")
-	tempPrivateConfigPath, _ := filepath.Split(tlsKeyPath)
+	tempPrivateConfigPath, _ := filepath.Split(tempPrivateKeyPath)
 	err = os.MkdirAll(tempPrivateConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
@@ -226,6 +226,7 @@ func setupCerts(
 	}
 	defer os.Remove(tempPrivateKeyPath)
 	defer os.Remove(tempPublicKeyPath)
+	defer os.Remove(tempPrivateKeyPath)
 	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
