@@ -138,6 +138,13 @@ type keymasterdCodeToken struct {
 	ProtectedData    string `json:"protected_data,omitempty"`
 }
 
+// https://tools.ietf.org/id/draft-ietf-oauth-security-topics-10.html states
+// that redirects MUST be exact matches.
+// We allow our users to be less strict (for facilitation of internal deployments).
+// however we make 3 things mandatory:
+// 1. redirect_urls scheme MUST be https (to prevent code snooping).
+// 2. redirect_urls MUST not include a query  (to prevent stealing of code with faulty clients (open redirect))
+// 3. redirect_url path MUST NOT contain ".." to prevent path traversal attacks
 func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
 		if client.ClientID != client_id {
@@ -157,13 +164,6 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 				break
 			}
 		}
-		// if no domains, the matchedRE answer is authoritative, no need to parse
-		if len(client.AllowedRedirectDomains) < 1 {
-			return matchedRE, nil
-		}
-		if len(client.AllowedRedirectURLRE) < 1 {
-			matchedRE = true
-		}
 		parsedURL, err := url.Parse(redirect_url)
 		if err != nil {
 			logger.Debugf(1, "user passed unparsable url as string err = %s", err)
@@ -171,6 +171,21 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 		}
 		if parsedURL.Scheme != "https" {
 			return false, nil
+		}
+		if len(parsedURL.RawQuery) > 0 {
+			return false, nil
+		}
+		if strings.Contains(parsedURL.Path, "..") {
+			return false, nil
+		}
+
+		// if no domains, the matchedRE answer is authoritative
+		if len(client.AllowedRedirectDomains) < 1 {
+			return matchedRE, nil
+		}
+
+		if len(client.AllowedRedirectURLRE) < 1 {
+			matchedRE = true
 		}
 		matchedDomain := false
 		for _, domain := range client.AllowedRedirectDomains {
@@ -460,6 +475,17 @@ func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientS
 	return false
 }
 
+func (state *RuntimeState) idpOpenIDCClientCanDoPKCEAuth(client_id string) (bool, error) {
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID != client_id {
+			continue
+		}
+		return client.ClientSecret == "", nil
+
+	}
+	return false, nil
+}
+
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
 
 	key, err := state.deserializeKeysetIntoPlaintextKey([]byte(codeToken.ProtectedDataKey))
@@ -591,6 +617,17 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	valid := false
 	if len(codeVerifier) > 0 {
+		canUserCodeVerifier, err := state.idpOpenIDCClientCanDoPKCEAuth(clientID)
+		if err != nil {
+			logger.Printf("Error checking if client can do PKCE auth")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !canUserCodeVerifier {
+			logger.Printf("Missing client_id in auth request")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Client Cannot use PKCE authentication")
+			return
+		}
 		valid = state.idpOpenIDCValidCodeVerifier(clientID, codeVerifier, keymasterToken)
 	}
 	if !valid && len(pass) > 0 {
