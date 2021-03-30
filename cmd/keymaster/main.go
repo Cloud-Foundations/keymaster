@@ -266,7 +266,6 @@ func setupCerts2(
 	if err != nil {
 		return err
 	}
-
 	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
