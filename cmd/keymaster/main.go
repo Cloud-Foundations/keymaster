@@ -298,7 +298,7 @@ func setupCerts2(
 	sshEd25519Cert, err := twofa.DoCertRequest(sshEd25519Signer, client, userName, baseUrl, "ssh",
 		configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
-		logger.Printf("kubernetes cert not available")
+		logger.Debugf(1, "Ed25519 cert not available")
 		sshEd25519Cert = nil
 	}
 	logger.Debugf(0, "certificates successfully generated")
