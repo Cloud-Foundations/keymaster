@@ -4,7 +4,7 @@ import (
 	//"encoding/base64"
 	"encoding/json"
 	//"fmt"
-	"io/ioutil"
+	//"io/ioutil"
 	stdlog "log"
 	"net/http"
 	"net/url"
@@ -284,63 +284,6 @@ func TestIdpSealUnsealRoundTrip(t *testing.T) {
 
 }
 
-/*
-func TestIDPConsistentPKCEKeys(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-
-	/// we also need to setup the DB:
-	tmpdir, err := ioutil.TempDir("", "keymasterd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.Config.Base.DataDirectory = tmpdir
-
-	defer os.RemoveAll(tmpdir)
-	err = initDB(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	onlyDomainConfig := OpenIDConnectClientConfig{
-		ClientID:               "onlyWithDomains",
-		AllowedRedirectDomains: []string{"example.com"},
-	}
-	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, onlyDomainConfig)
-
-	keys1, err := state.idpOpenIDCGetClientEncryptionKeys(onlyDomainConfig.ClientID, "username")
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys2, err := state.idpOpenIDCGetClientEncryptionKeys(onlyDomainConfig.ClientID, "username")
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys3, err := state.idpOpenIDCGetClientEncryptionKeys(onlyDomainConfig.ClientID, "username")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(keys1) != len(keys2) {
-		t.Fatalf("Inconsistent get1 & get2, different lengnts")
-	}
-	if len(keys1) != len(keys3) {
-		t.Fatalf("Inconsistent get1 & get3,  different lengnts")
-	}
-	// notice this test assumes sorted keys.... which is not happening on v1 as there is only one key
-	for i, _ := range keys1 {
-		if base64.RawURLEncoding.EncodeToString(keys1[i]) != base64.RawURLEncoding.EncodeToString(keys2[i]) {
-			t.Fatalf("Inconsistent get1 & get2, different keys")
-		}
-		if base64.RawURLEncoding.EncodeToString(keys1[i]) != base64.RawURLEncoding.EncodeToString(keys3[i]) {
-			t.Fatalf("Inconsistent get1 & get2, different keys")
-		}
-	}
-
-}
-*/
-
 // https://tools.ietf.org/html/rfc7636
 // we use a third party code generator to check some of the compatiblity issues
 func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
@@ -354,23 +297,25 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	state.signerPublicKeyToKeymasterKeys()
 	state.HostIdentity = "localhost"
 
-	/// we also need to setup the DB:
-	tmpdir, err := ioutil.TempDir("", "keymasterd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.Config.Base.DataDirectory = tmpdir
+	/*
+		/// we also need to setup the DB:
+		tmpdir, err := ioutil.TempDir("", "keymasterd")
+		if err != nil {
+			t.Fatal(err)
+		}
+		state.Config.Base.DataDirectory = tmpdir
 
-	defer os.RemoveAll(tmpdir)
-	err = initDB(state)
-	if err != nil {
-		t.Fatal(err)
-	}
+		defer os.RemoveAll(tmpdir)
+		err = initDB(state)
+		if err != nil {
+			t.Fatal(err)
+		}
+	*/
 
 	valid_client_id := "valid_client_id"
-	valid_client_secret := "secret_password"
+	//valid_client_secret := "secret_password"
 	valid_redirect_uri := "https://localhost:12345"
-	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "", AllowedRedirectURLRE: []string{"localhost"}}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
 
 	// now we add a cookie for auth
