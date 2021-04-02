@@ -122,20 +122,22 @@ type keymasterdIDPCodeProtectedData struct {
 }
 
 type keymasterdCodeToken struct {
-	Issuer           string `json:"iss"` //keymasterd
-	Subject          string `json:"sub"` //clientID
-	IssuedAt         int64  `json:"iat"`
-	Expiration       int64  `json:"exp"`
-	Username         string `json:"username"`
-	AuthLevel        int64  `json:"auth_level"`
-	AuthExpiration   int64  `json:"auth_exp"`
-	Nonce            string `json:"nonce,omitEmpty"`
-	RedirectURI      string `json:"redirect_uri"`
-	Scope            string `json:"scope"`
-	Type             string `json:"type"`
-	JWTId            string `json:"jti,omitEmpty"`
-	ProtectedDataKey string `json:"protected_data_key,omitempty"`
-	ProtectedData    string `json:"protected_data,omitempty"`
+	Issuer           string   `json:"iss"` //keymasterd
+	Subject          string   `json:"sub"` //clientID
+	IssuedAt         int64    `json:"iat"`
+	Expiration       int64    `json:"exp"`
+	Audience         []string `json:"aud"`
+	Username         string   `json:"username"`
+	AuthLevel        int64    `json:"auth_level"`
+	AuthExpiration   int64    `json:"auth_exp"`
+	Nonce            string   `json:"nonce,omitEmpty"`
+	RedirectURI      string   `json:"redirect_uri"`
+	AccessAudience   []string `json:"access_audience,omitempty"`
+	Scope            string   `json:"scope"`
+	Type             string   `json:"type"`
+	JWTId            string   `json:"jti,omitEmpty"`
+	ProtectedDataKey string   `json:"protected_data_key,omitempty"`
+	ProtectedData    string   `json:"protected_data,omitempty"`
 }
 
 // https://tools.ietf.org/id/draft-ietf-oauth-security-topics-10.html states
@@ -402,6 +404,24 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	}
 
+	//For the initial version we will only allow a single extra audience
+
+	var accessAudience []string
+	requestedAudience := r.Form.Get("audience")
+	if requestedAudience != "" {
+
+		validAudience, err := state.idpOpenIDCIsCorsOriginAllowed(requestedAudience, clientID)
+		if err != nil {
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !validAudience {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid audience")
+			return
+		}
+		accessAudience = append(accessAudience, requestedAudience)
+	}
+
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -420,6 +440,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.Type = "token_endpoint"
 	codeToken.ProtectedData = protectedCipherText
 	codeToken.ProtectedDataKey = protectedCipherTextKeys
+	codeToken.AccessAudience = accessAudience
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
 	if len(codeToken.Nonce) < 6 && len(codeToken.Nonce) != 0 {
@@ -451,18 +472,21 @@ type openIDConnectIDToken struct {
 	Nonce      string   `json:"nonce,omitempty"`
 }
 
-type accessToken struct {
+type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
 	IDToken     string `json:"id_token"`
 }
 
-type userInfoToken struct {
-	Username   string `json:"username"`
-	Scope      string `json:"scope"`
-	Expiration int64  `json:"exp"`
-	Type       string `json:"type"`
+type bearerAccessToken struct {
+	Issuer     string   `json:"iss"`
+	Audience   []string `json:"aud,omitempty"`
+	Username   string   `json:"username"`
+	Scope      string   `json:"scope"`
+	Expiration int64    `json:"exp"`
+	IssuedAt   int64    `json:"iat"`
+	Type       string   `json:"type"`
 }
 
 func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientSecret string) bool {
@@ -697,16 +721,21 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	logger.Debugf(2, "raw=%s", signedIdToken)
 
-	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
-	userinfoToken.Expiration = idToken.Expiration
-	userinfoToken.Type = "bearer"
-	signedAccessToken, err := jwt.Signed(signer).Claims(userinfoToken).CompactSerialize()
+	accessToken := bearerAccessToken{Issuer: state.idpGetIssuer(),
+		Username: keymasterToken.Username, Scope: keymasterToken.Scope}
+	accessToken.Expiration = idToken.Expiration
+	accessToken.Type = "bearer"
+	accessToken.IssuedAt = time.Now().Unix()
+	if len(keymasterToken.AccessAudience) > 0 {
+		accessToken.Audience = append(keymasterToken.AccessAudience, state.idpGetIssuer()+idpOpenIDCUserinfoPath)
+	}
+	signedAccessToken, err := jwt.Signed(signer).Claims(accessToken).CompactSerialize()
 	if err != nil {
 		panic(err)
 	}
 
 	// The access token will be yet another jwt.
-	outToken := accessToken{
+	outToken := tokenResponse{
 		AccessToken: signedAccessToken,
 		TokenType:   "Bearer",
 		ExpiresIn:   int(idToken.Expiration - idToken.IssuedAt),
@@ -881,7 +910,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		return
 	}
 	logger.Debugf(1, "tok=%+v", tok)
-	parsedAccessToken := userInfoToken{}
+	parsedAccessToken := bearerAccessToken{}
 	if err := state.JWTClaims(tok, &parsedAccessToken); err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
