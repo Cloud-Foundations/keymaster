@@ -395,7 +395,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 
 	}
-
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -674,7 +673,6 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-
 	idToken := openIDConnectIDToken{Issuer: state.idpGetIssuer(), Subject: keymasterToken.Username, Audience: []string{clientID}}
 	idToken.Nonce = keymasterToken.Nonce
 	idToken.Expiration = keymasterToken.AuthExpiration
@@ -685,7 +683,6 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		panic(err)
 	}
 	logger.Debugf(2, "raw=%s", signedIdToken)
-
 	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
 	userinfoToken.Expiration = idToken.Expiration
 	userinfoToken.Type = "bearer"
@@ -813,7 +810,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		return
 	}
 	logger.Debugf(2, "userinfo request=%+v", r)
-
 	origin := r.Header.Get("Origin")
 	if r.Method == "OPTIONS" {
 		if origin == "" {
@@ -834,7 +830,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization")
 		return
 	}
-
 	var accessToken string
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
@@ -941,7 +936,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Max-Age", "7200")
 	}
-
 	out.WriteTo(w)
 	logger.Printf("200 Successful userinfo request")
 	logger.Debugf(0, " Userinfo response =  %s", b)

@@ -264,7 +264,6 @@ func TestIdpSealUnsealRoundTrip(t *testing.T) {
 	}
 	originalPlainText := "hello world"
 	nonce := []byte(nonceStr)
-
 	cipherText, err := sealEncodeData([]byte(originalPlainText), nonce, key)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +274,6 @@ func TestIdpSealUnsealRoundTrip(t *testing.T) {
 	if plainTextStr != originalPlainText {
 		t.Fatalf("texts do not match original=%s recovered=%s", originalPlainText, plainTextStr)
 	}
-
 }
 
 // https://tools.ietf.org/html/rfc7636
@@ -314,7 +312,6 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	form.Add("state", "this is my state")
 	form.Add("code_challenge_method", "S256")
 	form.Add("code_challenge", codeChallenge)
-
 	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +319,6 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	postReq.AddCookie(&authCookie)
-
 	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
 	if err != nil {
 		t.Fatal(err)
