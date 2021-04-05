@@ -1,10 +1,7 @@
 package main
 
 import (
-	//"encoding/base64"
 	"encoding/json"
-	//"fmt"
-	//"io/ioutil"
 	stdlog "log"
 	"net/http"
 	"net/url"
@@ -12,13 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	//"time"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	cv "github.com/nirasan/go-oauth-pkce-code-verifier"
 	"gopkg.in/square/go-jose.v2/jwt"
-	//"golang.org/x/net/context"
-	//"golang.org/x/oauth2"
 )
 
 func init() {
@@ -296,41 +290,20 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	state.signerPublicKeyToKeymasterKeys()
 	state.HostIdentity = "localhost"
-
-	/*
-		/// we also need to setup the DB:
-		tmpdir, err := ioutil.TempDir("", "keymasterd")
-		if err != nil {
-			t.Fatal(err)
-		}
-		state.Config.Base.DataDirectory = tmpdir
-
-		defer os.RemoveAll(tmpdir)
-		err = initDB(state)
-		if err != nil {
-			t.Fatal(err)
-		}
-	*/
-
 	valid_client_id := "valid_client_id"
-	//valid_client_secret := "secret_password"
 	valid_redirect_uri := "https://localhost:12345"
 	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "", AllowedRedirectURLRE: []string{"localhost"}}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
-
 	// now we add a cookie for auth
 	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
 	if err != nil {
 		t.Fatal(err)
 	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-
 	//prepare code challenge
 	var CodeVerifier, _ = cv.CreateCodeVerifier()
-
 	// Create code_challenge with S256 method
 	codeChallenge := CodeVerifier.CodeChallengeS256()
-
 	// add the required params
 	form := url.Values{}
 	form.Add("scope", "openid")
@@ -348,7 +321,6 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	}
 	postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
 	postReq.AddCookie(&authCookie)
 
 	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
@@ -395,22 +367,19 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	//now we do a token request
+	//now we do a valid token request
 	tokenForm := url.Values{}
 	tokenForm.Add("grant_type", "authorization_code")
 	tokenForm.Add("redirect_uri", valid_redirect_uri)
 	tokenForm.Add("code", rCode)
 	tokenForm.Add("client_id", valid_client_id)
 	tokenForm.Add("code_verifier", CodeVerifier.String())
-
 	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
 	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
 	tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
@@ -422,21 +391,17 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("resultAccessToken='%+v'", resultAccessToken)
-
 	//now the userinfo
 	userinfoForm := url.Values{}
 	userinfoForm.Add("access_token", resultAccessToken.AccessToken)
-
 	userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
 	userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
 	_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }

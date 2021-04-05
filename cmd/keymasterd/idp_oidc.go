@@ -178,12 +178,10 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 		if strings.Contains(parsedURL.Path, "..") {
 			return false, nil
 		}
-
 		// if no domains, the matchedRE answer is authoritative
 		if len(client.AllowedRedirectDomains) < 1 {
 			return matchedRE, nil
 		}
-
 		if len(client.AllowedRedirectURLRE) < 1 {
 			matchedRE = true
 		}
@@ -209,7 +207,6 @@ func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId
 	if parsedURL.Scheme != "https" {
 		return false, nil
 	}
-
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
 		if clientId != "" && client.ClientID != clientId {
 			continue
@@ -263,7 +260,6 @@ func sealEncodeData(plaintext, nonce, key []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", err
@@ -283,7 +279,6 @@ func decodeOpenData(cipherText string, nonce, key []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, err
@@ -392,7 +387,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 			return
 		}
 		protectedCipherTextKeys = string(serializedKeySet)
-
 		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), key)
 		if err != nil {
 			logger.Printf("Error getting random string %v", err)
@@ -465,9 +459,9 @@ type userInfoToken struct {
 	Type       string `json:"type"`
 }
 
-func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientSecret string) bool {
+func (state *RuntimeState) idpOpenIDCValidClientSecret(clientId string, clientSecret string) bool {
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != client_id {
+		if client.ClientID != clientId {
 			continue
 		}
 		return clientSecret == client.ClientSecret
@@ -475,19 +469,17 @@ func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, clientS
 	return false
 }
 
-func (state *RuntimeState) idpOpenIDCClientCanDoPKCEAuth(client_id string) (bool, error) {
+func (state *RuntimeState) idpOpenIDCClientCanDoPKCEAuth(clientId string) (bool, error) {
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != client_id {
+		if client.ClientID != clientId {
 			continue
 		}
 		return client.ClientSecret == "", nil
-
 	}
 	return false, nil
 }
 
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
-
 	key, err := state.deserializeKeysetIntoPlaintextKey([]byte(codeToken.ProtectedDataKey))
 	if err != nil {
 		logger.Printf("idpOpenIDCValidCodeVerifier: Error getting encryption keys %v", err)
@@ -502,8 +494,7 @@ func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVeri
 	if err != nil {
 		return false
 	}
-	state.logger.Debugf(0, "Protected Data Found=%+v", protectedData)
-
+	state.logger.Debugf(1, "Protected Data Found=%+v", protectedData)
 	// https://tools.ietf.org/html/rfc7636 section 4.6
 	switch protectedData.CodeChallengeMethod {
 	case "", "plain":
@@ -512,7 +503,6 @@ func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVeri
 		// BASE64URL-ENCODE(SHA256(ASCII(code_verifier))) == code_challenge
 		sum := sha256.Sum256([]byte(codeVerifier))
 		return base64.RawURLEncoding.EncodeToString(sum[:]) == protectedData.CodeChallenge
-
 	default:
 		return false
 	}
@@ -586,7 +576,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		}
 		if len(clientID) < 1 {
 			// This section is kind of unclear. The original rfc6749 spec
-			// Did not had this mandatory, however given the need for password
+			// Did not have this as mandatory, however given the need for password
 			// based auth it was prety much mandatory.
 			// However... with PKCE  the issue is murkier:
 			// not mandatory: login.gov (https://developers.login.gov/oidc/)
@@ -638,14 +628,13 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
-
+	// if we have an origin it should be whitelisted
 	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(r.Header.Get("Origin"), clientID)
 	if err != nil {
 		logger.Printf("Error checking Origin")
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-
 	// 1. Ensure authoriation client was issued to the authenticated client
 	if clientID != keymasterToken.Subject {
 		logger.Debugf(0, "Unmatching token Value")
@@ -829,6 +818,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	if r.Method == "OPTIONS" {
 		if origin == "" {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Options MUST contain origin")
+			return
 		}
 		originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
 		if err != nil {
@@ -842,9 +832,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 			w.Header().Set("Access-Control-Max-Age", "7200")
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization")
-
 		return
-
 	}
 
 	var accessToken string
@@ -946,7 +934,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 
 	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
 	if err != nil {
-		logger.Printf("Error checking Origin, allowind to continue without origin header")
+		logger.Printf("Error checking Origin, allowing to continue without origin header")
 	}
 	if originIsValid {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
