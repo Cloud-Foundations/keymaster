@@ -180,12 +180,10 @@ func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirec
 		if strings.Contains(parsedURL.Path, "..") {
 			return false, nil
 		}
-
 		// if no domains, the matchedRE answer is authoritative
 		if len(client.AllowedRedirectDomains) < 1 {
 			return matchedRE, nil
 		}
-
 		if len(client.AllowedRedirectURLRE) < 1 {
 			matchedRE = true
 		}
@@ -211,7 +209,6 @@ func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId
 	if parsedURL.Scheme != "https" {
 		return false, nil
 	}
-
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
 		if clientId != "" && client.ClientID != clientId {
 			continue
@@ -265,7 +262,6 @@ func sealEncodeData(plaintext, nonce, key []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", err
@@ -285,7 +281,6 @@ func decodeOpenData(cipherText string, nonce, key []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, err
@@ -394,7 +389,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 			return
 		}
 		protectedCipherTextKeys = string(serializedKeySet)
-
 		protectedCipherText, err = sealEncodeData([]byte(jsonEncodedData), []byte(jwtId), key)
 		if err != nil {
 			logger.Printf("Error getting random string %v", err)
@@ -926,6 +920,24 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	if parsedAccessToken.Type != "bearer" {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
+	}
+	if parsedAccessToken.Issuer != state.idpGetIssuer() {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+	if len(parsedAccessToken.AccessAudience) > 0 {
+		hasUserinfoAudience := false
+		userInfoURL = state.idpGetIssuer() + idpOpenIDCUserinfoPath
+		for _, audience := range parsedAccessToken.AccessAudience {
+			if audience == userInfoURL {
+				hasUserinfoAudience = true
+				break
+			}
+		}
+		if !hasUserinfoAudience {
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			return
+		}
 	}
 	// Get email from LDAP if available.
 	defaultEmailDomain := state.HostIdentity
