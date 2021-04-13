@@ -196,7 +196,7 @@ func TestMost(t *testing.T) {
 		os.Unsetenv("SSH_AUTH_SOCK")
 		defer os.Setenv("SSH_AUTH_SOCK", oldSSHSock)
 	}
-	setupCerts2(
+	setupCerts(
 		userName,
 		homeDir,
 		appConfig,

@@ -25,10 +25,8 @@ func getTLSconfig() (*tls.Config, error) {
 	if err != nil {
 		return &tls.Config{}, err
 	}
-
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS12,
-		MaxVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
 		ServerName:   "localhost",
 	}, nil
@@ -37,9 +35,7 @@ func getTLSconfig() (*tls.Config, error) {
 const localHttpsTarget = "https://localhost:22443/"
 
 var defaultTestAllowedCertBackends = []string{proto.AuthTypePassword, proto.AuthTypeU2F}
-
 var testAllowedCertBackends = defaultTestAllowedCertBackends
-
 var testAuthCookieName = "testAuthCookie"
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +56,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
-
 	case "/api/v0/TOTPAuth":
 		cookies := r.Cookies()
 		fmt.Printf("on test here is the request cookies %+v", cookies)
@@ -72,7 +67,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		loginResponse := proto.LoginResponse{Message: "success",
 			CertAuthBackend: testAllowedCertBackends}
 		json.NewEncoder(w).Encode(loginResponse)
-
 	default:
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
@@ -98,7 +92,6 @@ func TestAAuthenticateToTargetUrlsFailUntrustedCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-
 	_, err = AuthenticateToTargetUrls(
 		"username",
 		[]byte("password"),
@@ -146,7 +139,6 @@ func TestAuthenticateToTargetUrlsSuccessOneURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	//Now Totp?
 	testAllowedCertBackends = []string{proto.AuthTypeTOTP}
 	defer func() {
@@ -167,7 +159,6 @@ func TestAuthenticateToTargetUrlsSuccessOneURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestDoCertRequestSuccess(t *testing.T) {
@@ -194,9 +185,7 @@ func TestDoCertRequestSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	client.Jar.SetCookies(parsedURL, []*http.Cookie{&authCookie})
-
 	_, err = DoCertRequest(signer, client, "username", localHttpsTarget, "x509",
 		false, "someUserAgent", testlogger.New(t))
 	if err != nil {
@@ -217,5 +206,4 @@ func TestDoCertRequestSuccess(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Should have failed for invalid cert type")
 	}
-
 }

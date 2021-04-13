@@ -227,7 +227,7 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
-func setupCerts2(
+func setupCerts(
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
@@ -287,8 +287,7 @@ func setupCerts2(
 	kubernetesCert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509-kubernetes",
 		configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
-		logger.Printf("kubernetes cert not available")
-		//return err
+		logger.Debugf(0, "kubernetes cert not available")
 	}
 	sshRsaCert, err := twofa.DoCertRequest(sshRsaSigner, client, userName, baseUrl, "ssh",
 		configContents.Base.AddGroups, userAgentString, logger)
@@ -432,7 +431,7 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 
-	err = setupCerts2(userName, homeDir, config, client, logger)
+	err = setupCerts(userName, homeDir, config, client, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}

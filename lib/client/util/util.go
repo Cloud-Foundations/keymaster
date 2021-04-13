@@ -60,7 +60,6 @@ func writeSSHKeyPairToFile(privateKeyPath string, identity string,
 	if err != nil {
 		logger.Printf("Failed to save privkey")
 	}
-
 	// generate and write public key
 	pub, err := ssh.NewPublicKey(privateKey.Public())
 	if err != nil {
@@ -77,7 +76,6 @@ func writeSSHKeyPairToFile(privateKeyPath string, identity string,
 	if err != nil {
 		return "", err
 	}
-
 	pubKeyPath := privateKeyPath + ".pub"
 	return pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
 }

@@ -71,7 +71,6 @@ func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
 	certType string,
 	addGroups bool,
 	userAgentString string, logger log.DebugLogger) ([]byte, error) {
-
 	pubKey := signer.Public()
 	var serializedPubkey string
 	switch certType {
@@ -91,16 +90,13 @@ func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
 		return nil, fmt.Errorf("invalid certType requested '%s'", certType)
 
 	}
-
 	var urlPostfix string
 	// addgroups only makes sense for x509 plain .. maybe set as a check insetad of dropping?
 	if certType == "x509" && addGroups {
 		urlPostfix = "&addGroups=true"
 		logger.Debugln(0, "adding \"addGroups\" to request")
 	}
-
 	requestURL := baseUrl + "/certgen/" + userName + "?type=" + certType + urlPostfix
-
 	return doCertRequestInternal(client, requestURL, serializedPubkey, userAgentString, logger)
 }
 
@@ -124,7 +120,6 @@ func doCertRequestInternal(client *http.Client,
 		return nil, fmt.Errorf("got error from call %s, url='%s'\n", resp.Status, url)
 	}
 	return ioutil.ReadAll(resp.Body)
-
 }
 
 // This assumes the http client has a non-nul cookie jar
@@ -136,11 +131,9 @@ func authenticateUser(
 	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (err error) {
-
 	if client == nil {
 		return fmt.Errorf("http client is nil")
 	}
-
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
 	form.Add("username", userName)
@@ -285,11 +278,8 @@ func authenticateUser(
 		}
 
 	}
-
 	logger.Debugf(1, "Authentication Phase complete")
-
 	return nil
-
 }
 
 func authenticateToTargetUrls(
