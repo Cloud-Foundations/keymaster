@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -184,17 +187,57 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 	return fmt.Errorf("Cannot connect to any keymaster Server")
 }
 
+const rsaKeySize = 2048
+
+// Beware, this function has inverted path.... at the beggining
+func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
+	signer interface{},
+	filePrefix string,
+	userName string,
+	privateKeyPath string,
+	logger log.DebugLogger) (err error) {
+	//comment should be based on key type?
+	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	if err == nil {
+		return nil
+	}
+	logger.Debugf(1, "Non fatal, failed to insert into agent with expiration")
+	// NOTE: Current Windows ssh (OpenSSH_for_Windows_7.7p1, LibreSSL 2.6.5)
+	// barfs on timeouts missing, so we rety without a timeout in case
+	// we are on windows OR we have an agent running on windows thar is forwarded
+	// to us.
+	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, 0, logger)
+	if err == nil {
+		return nil
+	}
+	logger.Debugf(1, "Non fatal, failed to insert into agent without expiration")
+	encodedSigner, err := x509.MarshalPKCS8PrivateKey(signer)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(
+		privateKeyPath,
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedSigner}),
+		0600)
+	if err != nil {
+		return err
+	}
+	// now we need to write the certificate
+	sshCertPath := privateKeyPath + ".pub"
+	return ioutil.WriteFile(sshCertPath, certText, 0644)
+}
+
 func setupCerts(
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
-	logger log.DebugLogger) {
+	logger log.DebugLogger) error {
 	//initialize the client connection
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
 	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 
 	// create dirs
@@ -202,98 +245,95 @@ func setupCerts(
 	sshConfigPath, _ := filepath.Split(sshKeyPath)
 	err = os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
 	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
 	err = os.MkdirAll(tlsConfigPath, 0700)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
-
-	tempPrivateKeyPath := filepath.Join(homeDir, DefaultTMPKeysLocation, "keymaster-temp")
-	tempPrivateConfigPath, _ := filepath.Split(tempPrivateKeyPath)
-	err = os.MkdirAll(tempPrivateConfigPath, 0700)
+	// Setup Signers
+	x509Signer, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
-
-	// get signer
-	signer, tempPublicKeyPath, err := util.GenKeyPair(
-		tempPrivateKeyPath, userName+"@keymaster", logger)
+	sshRsaSigner, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
-	defer os.Remove(tempPrivateKeyPath)
-	defer os.Remove(tempPublicKeyPath)
-	defer os.Remove(tempPrivateKeyPath)
+	_, sshEd25519Signer, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
 	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 
-	// Get the certs
-	sshCert, x509Cert, kubernetesCert, err := twofa.GetCertFromTargetUrls(
-		signer,
+	baseUrl, err := twofa.AuthenticateToTargetUrls(userName, password,
+		targetURLs, false, client,
+		userAgentString, logger)
+	if err != nil {
+		return err
+
+	}
+	x509Cert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509",
+		configContents.Base.AddGroups, userAgentString, logger)
+	if err != nil {
+		return err
+	}
+	kubernetesCert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509-kubernetes",
+		configContents.Base.AddGroups, userAgentString, logger)
+	if err != nil {
+		logger.Debugf(0, "kubernetes cert not available")
+	}
+	sshRsaCert, err := twofa.DoCertRequest(sshRsaSigner, client, userName, baseUrl, "ssh",
+		configContents.Base.AddGroups, userAgentString, logger)
+	if err != nil {
+		return err
+	}
+	sshEd25519Cert, err := twofa.DoCertRequest(sshEd25519Signer, client, userName, baseUrl, "ssh",
+		configContents.Base.AddGroups, userAgentString, logger)
+	if err != nil {
+		logger.Debugf(1, "Ed25519 cert not available")
+		sshEd25519Cert = nil
+	}
+	logger.Debugf(0, "certificates successfully generated")
+
+	// Time to write certs and keys
+	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
+		sshRsaSigner,
+		FilePrefix+"-rsa",
 		userName,
-		password,
-		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
-		false,
-		configContents.Base.AddGroups,
-		client,
-		userAgentString,
+		sshKeyPath+"-rsa",
 		logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
-	if sshCert == nil || x509Cert == nil {
-		err := errors.New("Could not get cert from any url")
-		logger.Fatal(err)
-	}
-	logger.Debugf(0, "Got Certs from server")
-
-	//rename files to expected paths
-	err = os.Rename(tempPrivateKeyPath, sshKeyPath)
-	if err != nil {
-		err := errors.New("Could not rename private Key")
-		logger.Fatal(err)
-	}
-
-	err = os.Rename(tempPublicKeyPath, sshKeyPath+".pub")
-	if err != nil {
-		err := errors.New("Could not rename public Key")
-		logger.Fatal(err)
-	}
-	// Now handle the key in the tls directory
-	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix+".key")
-	os.Remove(tlsPrivateKeyName)
-	err = os.Symlink(sshKeyPath, tlsPrivateKeyName)
-	if err != nil {
-		// Try to copy instead (windows symlink does not work)
-		from, err := os.Open(sshKeyPath)
+	if sshEd25519Cert != nil {
+		err = insertSSHCertIntoAgentORWriteToFilesystem(sshEd25519Cert,
+			sshEd25519Signer,
+			FilePrefix+"-ed25519",
+			userName,
+			sshKeyPath+"-ed25519",
+			logger)
 		if err != nil {
-			logger.Fatal(err)
-		}
-		defer from.Close()
-		to, err := os.OpenFile(tlsPrivateKeyName, os.O_RDWR|os.O_CREATE, 0660)
-		if err != nil {
-			logger.Fatal(err)
-		}
-		defer to.Close()
-
-		_, err = io.Copy(to, from)
-		if err != nil {
-			logger.Fatal(err)
+			return err
 		}
 	}
-
-	// now we write the cert file...
-	sshCertPath := sshKeyPath + "-cert.pub"
-	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
+	// Now x509
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(x509Signer)
 	if err != nil {
-		err := errors.New("Could not write ssh cert")
-		logger.Fatal(err)
+		return err
+	}
+	err = ioutil.WriteFile(
+		tlsKeyPath+".key",
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedx509Signer}),
+		0600)
+	if err != nil {
+		return err
 	}
 	x509CertPath := tlsKeyPath + ".cert"
 	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
@@ -310,22 +350,8 @@ func setupCerts(
 		}
 	}
 
-	// TODO eventually we should reorder operations so that we write to the
-	// private key only if we are unable to use the agent
-	err = sshagent.UpsertCertIntoAgent(sshCert, signer, FilePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
-	if err != nil {
-		// NOTE: Current Windows ssh (OpenSSH_for_Windows_7.7p1, LibreSSL 2.6.5)
-		// barfs on timeouts missing, so we rety without a timeout in case
-		// we are on windows OR we have an agent running on windows thar is forwarded
-		// to us.
-		err = sshagent.UpsertCertIntoAgent(sshCert, signer,
-			FilePrefix+"-"+userName, 0, logger)
-		if err != nil {
-			logger.Printf("could not insert into agent natively")
-		}
-	}
+	return nil
 
-	logger.Printf("Success")
 }
 
 func computeUserAgent() {
@@ -405,5 +431,9 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 
-	setupCerts(userName, homeDir, config, client, logger)
+	err = setupCerts(userName, homeDir, config, client, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	logger.Printf("Success")
 }
