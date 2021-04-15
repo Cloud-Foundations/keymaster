@@ -1,15 +1,21 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
@@ -196,5 +202,72 @@ func TestMost(t *testing.T) {
 		appConfig,
 		client,
 		logger)
+
+}
+
+func goCertToFileString(c ssh.Certificate, username string) (string, error) {
+	certBytes := c.Marshal()
+	encoded := base64.StdEncoding.EncodeToString(certBytes)
+	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
+	return c.Type() + " " + encoded + " " + fileComment, nil
+}
+
+func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
+	//step 1: generate
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPublic, err := ssh.NewPublicKey(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := ssh.Certificate{
+		Key:             sshPublic,
+		ValidPrincipals: []string{"username"},
+		ValidAfter:      uint64(time.Now().Unix()) - 10,
+		ValidBefore:     uint64(time.Now().Unix()) + 10,
+	}
+	sshSigner, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cert.SignCert(rand.Reader, sshSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, err := goCertToFileString(cert, "username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	/////////Now actually do the work
+	oldSSHSock, ok := os.LookupEnv("SSH_AUTH_SOCK")
+	if ok {
+		os.Unsetenv("SSH_AUTH_SOCK")
+		defer os.Setenv("SSH_AUTH_SOCK", oldSSHSock)
+	}
+	tempDir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir) // clean up
+	privateKeyPath := filepath.Join(tempDir, "test")
+
+	err = insertSSHCertIntoAgentORWriteToFilesystem([]byte(certString),
+		privateKey,
+		"someprefix",
+		"username",
+		privateKeyPath,
+		testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	//now for now we only check that the file exists
+	_, err = os.Stat(privateKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(privateKeyPath)
+	// TODO: on linux/macos create agent + unix socket and pass that
 
 }

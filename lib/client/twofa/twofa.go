@@ -66,16 +66,47 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	return req, nil
 }
 
-func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string,
+func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
+	baseUrl,
+	certType string,
+	addGroups bool,
+	userAgentString string, logger log.DebugLogger) ([]byte, error) {
+	pubKey := signer.Public()
+	var serializedPubkey string
+	switch certType {
+	case "x509", "x509-kubernetes":
+		derKey, err := x509.MarshalPKIXPublicKey(pubKey)
+		if err != nil {
+			return nil, err
+		}
+		serializedPubkey = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
+	case "ssh":
+		sshPub, err := ssh.NewPublicKey(pubKey)
+		if err != nil {
+			return nil, err
+		}
+		serializedPubkey = string(ssh.MarshalAuthorizedKey(sshPub))
+	default:
+		return nil, fmt.Errorf("invalid certType requested '%s'", certType)
+
+	}
+	var urlPostfix string
+	// addgroups only makes sense for x509 plain .. maybe set as a check insetad of dropping?
+	if certType == "x509" && addGroups {
+		urlPostfix = "&addGroups=true"
+		logger.Debugln(0, "adding \"addGroups\" to request")
+	}
+	requestURL := baseUrl + "/certgen/" + userName + "?type=" + certType + urlPostfix
+	return doCertRequestInternal(client, requestURL, serializedPubkey, userAgentString, logger)
+}
+
+func doCertRequestInternal(client *http.Client,
+	url, filedata string,
 	userAgentString string, logger log.Logger) ([]byte, error) {
 
 	req, err := createKeyBodyRequest("POST", url, filedata)
 	if err != nil {
 		return nil, err
-	}
-	// Add the login cookies
-	for _, cookie := range authCookies {
-		req.AddCookie(cookie)
 	}
 	req.Header.Set("User-Agent", userAgentString)
 	resp, err := client.Do(req) // Client.Get(targetUrl)
@@ -89,20 +120,20 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 		return nil, fmt.Errorf("got error from call %s, url='%s'\n", resp.Status, url)
 	}
 	return ioutil.ReadAll(resp.Body)
-
 }
 
-func getCertsFromServer(
-	signer crypto.Signer,
+// This assumes the http client has a non-nul cookie jar
+func authenticateUser(
 	userName string,
 	password []byte,
 	baseUrl string,
 	skip2fa bool,
-	addGroups bool,
 	client *http.Client,
 	userAgentString string,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
-
+	logger log.DebugLogger) (err error) {
+	if client == nil {
+		return fmt.Errorf("http client is nil")
+	}
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
 	form.Add("username", userName)
@@ -110,7 +141,7 @@ func getCertsFromServer(
 	req, err := http.NewRequest("POST", loginUrl,
 		strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, nil, nil, err
+		return err
 	}
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -124,27 +155,27 @@ func getCertsFromServer(
 		logger.Println(err)
 		// TODO: differentiate between 400 and 500 errors
 		// is OK to fail.. try next
-		return nil, nil, nil, err
+		return err
 	}
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		if loginResp.StatusCode == http.StatusUnauthorized {
-			return nil, nil, nil, fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
+			return fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
 		}
 		logger.Debugf(1, "got error from login call %s", loginResp.Status)
-		return nil, nil, nil, fmt.Errorf("got error from login call %s", loginResp.Status)
+		return fmt.Errorf("got error from login call %s", loginResp.Status)
 	}
 	//Enusre we have at least one cookie
 	if len(loginResp.Cookies()) < 1 {
 		err = errors.New("No cookies from login")
-		return nil, nil, nil, err
+		return err
 	}
 
 	loginJSONResponse := proto.LoginResponse{}
 	//body := jsonrr.Result().Body
 	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
 	if err != nil {
-		return nil, nil, nil, err
+		return err
 	}
 	io.Copy(ioutil.Discard, loginResp.Body) // We also need to read ALL of the body
 	loginResp.Body.Close()                  //so that we can reuse the channel
@@ -192,7 +223,6 @@ func getCertsFromServer(
 		}
 
 	}
-
 	// upgrade to u2f
 	successful2fa := false
 	if !skip2fa {
@@ -200,7 +230,7 @@ func getCertsFromServer(
 			devices, err := u2fhid.Devices()
 			if err != nil {
 				logger.Fatal(err)
-				return nil, nil, nil, err
+				return err
 			}
 			if len(devices) > 0 {
 
@@ -208,7 +238,7 @@ func getCertsFromServer(
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
 
-					return nil, nil, nil, err
+					return err
 				}
 				successful2fa = true
 			}
@@ -219,7 +249,7 @@ func getCertsFromServer(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
@@ -228,7 +258,7 @@ func getCertsFromServer(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
@@ -237,108 +267,45 @@ func getCertsFromServer(
 			err = pushtoken.DoOktaAuthenticate(
 				client, baseUrl, userAgentString, logger)
 			if err != nil {
-				return nil, nil, nil, err
+				return err
 			}
 			successful2fa = true
 		}
 
 		if !successful2fa {
 			err = errors.New("Failed to Pefrom 2FA (as requested from server)")
-			return nil, nil, nil, err
+			return err
 		}
 
 	}
-
 	logger.Debugf(1, "Authentication Phase complete")
-
-	//now get x509 cert
-	pubKey := signer.Public()
-	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
-
-	var urlPostfix string
-	if addGroups {
-		urlPostfix = "&addGroups=true"
-		logger.Debugln(0, "adding \"addGroups\" to request")
-	}
-	// TODO: urlencode the userName
-	x509Cert, err = doCertRequest(
-		client,
-		loginResp.Cookies(),
-		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
-		pemKey,
-		userAgentString,
-		logger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	kubernetesCert, err = doCertRequest(
-		client,
-		loginResp.Cookies(),
-		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
-		pemKey,
-		userAgentString,
-		logger)
-	if err != nil {
-		//logger.Printf("Warning: could not get the kubernets cert (old server?) err=%s \n", err)
-		kubernetesCert = nil
-		//return nil, nil, nil, err
-	}
-
-	//// Now we do sshCert!
-	// generate and write public key
-	sshPub, err := ssh.NewPublicKey(pubKey)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
-	sshCert, err = doCertRequest(
-		client,
-		loginResp.Cookies(),
-		baseUrl+"/certgen/"+userName+"?type=ssh",
-		sshAuthFile,
-		userAgentString,
-		logger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return sshCert, x509Cert, kubernetesCert, nil
+	return nil
 }
 
-func getCertFromTargetUrls(
-	signer crypto.Signer,
+func authenticateToTargetUrls(
 	userName string,
 	password []byte,
 	targetUrls []string,
-	skipu2f bool,
-	addGroups bool,
+	skip2fa bool,
 	client *http.Client,
 	userAgentString string,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
-	success := false
+	logger log.DebugLogger) (baseUrl string, err error) {
 
-	for _, baseUrl := range targetUrls {
+	for _, baseUrl = range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
-			signer, userName, password, baseUrl, skipu2f, addGroups,
-			client, userAgentString, logger)
+		err = authenticateUser(
+			userName,
+			password,
+			baseUrl,
+			skip2fa,
+			client,
+			userAgentString,
+			logger)
 		if err != nil {
-			logger.Println(err)
 			continue
 		}
-		success = true
-		break
+		return baseUrl, nil
 
 	}
-	if !success {
-		err := errors.New("Failed to get creds")
-		return nil, nil, nil, err
-	}
-
-	return sshCert, x509Cert, kubernetesCert, nil
+	return "", fmt.Errorf("Failed to Authenticate to any URL")
 }
