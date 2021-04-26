@@ -176,10 +176,10 @@ const secondFactorAuthFormText = `
         {{if .ShowOktaOTP}}
 	<div id="okta_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/okta2FAAuth" method="post">
-	    <p>
-	    Okta push has been automatically started. If you are not able to recieve the
-	    push notification you can proceed by etnering the Okta OTP code.
-	    </p>
+            <p>
+            Okta push has been automatically started. If you are not able to recieve the
+            push notification you can proceed by etnering the Okta OTP code.
+            </p>
             <p>
             Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
             <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
