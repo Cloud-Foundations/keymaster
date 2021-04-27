@@ -140,6 +140,19 @@ type keymasterdCodeToken struct {
 	ProtectedData    string   `json:"protected_data,omitempty"`
 }
 
+func (state *RuntimeState) idpOpenIDCGetClientConfig(client_id string) (*OpenIDConnectClientConfig, error) {
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID != client_id {
+			return &client, nil
+		}
+	}
+	return nil, fmt.Errorf("Client id not found")
+}
+
+func (client *OpenIDConnectClientConfig) CanRedirectURL(redirectUrl string) (bool, error) {
+	return false, fmt.Errorf("Not implemented")
+}
+
 // https://tools.ietf.org/id/draft-ietf-oauth-security-topics-10.html states
 // that redirects MUST be exact matches.
 // We allow our users to be less strict (for facilitation of internal deployments).
