@@ -226,6 +226,11 @@ func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool,
 	return false, nil
 }
 
+//
+func (client *OpenIDConnectClientConfig) RequestedAudienceIsAllowed(audience string) bool {
+	return client.AllowClientChosenAudiences
+}
+
 // This is weak we should be doing hashes
 func (client *OpenIDConnectClientConfig) ValidClientSecret(clientSecret string) bool {
 	return clientSecret == client.ClientSecret
@@ -445,6 +450,10 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	var accessAudience []string
 	requestedAudience := r.Form.Get("audience")
 	if requestedAudience != "" {
+		if !oidcClient.RequestedAudienceIsAllowed(requestedAudience) {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid audience")
+			return
+		}
 		validAudience, err := oidcClient.CorsOriginAllowed(requestedAudience)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")

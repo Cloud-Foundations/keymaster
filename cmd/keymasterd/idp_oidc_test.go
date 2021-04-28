@@ -426,7 +426,9 @@ func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
 	//valid_client_secret := "secret_password"
 	valid_redirect_uri := "https://localhost:12345"
 	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "",
-		AllowedRedirectURLRE: []string{"localhost"}, AllowedRedirectDomains: []string{"localhost"}}
+		AllowClientChosenAudiences: true,
+		AllowedRedirectURLRE:       []string{"localhost"}, AllowedRedirectDomains: []string{"localhost"},
+	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
 
 	// now we add a cookie for auth
