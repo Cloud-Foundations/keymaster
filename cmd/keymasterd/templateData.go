@@ -177,7 +177,7 @@ const secondFactorAuthFormText = `
 	<div id="okta_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/okta2FAAuth" method="post">
             <p>
-            Okta push has been automatically started. If you are not able to recieve the
+            Okta push has been automatically started. If you are not able to receive the
             push notification you can proceed by entering the Okta OTP code.
             </p>
             <p>
