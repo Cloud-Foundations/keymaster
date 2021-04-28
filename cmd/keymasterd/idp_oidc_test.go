@@ -132,6 +132,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
 	if err != nil {
+		t.Logf("bad handler code %+v", rr)
 		t.Fatal(err)
 	}
 	t.Logf("%+v", rr)
@@ -232,8 +233,12 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	}
 	testConfigClients := []string{"weakREWithDomains", "onlyWithDomains"}
 	for _, clientID := range testConfigClients {
+		client, err := state.idpOpenIDCGetClientConfig(clientID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, mustFailURL := range attackerTestURLS {
-			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustFailURL)
+			resultMatch, err := client.CanRedirectToURL(mustFailURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,7 +247,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 		for _, mustPassURL := range expectedSuccessURLS {
-			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustPassURL)
+			resultMatch, err := client.CanRedirectToURL(mustPassURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -290,8 +295,11 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	state.HostIdentity = "localhost"
 	valid_client_id := "valid_client_id"
 	valid_redirect_uri := "https://localhost:12345"
+	nonPKCEclientID := "nonPKCEClientId"
 	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "", AllowedRedirectURLRE: []string{"localhost"}}
+	clientConfig2 := OpenIDConnectClientConfig{ClientID: nonPKCEclientID, ClientSecret: "supersecret", AllowedRedirectURLRE: []string{"localhost"}}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig2)
 	// now we add a cookie for auth
 	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
 	if err != nil {
@@ -352,7 +360,7 @@ func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
 	}
 	// now a good verifier, but bad client_id
 	badVerifierTokenForm.Set("code_verifier", CodeVerifier.String())
-	badVerifierTokenForm.Set("client_id", "invalidClientID")
+	badVerifierTokenForm.Set("client_id", nonPKCEclientID)
 	badVerifierTokenReq, err = http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(badVerifierTokenForm.Encode()))
 	if err != nil {
 		t.Fatal(err)

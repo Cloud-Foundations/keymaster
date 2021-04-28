@@ -140,17 +140,15 @@ type keymasterdCodeToken struct {
 	ProtectedData    string   `json:"protected_data,omitempty"`
 }
 
+var ErrorIDPClientNotFound = errors.New("Client id not found")
+
 func (state *RuntimeState) idpOpenIDCGetClientConfig(client_id string) (*OpenIDConnectClientConfig, error) {
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != client_id {
+		if client.ClientID == client_id {
 			return &client, nil
 		}
 	}
-	return nil, fmt.Errorf("Client id not found")
-}
-
-func (client *OpenIDConnectClientConfig) CanRedirectURL(redirectUrl string) (bool, error) {
-	return false, fmt.Errorf("Not implemented")
+	return nil, ErrorIDPClientNotFound
 }
 
 // https://tools.ietf.org/id/draft-ietf-oauth-security-topics-10.html states
@@ -160,60 +158,84 @@ func (client *OpenIDConnectClientConfig) CanRedirectURL(redirectUrl string) (boo
 // 1. redirect_urls scheme MUST be https (to prevent code snooping).
 // 2. redirect_urls MUST not include a query  (to prevent stealing of code with faulty clients (open redirect))
 // 3. redirect_url path MUST NOT contain ".." to prevent path traversal attacks
-func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != client_id {
-			continue
-		}
-		if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
-			return false, nil
-		}
-		matchedRE := false
-		for _, re := range client.AllowedRedirectURLRE {
-			matched, err := regexp.MatchString(re, redirect_url)
-			if err != nil {
-				return false, err
-			}
-			if matched {
-				matchedRE = true
-				break
-			}
-		}
-		parsedURL, err := url.Parse(redirect_url)
+func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, error) {
+	if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
+		return false, nil
+	}
+	matchedRE := false
+	for _, re := range client.AllowedRedirectURLRE {
+		matched, err := regexp.MatchString(re, redirectUrl)
 		if err != nil {
-			logger.Debugf(1, "user passed unparsable url as string err = %s", err)
-			return false, nil
+			return false, err
 		}
-		if parsedURL.Scheme != "https" {
-			return false, nil
-		}
-		if len(parsedURL.RawQuery) > 0 {
-			return false, nil
-		}
-		if strings.Contains(parsedURL.Path, "..") {
-			return false, nil
-		}
-		// if no domains, the matchedRE answer is authoritative
-		if len(client.AllowedRedirectDomains) < 1 {
-			return matchedRE, nil
-		}
-		if len(client.AllowedRedirectURLRE) < 1 {
+		if matched {
 			matchedRE = true
+			break
 		}
-		matchedDomain := false
-		for _, domain := range client.AllowedRedirectDomains {
-			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
-			if matched {
-				matchedDomain = true
-				break
-			}
+	}
+	parsedURL, err := url.Parse(redirectUrl)
+	if err != nil {
+		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+		return false, nil
+	}
+	if parsedURL.Scheme != "https" {
+		return false, nil
+	}
+	if len(parsedURL.RawQuery) > 0 {
+		return false, nil
+	}
+	if strings.Contains(parsedURL.Path, "..") {
+		return false, nil
+	}
+	// if no domains, the matchedRE answer is authoritative
+	if len(client.AllowedRedirectDomains) < 1 {
+		return matchedRE, nil
+	}
+	if len(client.AllowedRedirectURLRE) < 1 {
+		matchedRE = true
+	}
+	if len(client.AllowedRedirectURLRE) < 1 {
+		matchedRE = true
+	}
+	matchedDomain := false
+	for _, domain := range client.AllowedRedirectDomains {
+		matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+		if matched {
+			matchedDomain = true
+			break
 		}
-		return matchedDomain && matchedRE, nil
+	}
+	return matchedDomain && matchedRE, nil
+}
+
+func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool, error) {
+	parsedURL, err := url.Parse(origin)
+	if err != nil {
+		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+		return false, nil
+	}
+	if parsedURL.Scheme != "https" {
+		return false, nil
+	}
+	for _, domain := range client.AllowedRedirectDomains {
+		matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+		if matched {
+			return true, nil
+		}
 	}
 	return false, nil
 }
 
-func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId string) (bool, error) {
+// This is weak we should be doing hashes
+func (client *OpenIDConnectClientConfig) ValidClientSecret(clientSecret string) bool {
+	return clientSecret == client.ClientSecret
+}
+
+func (client *OpenIDConnectClientConfig) ClientCanDoPKCEAuth() (bool, error) {
+	return client.ClientSecret == "", nil
+}
+
+func (state *RuntimeState) idpOpenIDCGenericIsCorsOriginAllowed(origin string) (bool, error) {
 	parsedURL, err := url.Parse(origin)
 	if err != nil {
 		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
@@ -223,9 +245,6 @@ func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId
 		return false, nil
 	}
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if clientId != "" && client.ClientID != clientId {
-			continue
-		}
 		for _, domain := range client.AllowedRedirectDomains {
 			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
 			if matched {
@@ -349,21 +368,31 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 	}
 	if !validScope {
-
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid scope value for Auth Handler")
 		return
 	}
 
-	requestRedirectURLString := r.Form.Get("redirect_uri")
+	oidcClient, err := state.idpOpenIDCGetClientConfig(clientID)
+	if err != nil {
+		if err == ErrorIDPClientNotFound {
+			logger.Debugf(1, "Client Not Found clientID=%s", clientID)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "ClientID uknown")
+			return
+		}
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 
-	ok, err := state.idpOpenIDCClientCanRedirect(clientID, requestRedirectURLString)
+	requestRedirectURLString := r.Form.Get("redirect_uri")
+	ok, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
 	if err != nil {
 		logger.Printf("%v", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid or clientID uknown")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid")
 		return
 	}
 
@@ -416,8 +445,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	var accessAudience []string
 	requestedAudience := r.Form.Get("audience")
 	if requestedAudience != "" {
-
-		validAudience, err := state.idpOpenIDCIsCorsOriginAllowed(requestedAudience, clientID)
+		validAudience, err := oidcClient.CorsOriginAllowed(requestedAudience)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
@@ -494,26 +522,6 @@ type bearerAccessToken struct {
 	Expiration int64    `json:"exp"`
 	IssuedAt   int64    `json:"iat"`
 	Type       string   `json:"type"`
-}
-
-func (state *RuntimeState) idpOpenIDCValidClientSecret(clientId string, clientSecret string) bool {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != clientId {
-			continue
-		}
-		return clientSecret == client.ClientSecret
-	}
-	return false
-}
-
-func (state *RuntimeState) idpOpenIDCClientCanDoPKCEAuth(clientId string) (bool, error) {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != clientId {
-			continue
-		}
-		return client.ClientSecret == "", nil
-	}
-	return false, nil
 }
 
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
@@ -642,9 +650,19 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 			pass = unescapedPass
 		}
 	}
+	oidcClient, err := state.idpOpenIDCGetClientConfig(clientID)
+	if err != nil {
+		if err == ErrorIDPClientNotFound {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "ClientID uknown")
+			return
+		}
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 	valid := false
 	if len(codeVerifier) > 0 {
-		canUserCodeVerifier, err := state.idpOpenIDCClientCanDoPKCEAuth(clientID)
+		canUserCodeVerifier, err := oidcClient.ClientCanDoPKCEAuth()
 		if err != nil {
 			logger.Printf("Error checking if client can do PKCE auth")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -658,7 +676,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		valid = state.idpOpenIDCValidCodeVerifier(clientID, codeVerifier, keymasterToken)
 	}
 	if !valid && len(pass) > 0 {
-		valid = state.idpOpenIDCValidClientSecret(clientID, pass)
+		valid = oidcClient.ValidClientSecret(pass) //state.idpOpenIDCValidClientSecret(clientID, pass)
 	}
 	if !valid {
 		logger.Debugf(0, "Error invalid client secret or code verifier")
@@ -666,7 +684,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	// if we have an origin it should be whitelisted
-	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(r.Header.Get("Origin"), clientID)
+	originIsValid, err := oidcClient.CorsOriginAllowed(r.Header.Get("Origin"))
 	if err != nil {
 		logger.Printf("Error checking Origin")
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -859,7 +877,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Options MUST contain origin")
 			return
 		}
-		originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+		originIsValid, err := state.idpOpenIDCGenericIsCorsOriginAllowed(origin)
 		if err != nil {
 			logger.Printf("Error checking Origin")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -988,7 +1006,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
 
-	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+	originIsValid, err := state.idpOpenIDCGenericIsCorsOriginAllowed(origin)
 	if err != nil {
 		logger.Printf("Error checking Origin, allowing to continue without origin header")
 	}
