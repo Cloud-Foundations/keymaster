@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        1.8.2
+Version:        1.9.0
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -16,8 +16,23 @@ Requires(postun): /usr/sbin/userdel
 #no debug package as this is go
 %define debug_package %{nil}
 
+%package client
+Summary: keymaster client
+
+%package server
+Summary: keymaster server and utilities
+
+
 %description
-Simple utilites for checking state of ldap infrastructure
+Certificate based identity system. Contains both a daemon
+and a clients.
+
+%description client
+keymaster is the client side of keymasterd.
+
+%description server
+the free server side keymasterd in charge of generating
+short term identity certificates.
 
 
 %prep
@@ -50,23 +65,29 @@ install -p -m 0644 cmd/keymasterd/customization_data/templates/footer_extra.tmpl
 install -p -m 0644 cmd/keymasterd/customization_data/templates/login_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/login_extra.tmpl
 install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources
 install -p -m 0644 cmd/keymasterd/customization_data/web_resources/customization.css %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources/customization.css
-%pre
+
+%pre server
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
 
-%post
+%post server
 mkdir -p /etc/keymaster/
 mkdir -p /var/lib/keymaster
 chown keymaster /var/lib/keymaster
 systemctl daemon-reload
 
-%postun
+%postun server
 /usr/sbin/userdel keymaster
 systemctl daemon-reload
 
+
 %files
+
+%files client
+%{_bindir}/keymaster
+
+%files server
 #%doc
 %{_sbindir}/keymasterd
-%{_bindir}/keymaster
 %{_bindir}/keymaster-unlocker
 /usr/lib/systemd/system/keymaster.service
 %{_datarootdir}/keymasterd/static_files/*
