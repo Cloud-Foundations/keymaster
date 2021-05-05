@@ -25,7 +25,8 @@ Summary: keymaster server and utilities
 
 %description
 Certificate based identity system. Contains both a daemon
-and a clients.
+and a client. The system is designed around requiring mfa
+and having ephemeral tokens.
 
 %description client
 keymaster is the client side of keymasterd.
@@ -78,7 +79,6 @@ systemctl daemon-reload
 %postun server
 /usr/sbin/userdel keymaster
 systemctl daemon-reload
-
 
 %files
 
