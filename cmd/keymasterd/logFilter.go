@@ -46,11 +46,11 @@ func (state *RuntimeState) sendFailureToClientIfNotAdminUserOrCA(
 		}
 		return false
 	}
-	username, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		return true
 	}
-	if !state.IsAdminUser(username) {
+	if !state.IsAdminUser(authData.Username) {
 		http.Error(w, "Not an admin user", http.StatusUnauthorized)
 		return true
 	}

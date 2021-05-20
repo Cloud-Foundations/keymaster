@@ -74,18 +74,18 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// TODO: think if we are going to allow admins to register these tokens
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	// TODO: check if TOTP is even enabled.
 
 	// TODO: check for method, we should only allow POST requests
 
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -100,7 +100,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      state.HostIdentity,
-		AccountName: authUser,
+		AccountName: authData.Username,
 	})
 	if err != nil {
 		logger.Printf("generating new key error: %v", err)
@@ -114,7 +114,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	profile.PendingTOTPSecret = &encryptedKeys
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(authData.Username, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -133,7 +133,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	// We need custom CSP policy to allow embedded images
 	w.Header().Set("Content-Security-Policy", "default-src 'self' ;img-src 'self'  data: ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 	displayData := newTOTPPageTemplateData{
-		AuthUsername:    authUser,
+		AuthUsername:    authData.Username,
 		Title:           "New TOTP Generation", //TODO: maybe include username?
 		TOTPSecret:      key.Secret(),
 		TOTPBase64Image: template.HTML("<img src=\"data:image/png;base64," + base64Image + "\" alt=\"beastie.png\" scale=\"0\" />"),
@@ -233,19 +233,21 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 
 const totpTokenManagementPath = "/api/v0/manageTOTPToken"
 
-func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter,
+	r *http.Request) {
 	// User must be logged in
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done
+	// before checking user creds
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// TODO: ensure is a valid method (POST)
 	if r.Method != "POST" {
 		logger.Printf("Wanted Post got='%s'", r.Method)
@@ -255,7 +257,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	err = r.ParseForm()
 	if err != nil {
 		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
 		return
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
@@ -263,11 +266,13 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	assumedUser := r.Form.Get("username")
 
 	// Have admin rights = Must be admin + authenticated with U2F
-	hasAdminRights := state.IsAdminUserAndU2F(authUser, loginLevel)
+	hasAdminRights := state.IsAdminUserAndU2F(authData.Username,
+		authData.AuthType)
 
 	// Check params
-	if !hasAdminRights && assumedUser != authUser {
-		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
+	if !hasAdminRights && assumedUser != authData.Username {
+		logger.Printf("bad username authUser=%s requested=%s",
+			authData.Username, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
@@ -275,7 +280,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	tokenIndex, err := strconv.ParseInt(r.Form.Get("index"), 10, 64)
 	if err != nil {
 		logger.Printf("tokenindex is not a number")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"tokenindex is not a number")
 		return
 	}
 
@@ -289,7 +295,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	}
 	if fromCache {
 		logger.Printf("DB is being cached and requesting registration aborting it")
-		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		http.Error(w, "db backend is offline for writes",
+			http.StatusServiceUnavailable)
 		return
 	}
 
@@ -297,7 +304,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	_, ok := profile.TOTPAuthData[tokenIndex]
 	if !ok {
 		logger.Printf("bad index number")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"bad index Value")
 		return
 	}
 	actionName := r.Form.Get("action")
@@ -306,7 +314,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 		tokenName := r.Form.Get("name")
 		if m, _ := regexp.MatchString("^[-/.a-zA-Z0-9_ ]+$", tokenName); !m {
 			logger.Printf("%s", tokenName)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"invalidtokenName")
 			return
 		}
 		profile.TOTPAuthData[tokenIndex].Name = tokenName
@@ -317,7 +326,8 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	case "Delete":
 		delete(profile.TOTPAuthData, tokenIndex)
 	default:
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid Operation")
 		return
 	}
 	err = state.SaveUserProfile(assumedUser, profile)
@@ -331,7 +341,7 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
+		http.Redirect(w, r, profileURI(authData.Username, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
@@ -442,13 +452,13 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 		return "", 0, 0, errors.New("server still sealed")
 	}
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, requiredAuthLevel)
+	authData, err := state.checkAuth(w, r, requiredAuthLevel)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return "", 0, 0, err
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// TODO: ensure is a valid method (POST)
 	if r.Method != "POST" {
 		logger.Printf("Wanted Post got='%s'", r.Method)
@@ -478,7 +488,7 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 		return "", 0, 0, err
 	}
 
-	return authUser, loginLevel, otpValue, nil
+	return authData.Username, authData.AuthType, otpValue, nil
 }
 
 const totpVerifyHandlerPath = "/api/v0/VerifyTOTP"

@@ -53,13 +53,14 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	logger.Debugf(1, "Certgen, authenticated at level=%x, username=`%s`", authLevel, authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	logger.Debugf(1, "Certgen, authenticated at level=%x, username=`%s`",
+		authData.AuthType, authData.Username)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -67,24 +68,29 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypePassword {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
+		if certPref == proto.AuthTypeU2F &&
+			((authData.AuthType & AuthTypeU2F) == AuthTypeU2F) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeTOTP && ((authLevel & AuthTypeTOTP) == AuthTypeTOTP) {
+		if certPref == proto.AuthTypeTOTP &&
+			((authData.AuthType & AuthTypeTOTP) == AuthTypeTOTP) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
+		if certPref == proto.AuthTypeSymantecVIP &&
+			((authData.AuthType & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeIPCertificate && ((authLevel & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
+		if certPref == proto.AuthTypeIPCertificate &&
+			((authData.AuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeOkta2FA && ((authLevel & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
+		if certPref == proto.AuthTypeOkta2FA &&
+			((authData.AuthType & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
 			sufficientAuthLevel = true
 		}
 	}
 	// if you have u2f you can always get the cert
-	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
+	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {
 		sufficientAuthLevel = true
 	}
 
@@ -95,12 +101,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	targetUser := r.URL.Path[len(certgenPath):]
-	if authUser != targetUser {
+	if authData.Username != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("User %s asking for creds for %s", authUser, targetUser)
+		logger.Printf("User %s asking for creds for %s",
+			authData.Username, targetUser)
 		return
 	}
-	logger.Debugf(3, "auth succedded for %s", authUser)
+	logger.Debugf(3, "auth succedded for %s", authData.Username)
 
 	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
@@ -130,6 +137,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 		duration = newDuration
+	}
+	if !authData.ExpiresAt.IsZero() {
+		if max := time.Until(authData.ExpiresAt); max < duration {
+			duration = max
+		}
 	}
 
 	certType := "ssh"

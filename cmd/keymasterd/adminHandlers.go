@@ -28,19 +28,19 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
 	// TODO: probably this should be just u2f and AuthTypeKeymasterX509... but
 	// probably we want also to allow configurability for this. Leaving
 	// AuthTypeKeymasterX509 as optional for now
-	authUser, _, err := state.checkAuth(w, r,
+	authData, err := state.checkAuth(w, r,
 		state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
 	if err != nil {
 		state.logger.Debugf(1, "%v", err)
 		return true, ""
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	if !state.IsAdminUser(authUser) {
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	if !state.IsAdminUser(authData.Username) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"Not an admin user")
 		return true, ""
 	}
-	return false, authUser
+	return false, authData.Username
 }
 
 func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,

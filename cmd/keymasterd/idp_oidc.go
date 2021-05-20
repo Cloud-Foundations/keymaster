@@ -295,13 +295,13 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	// We are now at exploration stage... and will require pre-authed clients.
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	logger.Debugf(1, "AuthUser of idc auth: %s", authData.Username)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
@@ -408,7 +408,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.Scope = scope
 	codeToken.AuthExpiration = time.Now().Unix() + maxAgeSecondsAuthCookie
 	codeToken.Expiration = time.Now().Unix() + idpOpenIDCMaxAuthProcessMaxDurationSeconds
-	codeToken.Username = authUser
+	codeToken.Username = authData.Username
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
 	codeToken.ProtectedData = protectedCipherText
@@ -428,8 +428,8 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
 	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
-	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authUser, requestRedirectURLString)
-	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authUser)
+	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, requestRedirectURLString)
+	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authData.Username)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
 }

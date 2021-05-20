@@ -715,7 +715,7 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
+func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (*authInfo, error) {
 	// Check csrf
 	if r.Method != "GET" {
 		referer := r.Referer()
@@ -723,15 +723,14 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
 			if err != nil {
-				return "", AuthTypeNone, err
+				return nil, err
 			}
 			state.logger.Debugf(3, "refHost =%s, host=%s",
 				refererURL.Host, r.Host)
 			if refererURL.Host != r.Host {
 				state.logger.Printf("CSRF detected.... rejecting with a 400")
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-				err := errors.New("CSRF detected... rejecting")
-				return "", AuthTypeNone, err
+				return nil, errors.New("CSRF detected... rejecting")
 			}
 		}
 	}
@@ -745,7 +744,10 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				tlsAuthUser, err :=
 					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 				if err == nil && tlsAuthUser != "" {
-					return tlsAuthUser, AuthTypeKeymasterX509, nil
+					return &authInfo{
+						AuthType: AuthTypeKeymasterX509,
+						Username: tlsAuthUser,
+					}, nil
 				}
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
@@ -754,14 +756,17 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				if userErr != nil {
 					state.writeFailureResponse(w, r, http.StatusForbidden,
 						fmt.Sprintf("%s", userErr))
-					return "", AuthTypeNone, userErr
+					return nil, userErr
 				}
 				if err != nil {
 					state.writeFailureResponse(w, r,
 						http.StatusInternalServerError, "")
-					return "", AuthTypeNone, err
+					return nil, err
 				}
-				return clientName, AuthTypeIPCertificate, nil
+				return &authInfo{
+					AuthType: AuthTypeIPCertificate,
+					Username: clientName,
+				}, nil
 			}
 		}
 	}
@@ -777,7 +782,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		if (AuthTypePassword & requiredAuthType) == 0 {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Insufficient Auth Level passwd")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
@@ -785,7 +790,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
@@ -795,15 +800,18 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
 		if !valid {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized,
 				"Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
-		return user, AuthTypePassword, nil
+		return &authInfo{
+			AuthType: AuthTypePassword,
+			Username: user,
+		}, nil
 	}
 	//Critical section
 	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
@@ -811,22 +819,26 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		//TODO check between internal and bad cookie error
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
-		return "", AuthTypeNone, err
+		return nil, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
-		return "", AuthTypeNone, err
+		return nil, err
 	}
 	if (info.AuthType & requiredAuthType) == 0 {
 		state.logger.Debugf(1, "info.AuthType: %v, requiredAuthType: %v\n",
 			info.AuthType, requiredAuthType)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Insufficient Auth Level in critical cookie")
-		return "", info.AuthType, err
+		return nil, err
 	}
-	return info.Username, info.AuthType, nil
+	return &authInfo{
+		AuthType:  info.AuthType,
+		ExpiresAt: info.ExpiresAt,
+		Username:  info.Username,
+	}, nil
 }
 
 func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
@@ -1261,20 +1273,20 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	readOnlyMsg := ""
 	if assumedUser == "" {
-		assumedUser = authUser
-	} else if !state.IsAdminUser(authUser) {
+		assumedUser = authData.Username
+	} else if !state.IsAdminUser(authData.Username) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
-	} else if (loginLevel & AuthTypeU2F) == 0 {
+	} else if (authData.AuthType & AuthTypeU2F) == 0 {
 		readOnlyMsg = "Admins must U2F authenticate to change the profile of others."
 	}
 
@@ -1328,12 +1340,12 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 	displayData := profilePageTemplateData{
 		Username:             assumedUser,
-		AuthUsername:         authUser,
+		AuthUsername:         authData.Username,
 		Title:                "Keymaster User Profile",
 		ShowU2F:              showU2F,
 		JSSources:            JSSources,
 		ReadOnlyMsg:          readOnlyMsg,
-		UsersLink:            state.IsAdminUser(authUser),
+		UsersLink:            state.IsAdminUser(authData.Username),
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
@@ -1369,13 +1381,13 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
@@ -1388,11 +1400,12 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	assumedUser := r.Form.Get("username")
 
 	// Have admin rights = Must be admin + authenticated with U2F
-	hasAdminRights := state.IsAdminUserAndU2F(authUser, loginLevel)
+	hasAdminRights := state.IsAdminUserAndU2F(authData.Username,
+		authData.AuthType)
 
 	// Check params
-	if !hasAdminRights && assumedUser != authUser {
-		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
+	if !hasAdminRights && assumedUser != authData.Username {
+		logger.Printf("bad username authUser=%s requested=%s", authData.Username, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
@@ -1460,7 +1473,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
+		http.Redirect(w, r, profileURI(authData.Username, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
