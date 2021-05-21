@@ -33,7 +33,7 @@ func (state *RuntimeState) sendFailureToClientIfNotAdminUserOrCA(
 	state.logger.Debugf(4, "request is TLS %+v", r.TLS)
 	if len(r.TLS.VerifiedChains) > 0 {
 		state.logger.Debugf(4, "%+v", r.TLS.VerifiedChains[0][0].Subject)
-		username, err := state.getUsernameIfKeymasterSigned(
+		username, _, err := state.getUsernameIfKeymasterSigned(
 			r.TLS.VerifiedChains)
 		if err != nil {
 			state.logger.Println(err)

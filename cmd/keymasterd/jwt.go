@@ -80,10 +80,10 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalu
 		err = errors.New("invalid JWT values")
 		return rvalue, err
 	}
-
-	rvalue.Username = inboundJWT.Subject
 	rvalue.AuthType = inboundJWT.AuthType
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
+	rvalue.IssuedAt = time.Unix(inboundJWT.IssuedAt, 0)
+	rvalue.Username = inboundJWT.Subject
 	return rvalue, nil
 }
 

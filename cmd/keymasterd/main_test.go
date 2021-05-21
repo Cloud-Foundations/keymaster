@@ -435,7 +435,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	// THis tests needs to be rewritten to have and expired token... need to figure out
 	// the best way to do this.
 	/*
-		state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
+		state.authCookie[cookieVal] = authInfo{IssuedAt: time.Now(), Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
 		_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 		if err != nil {
 			t.Fatal(err)

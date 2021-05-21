@@ -72,9 +72,10 @@ const (
 const AuthTypeAny = 0xFFFF
 
 type authInfo struct {
-	ExpiresAt time.Time
-	Username  string
 	AuthType  int
+	ExpiresAt time.Time
+	IssuedAt  time.Time
+	Username  string
 }
 
 type authInfoJWT struct {
@@ -654,7 +655,7 @@ func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
 	return false, nil
 }
 
-func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, error) {
+func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, time.Time, error) {
 	for _, chain := range VerifiedChains {
 		if len(chain) < 2 {
 			continue
@@ -663,42 +664,42 @@ func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509
 		//keymaster certs as signed directly
 		certSignerPKFingerprint, err := getKeyFingerprint(chain[1].PublicKey)
 		if err != nil {
-			return "", err
+			return "", time.Time{}, err
 		}
 		for _, key := range state.KeymasterPublicKeys {
 			fp, err := getKeyFingerprint(key)
 			if err != nil {
-				return "", err
+				return "", time.Time{}, err
 			}
 			if certSignerPKFingerprint == fp {
-				return username, nil
+				return username, chain[0].NotBefore, nil
 			}
 		}
 
 	}
-	return "", nil
+	return "", time.Time{}, nil
 }
 
-func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, error, error) {
+func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, time.Time, error, error) {
 	clientName := VerifiedChains[0][0].Subject.CommonName
 	userCert := VerifiedChains[0][0]
 
 	validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
 	if err != nil {
 		logger.Printf("Error verifying up restricted cert: %s", err)
-		return "", nil, err
+		return "", time.Time{}, nil, err
 	}
 	if !validIP {
 		logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
-		return "", fmt.Errorf("Bad incoming ip addres"), nil
+		return "", time.Time{}, fmt.Errorf("Bad incoming ip addres"), nil
 	}
 	// Check if there are group restrictions on
 	ok, err := state.isAutomationUser(clientName)
 	if err != nil {
-		return "", nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
+		return "", time.Time{}, nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
 	}
 	if !ok {
-		return "", fmt.Errorf("Bad username  for ip restricted cert"), nil
+		return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
 	}
 
 	revoked, ok, err := revoke.VerifyCertificateError(userCert)
@@ -709,9 +710,9 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 	if revoked == true && ok {
 		logger.Printf("Cert is revoked")
 		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
-		return "", fmt.Errorf("revoked cert"), nil
+		return "", time.Time{}, fmt.Errorf("revoked cert"), nil
 	}
-	return clientName, nil, nil
+	return clientName, userCert.NotBefore, nil, nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
@@ -741,17 +742,18 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
 			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
-				tlsAuthUser, err :=
+				tlsAuthUser, notBefore, err :=
 					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 				if err == nil && tlsAuthUser != "" {
 					return &authInfo{
 						AuthType: AuthTypeKeymasterX509,
+						IssuedAt: notBefore,
 						Username: tlsAuthUser,
 					}, nil
 				}
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
-				clientName, userErr, err :=
+				clientName, notBefore, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
 				if userErr != nil {
 					state.writeFailureResponse(w, r, http.StatusForbidden,
@@ -765,6 +767,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				}
 				return &authInfo{
 					AuthType: AuthTypeIPCertificate,
+					IssuedAt: notBefore,
 					Username: clientName,
 				}, nil
 			}
@@ -810,6 +813,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		}
 		return &authInfo{
 			AuthType: AuthTypePassword,
+			IssuedAt: time.Now(),
 			Username: user,
 		}, nil
 	}
@@ -834,11 +838,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		err := errors.New("Insufficient Auth Level in critical cookie")
 		return nil, err
 	}
-	return &authInfo{
-		AuthType:  info.AuthType,
-		ExpiresAt: info.ExpiresAt,
-		Username:  info.Username,
-	}, nil
+	return &info, nil
 }
 
 func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
@@ -946,7 +946,7 @@ const authCookieName = "auth_cookie"
 const vipTransactionCookieName = "vip_push_cookie"
 const maxAgeSecondsVIPCookie = 120
 const randomStringEntropyBytes = 32
-const maxAgeSecondsAuthCookie = 57600
+const maxAgeSecondsAuthCookie = 16 * 3600
 
 func genRandomString() (string, error) {
 	size := randomStringEntropyBytes

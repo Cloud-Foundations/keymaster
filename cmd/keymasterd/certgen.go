@@ -19,7 +19,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const certgenPath = "/certgen/"
+const (
+	certgenPath            = "/certgen/"
+	maxCertificateLifetime = time.Hour * 24
+)
 
 func prependGroups(groups []string, prefix string) []string {
 	if prefix == "" {
@@ -121,7 +124,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
-	duration := time.Duration(24 * time.Hour)
+	duration := maxCertificateLifetime
 	if formDuration, ok := r.Form["duration"]; ok {
 		stringDuration := formDuration[0]
 		newDuration, err := time.ParseDuration(stringDuration)
@@ -138,10 +141,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		}
 		duration = newDuration
 	}
-	if !authData.ExpiresAt.IsZero() {
-		if max := time.Until(authData.ExpiresAt); max < duration {
-			duration = max
-		}
+	maxDuration := time.Until(authData.IssuedAt.Add(maxCertificateLifetime))
+	if duration > maxDuration {
+		duration = maxDuration
 	}
 
 	certType := "ssh"
