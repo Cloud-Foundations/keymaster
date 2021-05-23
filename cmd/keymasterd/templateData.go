@@ -551,3 +551,56 @@ const newBootstrapOTPPHTML = `
 </html>
 {{end}}
 `
+
+type authCodePageTemplateData struct {
+	Title        string
+	AuthUsername string
+	JSSources    []string
+	ErrorMessage string
+	Token        string
+}
+
+const showAuthTokenHTML = `
+{{define "authTokenPage"}}
+<!DOCTYPE html>
+<html style="height:100%; padding:0;border:0;margin:0">
+  <head>
+    <title>{{.Title}}</title>
+    {{if .JSSources -}}
+    {{- range .JSSources }}
+    <script type="text/javascript" src="{{.}}"></script>
+    {{- end}}
+    {{- end}}
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
+  </head>
+  <body>
+    <div style="min-height:100%;position:relative;">
+    {{template "header" .}}
+    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+
+    <h1>{{.Title}}</h1>
+
+    {{if .ErrorMessage}}
+    <p style="color:red;">{{.ErrorMessage}} </p>
+    {{end}}
+
+    <div>
+    <p>
+    {{if .Token}}
+    Copy into CLI:<p>
+    <code><b>{{.Token}}</b></code>
+    <p>
+    Close this tab once entered.
+    {{end}}
+    </p>
+    </div>
+
+    </div>
+    {{template "footer" . }}
+    </div>
+  </body>
+</html>
+{{end}}
+`

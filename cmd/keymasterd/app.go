@@ -44,6 +44,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
@@ -69,7 +70,10 @@ const (
 	AuthTypeKeymasterX509
 )
 
-const AuthTypeAny = 0xFFFF
+const (
+	AuthTypeAny                   = 0xFFFF
+	maxWebauthForCliTokenLifetime = time.Hour * 24 * 366
+)
 
 type authInfo struct {
 	AuthType  int
@@ -530,36 +534,38 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				}
 				authCookie = cookie
 			}
-			loginDestnation := profilePath
-			if r.URL.Path == idpOpenIDCAuthorizationPath {
-				loginDestnation = r.URL.String()
+			loginDestination := profilePath
+			switch r.URL.Path {
+			case idpOpenIDCAuthorizationPath, paths.ShowAuthToken,
+				paths.SendAuthDocument:
+				loginDestination = r.URL.String()
 			}
 			if r.Method == "POST" {
 				/// assume it has been parsed... otherwise why are we here?
 				if r.Form.Get("login_destination") != "" {
-					loginDestnation = getLoginDestination(r)
+					loginDestination = getLoginDestination(r)
 				}
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, loginDestnation, message)
+				state.writeHTMLLoginPage(w, r, loginDestination, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
 				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, loginDestination, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, loginDestnation, message)
+			state.writeHTMLLoginPage(w, r, loginDestination, message)
 			return
 		default:
 			w.Write([]byte(publicErrorText))
@@ -1677,6 +1683,12 @@ func main() {
 	//               bitfield test.
 	serviceMux.HandleFunc(bootstrapOtpAuthPath,
 		runtimeState.BootstrapOtpAuthHandler)
+	if runtimeState.Config.Base.WebauthTokenForCliLifetime > 0 {
+		serviceMux.HandleFunc(paths.ShowAuthToken,
+			runtimeState.ShowAuthTokenHandler)
+		serviceMux.HandleFunc(paths.SendAuthDocument,
+			runtimeState.SendAuthDocumentHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{

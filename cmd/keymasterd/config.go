@@ -56,30 +56,31 @@ type baseConfig struct {
 	TLSCertFilename              string `yaml:"tls_cert_filename"`
 	TLSKeyFilename               string `yaml:"tls_key_filename"`
 	ACME                         acmecfg.AcmeConfig
-	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
-	Ed25519CAFilename            string     `yaml:"ed25519_ca_keyfilename"`
-	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
-	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
-	ExternalAuthCmd              string     `yaml:"external_auth_command"`
-	ClientCAFilename             string     `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename  string     `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                 string     `yaml:"host_identity"`
-	KerberosRealm                string     `yaml:"kerberos_realm"`
-	DataDirectory                string     `yaml:"data_directory"`
-	SharedDataDirectory          string     `yaml:"shared_data_directory"`
-	HideStandardLogin            bool       `yaml:"hide_standard_login"`
-	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
-	AllowSelfServiceBootstrapOTP bool       `yaml:"allow_self_service_bootstrap_otp"`
-	AdminUsers                   []string   `yaml:"admin_users"`
-	AdminGroups                  []string   `yaml:"admin_groups"`
-	PublicLogs                   bool       `yaml:"public_logs"`
-	SecsBetweenDependencyChecks  int        `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups         []string   `yaml:"automation_user_groups"`
-	AutomationUsers              []string   `yaml:"automation_users"`
-	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
-	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
-	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
+	SSHCAFilename                string        `yaml:"ssh_ca_filename"`
+	Ed25519CAFilename            string        `yaml:"ed25519_ca_keyfilename"`
+	AutoUnseal                   autoUnseal    `yaml:"auto_unseal"`
+	HtpasswdFilename             string        `yaml:"htpasswd_filename"`
+	ExternalAuthCmd              string        `yaml:"external_auth_command"`
+	ClientCAFilename             string        `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename  string        `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                 string        `yaml:"host_identity"`
+	KerberosRealm                string        `yaml:"kerberos_realm"`
+	DataDirectory                string        `yaml:"data_directory"`
+	SharedDataDirectory          string        `yaml:"shared_data_directory"`
+	HideStandardLogin            bool          `yaml:"hide_standard_login"`
+	AllowedAuthBackendsForCerts  []string      `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI  []string      `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP bool          `yaml:"allow_self_service_bootstrap_otp"`
+	AdminUsers                   []string      `yaml:"admin_users"`
+	AdminGroups                  []string      `yaml:"admin_groups"`
+	PublicLogs                   bool          `yaml:"public_logs"`
+	SecsBetweenDependencyChecks  int           `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups         []string      `yaml:"automation_user_groups"`
+	AutomationUsers              []string      `yaml:"automation_users"`
+	DisableUsernameNormalization bool          `yaml:"disable_username_normalization"`
+	EnableLocalTOTP              bool          `yaml:"enable_local_totp"`
+	EnableBootstrapOTP           bool          `yaml:"enable_bootstrapotp"`
+	WebauthTokenForCliLifetime   time.Duration `yaml:"webauth_token_for_cli_lifetime"`
 }
 
 type emailConfig struct {
@@ -201,7 +202,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	// Load the built-in HTML templates.
 	htmlTemplates := []string{footerTemplateText, loginFormText,
 		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
-		newTOTPHTML, newBootstrapOTPPHTML,
+		newTOTPHTML, newBootstrapOTPPHTML, showAuthTokenHTML,
 	}
 	for _, templateString := range htmlTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
@@ -580,6 +581,12 @@ func loadVerifyConfigFile(configFilename string,
 			return nil, err
 		}
 		logger.Println("loaded UserInfo GitDB")
+	}
+
+	if runtimeState.Config.Base.WebauthTokenForCliLifetime >
+		maxWebauthForCliTokenLifetime {
+		runtimeState.Config.Base.WebauthTokenForCliLifetime =
+			maxWebauthForCliTokenLifetime
 	}
 
 	// Warn on potential issues

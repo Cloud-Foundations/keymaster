@@ -62,7 +62,13 @@ func (state *RuntimeState) genNewSerializedAuthJWT(username string, authLevel in
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 }
 
-func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalue authInfo, err error) {
+func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (
+	rvalue authInfo, err error) {
+	return state.getAuthInfoFromJWT(serializedToken, "keymaster_auth")
+}
+
+func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
+	tokenType string) (rvalue authInfo, err error) {
 	tok, err := jwt.ParseSigned(serializedToken)
 	if err != nil {
 		return rvalue, err
@@ -74,7 +80,7 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalu
 	}
 	//At this stage is now crypto verified, now is time to verify sane values
 	issuer := state.idpGetIssuer()
-	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "keymaster_auth" ||
+	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != tokenType ||
 		len(inboundJWT.Audience) < 1 || inboundJWT.Audience[0] != issuer ||
 		inboundJWT.NotBefore > time.Now().Unix() {
 		err = errors.New("invalid JWT values")
