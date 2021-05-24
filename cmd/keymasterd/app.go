@@ -485,11 +485,13 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	return nil
 }
 
-func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string, errorMessage string) error {
+func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
+	r *http.Request,
+	defaultUsername, loginDestination, errorMessage string) error {
 	//footerText := state.getFooterText()
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
+		DefaultUsername:  defaultUsername,
 		ShowOauth2:       state.Config.Oauth2.Enabled,
 		HideStdLogin:     state.Config.Base.HideStandardLogin,
 		LoginDestination: loginDestination,
@@ -548,24 +550,29 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, loginDestination, message)
+				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+					loginDestination, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
-				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, loginDestination, "")
+				logger.Debugf(3,
+					"write failure state, error from getinfo authInfoJWT")
+				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, loginDestination, "")
+				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+					loginDestination, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
 				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, loginDestination, message)
+			state.writeHTMLLoginPage(w, r, r.Form.Get("user"), loginDestination,
+				message)
 			return
 		default:
 			w.Write([]byte(publicErrorText))
@@ -916,7 +923,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
 		setSecurityHeaders(w)
-		state.writeHTMLLoginPage(w, r, profilePath, "")
+		state.writeHTMLLoginPage(w, r, "", profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1172,10 +1179,10 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 	return
 }
 
-///
 const logoutPath = "/api/v0/logout"
 
-func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -1189,14 +1196,27 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 		}
 		authCookie = cookie
 	}
-
+	var loginUser string
 	if authCookie != nil {
+		info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
+		if err == nil {
+			loginUser = info.Username
+		}
 		expiration := time.Unix(0, 0)
-		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
+		updatedAuthCookie := http.Cookie{
+			Name:     authCookieName,
+			Value:    "",
+			Expires:  expiration,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		}
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-	http.Redirect(w, r, "/", 302)
+
+	http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
 }
 
 ///
@@ -1505,11 +1525,17 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/static/favicon.ico", http.StatusFound)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
+		return
+	}
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, profilePath, "")
+			state.writeHTMLLoginPage(w, r, r.Form.Get("user"), profilePath, "")
 			return
 		}
 

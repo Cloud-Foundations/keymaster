@@ -44,6 +44,12 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
+		return
+	}
 	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		state.logger.Debugf(1, "%s", err)

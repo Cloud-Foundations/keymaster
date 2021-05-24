@@ -35,6 +35,7 @@ Copright 2017-2019 Symantec Corporation; 2019-2020 Cloud-Foundations.org.
 type loginPageTemplateData struct {
 	Title            string
 	AuthUsername     string
+	DefaultUsername  string
 	JSSources        []string
 	ShowOauth2       bool
 	HideStdLogin     bool
@@ -42,7 +43,6 @@ type loginPageTemplateData struct {
 	ErrorMessage     string
 }
 
-//Should be a template
 const loginFormText = `
 {{define "loginPage"}}
 <!DOCTYPE html>
@@ -70,7 +70,11 @@ const loginFormText = `
 	{{if not .HideStdLogin}}
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
+            {{if .DefaultUsername}}
+            <p>Username: <INPUT TYPE="text" NAME="username" VALUE={{.DefaultUsername}} SIZE=18></p>
+            {{else}}
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
+            {{end}}
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off"></p>
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
