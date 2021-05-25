@@ -40,7 +40,7 @@ func authenticate(s state) (string, error) {
 	if err := s.startAuthRequest(token); err != nil {
 		return "", err
 	}
-	timer := time.NewTimer(time.Second * 10)
+	timer := time.NewTimer(time.Minute)
 	select {
 	case <-gotCookie:
 		if !timer.Stop() {
@@ -106,7 +106,8 @@ func (s *state) getToken() (string, error) {
 	}
 	cmd := exec.Command(s.webauthBrowser[0], s.webauthBrowser[1:]...)
 	cmd.Args = append(cmd.Args,
-		fmt.Sprintf("%s%s", s.targetUrls[0], paths.ShowAuthToken))
+		fmt.Sprintf("%s%s?user=%s", s.targetUrls[0], paths.ShowAuthToken,
+			s.userName))
 	if err := startCommand(cmd, time.Millisecond*200); err != nil {
 		return "", err
 	}
@@ -203,8 +204,9 @@ func (s *state) serve(listener net.Listener, serveMux *http.ServeMux) {
 func (s *state) startAuthRequest(token string) error {
 	cmd := exec.Command(s.webauthBrowser[0], s.webauthBrowser[1:]...)
 	cmd.Args = append(cmd.Args,
-		fmt.Sprintf("%s%s?port=%s&token=%s",
-			s.targetUrls[0], paths.SendAuthDocument, s.portNumber, token))
+		fmt.Sprintf("%s%s?port=%s&user=%s&token=%s",
+			s.targetUrls[0], paths.SendAuthDocument, s.portNumber, s.userName,
+			token))
 	return startCommand(cmd, time.Millisecond*200)
 }
 
