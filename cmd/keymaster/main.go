@@ -1,9 +1,6 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -233,13 +230,13 @@ func setupCerts(
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
+	signers := makeSigners()
 	//initialize the client connection
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
 	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
-
 	// create dirs
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
 	sshConfigPath, _ := filepath.Split(sshKeyPath)
@@ -253,25 +250,14 @@ func setupCerts(
 	if err != nil {
 		return err
 	}
-	// Setup Signers
-	x509Signer, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
-	if err != nil {
-		return err
-	}
-	sshRsaSigner, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
-	if err != nil {
-		return err
-	}
-	_, sshEd25519Signer, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
 	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
 		return err
 	}
-
+	if err := signers.Wait(); err != nil {
+		return err
+	}
 	baseUrl, err := twofa.AuthenticateToTargetUrls(userName, password,
 		targetURLs, false, client,
 		userAgentString, logger)
@@ -279,23 +265,25 @@ func setupCerts(
 		return err
 
 	}
-	x509Cert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509",
-		configContents.Base.AddGroups, userAgentString, logger)
+	x509Cert, err := twofa.DoCertRequest(signers.X509Rsa, client, userName,
+		baseUrl, "x509", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
 	}
-	kubernetesCert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509-kubernetes",
-		configContents.Base.AddGroups, userAgentString, logger)
+	kubernetesCert, err := twofa.DoCertRequest(signers.X509Rsa, client,
+		userName, baseUrl, "x509-kubernetes", configContents.Base.AddGroups,
+		userAgentString, logger)
 	if err != nil {
 		logger.Debugf(0, "kubernetes cert not available")
 	}
-	sshRsaCert, err := twofa.DoCertRequest(sshRsaSigner, client, userName, baseUrl, "ssh",
-		configContents.Base.AddGroups, userAgentString, logger)
+	sshRsaCert, err := twofa.DoCertRequest(signers.SshRsa, client, userName,
+		baseUrl, "ssh", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
 	}
-	sshEd25519Cert, err := twofa.DoCertRequest(sshEd25519Signer, client, userName, baseUrl, "ssh",
-		configContents.Base.AddGroups, userAgentString, logger)
+	sshEd25519Cert, err := twofa.DoCertRequest(signers.SshEd25519, client,
+		userName, baseUrl, "ssh", configContents.Base.AddGroups,
+		userAgentString, logger)
 	if err != nil {
 		logger.Debugf(1, "Ed25519 cert not available")
 		sshEd25519Cert = nil
@@ -304,7 +292,7 @@ func setupCerts(
 
 	// Time to write certs and keys
 	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		sshRsaSigner,
+		signers.SshRsa,
 		FilePrefix+"-rsa",
 		userName,
 		sshKeyPath+"-rsa",
@@ -314,7 +302,7 @@ func setupCerts(
 	}
 	if sshEd25519Cert != nil {
 		err = insertSSHCertIntoAgentORWriteToFilesystem(sshEd25519Cert,
-			sshEd25519Signer,
+			signers.SshEd25519,
 			FilePrefix+"-ed25519",
 			userName,
 			sshKeyPath+"-ed25519",
@@ -324,7 +312,7 @@ func setupCerts(
 		}
 	}
 	// Now x509
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(x509Signer)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
 	if err != nil {
 		return err
 	}

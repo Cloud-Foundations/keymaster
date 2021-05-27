@@ -57,12 +57,12 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
-	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
@@ -86,7 +86,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	start := time.Now()
-	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
+	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authData.Username, otpValue)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
@@ -98,7 +98,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	//
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
 	if !valid {
-		logger.Printf("Invalid VIP OTP value login for %s", authUser)
+		logger.Printf("Invalid VIP OTP value login for %s", authData.Username)
 		// TODO if client is html then do a redirect back to vipLoginPage
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -106,9 +106,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
-	logger.Debugf(1, "Successful vipOTP auth for user: %s", authUser)
-	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
-	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	logger.Debugf(1, "Successful vipOTP auth for user: %s", authData.Username)
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authData.Username)
+	_, err = state.updateAuthCookieAuthlevel(w, r,
+		authData.AuthType|AuthTypeSymantecVIP)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
@@ -123,7 +124,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	switch returnAcceptType {
 	case "text/html":
 		loginDestination := getLoginDestination(r)
-		eventNotifier.PublishWebLoginEvent(authUser)
+		eventNotifier.PublishWebLoginEvent(authData.Username)
 		http.Redirect(w, r, loginDestination, 302)
 	default:
 		w.WriteHeader(200)
@@ -152,13 +153,13 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "")
 		return
 	}
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	logger.Debugf(0, "Vip push start authuser=%s", authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	logger.Debugf(0, "Vip push start authuser=%s", authData.Username)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
 		logger.Printf("%v", err)
@@ -178,7 +179,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
 		return
 	}
-	err = state.startVIPPush(vipPushCookie.Value, authUser)
+	err = state.startVIPPush(vipPushCookie.Value, authData.Username)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Cookie not setup ")
@@ -224,13 +225,13 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
-	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authData.Username)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
 		logger.Printf("VIPPollCheckHandler: error getting poll cookie %v", err)
@@ -259,13 +260,15 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// VIP Push check was  successful
-	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	_, err = state.updateAuthCookieAuthlevel(w, r,
+		authData.AuthType|AuthTypeSymantecVIP)
 	if err != nil {
 		logger.Printf("VIPPollCheckHandler:  Failure to update AuthCookie %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
-	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypePush, authUser)
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypePush,
+		authData.Username)
 
 	// TODO make something more fancy: JSON?
 	w.WriteHeader(http.StatusOK)

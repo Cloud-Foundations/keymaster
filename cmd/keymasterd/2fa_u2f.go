@@ -47,15 +47,16 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		/*
 	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	// Check that they can change other users
-	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
+	if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
+		authData.Username != assumedUser {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -115,15 +116,16 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	// Check that they can change other users
-	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
+	if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
+		authData.Username != assumedUser {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -167,8 +169,8 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		CreatedAt:    time.Now(),
 		CreatorAddr:  r.RemoteAddr,
 	}
-	if authUser != assumedUser {
-		newReg.Name = fmt.Sprintf("Registered by %s", authUser)
+	if authData.Username != assumedUser {
+		newReg.Name = fmt.Sprintf("Registered by %s", authData.Username)
 	}
 	newIndex := newReg.CreatedAt.Unix()
 	profile.U2fAuthData[newIndex] = &newReg
@@ -194,15 +196,15 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	//////////
-	profile, ok, _, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -232,7 +234,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	localAuth.U2fAuthChallenge = c
 	localAuth.ExpiresAt = time.Now().Add(maxAgeU2FVerifySeconds * time.Second)
 	state.Mutex.Lock()
-	state.localAuthData[authUser] = localAuth
+	state.localAuthData[authData.Username] = localAuth
 	state.Mutex.Unlock()
 
 	req := c.SignRequest(registrations)
@@ -255,12 +257,12 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	//now the actual work
 	var signResp u2f.SignResponse
@@ -271,7 +273,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	logger.Debugf(1, "signResponse: %+v", signResp)
 
-	profile, ok, _, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -295,7 +297,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	state.Mutex.Lock()
-	localAuth, ok := state.localAuthData[authUser]
+	localAuth, ok := state.localAuthData[authData.Username]
 	state.Mutex.Unlock()
 	if !ok {
 		http.Error(w, "challenge missing", http.StatusBadRequest)
@@ -316,14 +318,15 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			u2fReg.Counter = newCounter
 			profile.U2fAuthData[i] = u2fReg
 			//profile.U2fAuthChallenge = nil
-			delete(state.localAuthData, authUser)
+			delete(state.localAuthData, authData.Username)
 
-			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authUser)
+			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
 			_, isXHR := r.Header["X-Requested-With"]
 			if isXHR {
-				eventNotifier.PublishWebLoginEvent(authUser)
+				eventNotifier.PublishWebLoginEvent(authData.Username)
 			}
-			_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeU2F)
+			_, err = state.updateAuthCookieAuthlevel(w, r,
+				authData.AuthType|AuthTypeU2F)
 			if err != nil {
 				logger.Printf("Auth Cookie NOT found ? %s", err)
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
