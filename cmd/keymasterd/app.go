@@ -725,7 +725,7 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
 		return "", time.Time{}, fmt.Errorf("revoked cert"), nil
 	}
-	return clientName, userCert.NotBefore, nil, nil
+	return clientName, time.Now(), nil, nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
