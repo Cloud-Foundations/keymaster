@@ -65,6 +65,9 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 		state.logger.Debugf(1, "%s", err)
 		displayData.ErrorMessage = "Unable to generate token"
 	} else {
+		state.logger.Printf(
+			"generated webauth CLI token for: %s, lifetime: %s\n",
+			authData.Username, state.Config.Base.WebauthTokenForCliLifetime)
 		displayData.Token = token
 	}
 	err = state.htmlTemplate.ExecuteTemplate(w, "authTokenPage", displayData)
