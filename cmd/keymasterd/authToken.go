@@ -36,7 +36,7 @@ func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
 
 func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	r *http.Request) {
-	state.logger.Debugln(1, "Entered GetAuthTokenHandler(). URL: %v\n", r.URL)
+	state.logger.Debugf(1, "Entered GetAuthTokenHandler(). URL: %v\n", r.URL)
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -100,6 +100,8 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	state.logger.Printf("%s requested authentication document export\n",
+		authData.Username)
 	// Fetch form/query data.
 	var portNumber, token string
 	if val, ok := r.Form["port"]; !ok {
@@ -138,7 +140,8 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 	}
 	if authInfo.Username != authData.Username {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "User mismatch")
-		state.logger.Debugf(0, "authticated user: %s != token user: %s\n",
+		state.logger.Printf(
+			"SendAuthDocumentHandler: authticated user: %s != token user: %s\n",
 			authData.Username, authInfo.Username)
 		return
 	}
