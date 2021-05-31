@@ -34,50 +34,6 @@ func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 }
 
-func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
-	r *http.Request) {
-	state.logger.Debugf(1, "Entered GetAuthTokenHandler(). URL: %v\n", r.URL)
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
-	if r.Method != "GET" && r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"Error parsing form")
-		return
-	}
-	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
-	if err != nil {
-		state.logger.Debugf(1, "%s", err)
-		return
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-	displayData := authCodePageTemplateData{
-		Title:        "Keymaster CLI Token Display",
-		AuthUsername: authData.Username,
-	}
-	token, err := state.generateAuthJWT(authData.Username)
-	if err != nil {
-		state.logger.Debugf(1, "%s", err)
-		displayData.ErrorMessage = "Unable to generate token"
-	} else {
-		state.logger.Printf(
-			"generated webauth CLI token for: %s, lifetime: %s\n",
-			authData.Username, state.Config.Base.WebauthTokenForCliLifetime)
-		displayData.Token = token
-	}
-	err = state.htmlTemplate.ExecuteTemplate(w, "authTokenPage", displayData)
-	if err != nil {
-		logger.Printf("Failed to execute %s", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-}
-
 func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 	r *http.Request) {
 	state.logger.Debugln(1, "Entered SendAuthDocumentHandler()")
@@ -167,4 +123,94 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 		fmt.Sprintf("http://localhost:%s%s?auth_cookie=%s",
 			portNumber, paths.ReceiveAuthDocument, authCookie.Value),
 		http.StatusPermanentRedirect)
+}
+
+func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
+	r *http.Request) {
+	state.logger.Debugf(1, "Entered GetAuthTokenHandler(). URL: %v\n", r.URL)
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if r.Method != "GET" && r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
+		return
+	}
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		state.logger.Debugf(1, "%s", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	displayData := authCodePageTemplateData{
+		Title:        "Keymaster CLI Token Display",
+		AuthUsername: authData.Username,
+	}
+	token, err := state.generateAuthJWT(authData.Username)
+	if err != nil {
+		state.logger.Debugf(1, "%s", err)
+		displayData.ErrorMessage = "Unable to generate token"
+	} else {
+		state.logger.Printf(
+			"generated webauth CLI token for: %s, lifetime: %s\n",
+			authData.Username, state.Config.Base.WebauthTokenForCliLifetime)
+		displayData.Token = token
+	}
+	err = state.htmlTemplate.ExecuteTemplate(w, "authTokenPage", displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %s", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (state *RuntimeState) VerifyAuthTokenHandler(w http.ResponseWriter,
+	r *http.Request) {
+	state.logger.Debugf(1, "Entered VerifyAuthTokenHandler(). URL: %v\n", r.URL)
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if r.Method != "GET" && r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Error parsing form")
+		return
+	}
+	// Fetch form/query data.
+	var token string
+	if val, ok := r.Form["token"]; !ok {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"No token provided")
+		state.logger.Printf("VerifyAuthToken without token")
+		return
+	} else {
+		if len(val) > 1 {
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Just one token allowed")
+			state.logger.Printf("VerifyAuthToken with multiple token values")
+			return
+		}
+		token = val[0]
+	}
+	authInfo, err := state.getAuthInfoFromJWT(token, "keymaster_token_auth")
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusNotAcceptable, "Bad token")
+		state.logger.Debugln(0, err)
+		return
+	}
+	if time.Until(authInfo.ExpiresAt) < 0 {
+		state.writeFailureResponse(w, r, http.StatusGone, "Token expired")
+		state.logger.Debugln(0, "token expired")
+		return
+	}
+	w.Write([]byte("OK\n"))
 }

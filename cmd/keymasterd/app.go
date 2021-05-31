@@ -1710,10 +1710,12 @@ func main() {
 	serviceMux.HandleFunc(bootstrapOtpAuthPath,
 		runtimeState.BootstrapOtpAuthHandler)
 	if runtimeState.Config.Base.WebauthTokenForCliLifetime > 0 {
-		serviceMux.HandleFunc(paths.ShowAuthToken,
-			runtimeState.ShowAuthTokenHandler)
 		serviceMux.HandleFunc(paths.SendAuthDocument,
 			runtimeState.SendAuthDocumentHandler)
+		serviceMux.HandleFunc(paths.ShowAuthToken,
+			runtimeState.ShowAuthTokenHandler)
+		serviceMux.HandleFunc(paths.VerifyAuthToken,
+			runtimeState.VerifyAuthTokenHandler)
 	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
