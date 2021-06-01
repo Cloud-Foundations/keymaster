@@ -48,9 +48,6 @@ func authenticate(s state) (string, error) {
 		}
 		return s.targetUrls[0], nil
 	case <-timer.C:
-		if !s.happyCookie { // Delete a potentially poison cookie if present.
-			os.Remove(s.tokenFilename)
-		}
 		return "", errors.New("timed out getting cookie")
 	}
 }
@@ -104,6 +101,7 @@ func (s *state) getToken() (string, error) {
 	} else if token != "" {
 		return token, nil
 	}
+	os.Remove(s.tokenFilename) // Delete a potentially poison cookie if present.
 	cmd := exec.Command(s.webauthBrowser[0], s.webauthBrowser[1:]...)
 	cmd.Args = append(cmd.Args,
 		fmt.Sprintf("%s%s?user=%s", s.targetUrls[0], paths.ShowAuthToken,
@@ -124,9 +122,13 @@ func (s *state) getToken() (string, error) {
 		token = string(removeNewline(inputData))
 		if _, err := parseToken(token); err != nil {
 			s.logger.Printf("Token appears invalid. Try again: %s\n", err)
-		} else {
-			break
+			continue
 		}
+		if err := s.verifyToken(token); err != nil {
+			s.logger.Printf("Unable to verify token. Try again: %s\n", err)
+			continue
+		}
+		break
 	}
 	s.tokenToWrite = inputData // Write later once fully verified.
 	return token, nil
@@ -148,12 +150,14 @@ func (s *state) readToken() (string, error) {
 	if time.Until(time.Unix(parsedToken.Expiration, 0)) < 0 {
 		return "", nil
 	}
+	if err := s.verifyToken(token); err != nil {
+		return "", fmt.Errorf("unable to verify token: %s", err)
+	}
 	return token, nil
 }
 
 func (s *state) receiveAuthHandler(w http.ResponseWriter, req *http.Request) {
 	s.logger.Debugln(1, "started receiveAuthHandler()")
-	s.happyCookie = true
 	if len(s.tokenToWrite) > 0 { // If we are here, Keymaster liked the token.
 		err := ioutil.WriteFile(s.tokenFilename, s.tokenToWrite, 0600)
 		if err != nil {
@@ -226,6 +230,23 @@ func (s *state) startLocalServer() error {
 	serveMux.HandleFunc(pathCloseTabRequest, s.closeTabRequestHandler)
 	go s.serve(listener, serveMux)
 	return nil
+}
+
+func (s *state) verifyToken(token string) error {
+	resp, err := s.client.Get(fmt.Sprintf("%s%s?token=%s",
+		s.targetUrls[0], paths.VerifyAuthToken, token))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	if body, err := ioutil.ReadAll(resp.Body); err != nil {
+		return err
+	} else {
+		return errors.New(string(body))
+	}
 }
 
 const receiveAuthPageText = `

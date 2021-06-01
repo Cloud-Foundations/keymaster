@@ -18,7 +18,6 @@ type state struct {
 	logger          log.DebugLogger
 	// Runtime data.
 	gotCookie    chan<- struct{}
-	happyCookie  bool
 	portNumber   string
 	tokenToWrite []byte
 }
