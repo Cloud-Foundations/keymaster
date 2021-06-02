@@ -239,7 +239,11 @@ func (s *state) verifyToken(token string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		s.logger.Println("Token verification not supported")
 		return nil
 	}
 	if body, err := ioutil.ReadAll(resp.Body); err != nil {
