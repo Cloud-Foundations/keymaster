@@ -26,11 +26,14 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
+	"github.com/Cloud-Foundations/keymaster/lib/client/webauth"
 )
 
-const DefaultSSHKeysLocation = "/.ssh/"
-const DefaultTLSKeysLocation = "/.ssl/"
-const DefaultTMPKeysLocation = "/.keymaster/"
+const (
+	DefaultSSHKeysLocation = "/.ssh/"
+	DefaultTLSKeysLocation = "/.ssl/"
+	keymasterSubdir        = ".keymaster"
+)
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
@@ -44,14 +47,22 @@ var (
 )
 
 var (
-	configFilename   = flag.String("config", filepath.Join(getUserHomeDir(), ".keymaster", "client_config.yml"), "The filename of the configuration")
-	rootCAFilename   = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
-	configHost       = flag.String("configHost", "", "Get a bootstrap config from this host")
-	cliUsername      = flag.String("username", "", "username for keymaster")
-	checkDevices     = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
-	cliFilePrefix    = flag.String("fileprefix", "", "Prefix for the output files")
+	configFilename = flag.String("config",
+		filepath.Join(getUserHomeDir(), keymasterSubdir, "client_config.yml"),
+		"The filename of the configuration")
+	rootCAFilename = flag.String("rootCAFilename", "",
+		"(optional) name for using non OS root CA to verify TLS connections")
+	configHost = flag.String("configHost", "",
+		"Get a bootstrap config from this host")
+	cliUsername  = flag.String("username", "", "username for keymaster")
+	checkDevices = flag.Bool("checkDevices", false,
+		"CheckU2F devices in your system")
+	cliFilePrefix = flag.String("fileprefix", "",
+		"Prefix for the output files")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
+	webauthBrowser = flag.String("webauthBrowser", "",
+		"Browser command to use for webauth")
 
 	FilePrefix = "keymaster"
 )
@@ -250,20 +261,35 @@ func setupCerts(
 	if err != nil {
 		return err
 	}
-	// Get user creds
-	password, err := util.GetUserCreds(userName)
-	if err != nil {
-		return err
+	var baseUrl string
+	_webauthBrowser := configContents.Base.WebauthBrowser
+	if *webauthBrowser != "" {
+		_webauthBrowser = *webauthBrowser
+	}
+	if _webauthBrowser != "" {
+		// Authenticate using web browser.
+		baseUrl, err = webauth.Authenticate(userName, _webauthBrowser,
+			filepath.Join(homeDir, keymasterSubdir, FilePrefix+".webtoken"),
+			targetURLs, client, userAgentString, logger)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Authenticate using password and possible 2nd factor.
+		password, err := util.GetUserCreds(userName)
+		if err != nil {
+			return err
+		}
+		baseUrl, err = twofa.AuthenticateToTargetUrls(userName, password,
+			targetURLs, false, client,
+			userAgentString, logger)
+		if err != nil {
+			return err
+
+		}
 	}
 	if err := signers.Wait(); err != nil {
 		return err
-	}
-	baseUrl, err := twofa.AuthenticateToTargetUrls(userName, password,
-		targetURLs, false, client,
-		userAgentString, logger)
-	if err != nil {
-		return err
-
 	}
 	x509Cert, err := twofa.DoCertRequest(signers.X509Rsa, client, userName,
 		baseUrl, "x509", configContents.Base.AddGroups, userAgentString, logger)

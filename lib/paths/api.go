@@ -4,4 +4,5 @@ const (
 	ReceiveAuthDocument = "/receiveAuthDocument"
 	SendAuthDocument    = "/sendAuthDocument"
 	ShowAuthToken       = "/showAuthToken"
+	VerifyAuthToken     = "/verifyAuthToken"
 )
