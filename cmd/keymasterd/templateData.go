@@ -37,7 +37,6 @@ type loginPageTemplateData struct {
 	AuthUsername     string
 	JSSources        []string
 	ShowOauth2       bool
-	HideStdLogin     bool
 	LoginDestination string
 	ErrorMessage     string
 }
@@ -67,7 +66,6 @@ const loginFormText = `
 	<a href="/auth/oauth2/login"> Oauth2 Login </a>
 	</p>
         {{end}}
-	{{if not .HideStdLogin}}
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
@@ -75,7 +73,6 @@ const loginFormText = `
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
         </form>
-	{{end}}
 	{{template "login_form_footer" .}}
 	</div>
     {{template "footer" . }}

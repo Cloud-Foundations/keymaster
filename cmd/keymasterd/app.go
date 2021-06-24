@@ -481,22 +481,23 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	return nil
 }
 
-func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string, errorMessage string) error {
-	//footerText := state.getFooterText()
+func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
+	r *http.Request, loginDestination string, errorMessage string) {
+	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
+		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
+		return
+	}
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
 		ShowOauth2:       state.Config.Oauth2.Enabled,
-		HideStdLogin:     state.Config.Base.HideStandardLogin,
 		LoginDestination: loginDestination,
 		ErrorMessage:     errorMessage}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
-		return err
+		return
 	}
-	return nil
 }
 
 func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
@@ -518,7 +519,6 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	}
-	w.WriteHeader(code)
 	switch code {
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
@@ -566,9 +566,11 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			state.writeHTMLLoginPage(w, r, loginDestnation, message)
 			return
 		default:
+			w.WriteHeader(code)
 			w.Write([]byte(publicErrorText))
 		}
 	default:
+		w.WriteHeader(code)
 		w.Write([]byte(publicErrorText))
 	}
 }
