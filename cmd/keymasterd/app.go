@@ -559,6 +559,10 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
 				return
 			}
+			if (info.AuthType & AuthTypeFederated) == AuthTypeFederated {
+				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
+				return
+			}
 			state.writeHTMLLoginPage(w, r, loginDestnation, message)
 			return
 		default:
