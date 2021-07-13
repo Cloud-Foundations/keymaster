@@ -41,7 +41,6 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
@@ -374,20 +373,6 @@ func checkUserPassword(username string, password string, config AppConfigFile,
 			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
 		}
 		logger.Debugf(3, "pwdChecker output = %d", valid)
-		metricLogAuthOperation(clientType, "password", valid)
-		return valid, nil
-	}
-	if config.Base.HtpasswdFilename != "" {
-		logger.Debugf(3, "I have htpasswed filename")
-		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
-		if err != nil {
-			return false, err
-		}
-		valid, err := authutil.CheckHtpasswdUserPassword(username, password,
-			buffer)
-		if err != nil {
-			return false, err
-		}
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
