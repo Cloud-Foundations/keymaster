@@ -482,11 +482,13 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
-	r *http.Request, loginDestination string, errorMessage string) {
+	r *http.Request, statusCode int, loginDestination string,
+	errorMessage string) {
 	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
 		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
 		return
 	}
+	w.WriteHeader(statusCode)
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
 		ShowOauth2:       state.Config.Oauth2.Enabled,
@@ -542,17 +544,17 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, loginDestnation, message)
+				state.writeHTMLLoginPage(w, r, code, loginDestnation, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
 				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, code, loginDestnation, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, code, loginDestnation, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
@@ -563,7 +565,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, loginDestnation, message)
+			state.writeHTMLLoginPage(w, r, code, loginDestnation, message)
 			return
 		default:
 			w.WriteHeader(code)
@@ -913,10 +915,9 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	switch target {
 	case "loginForm":
-		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
 		setSecurityHeaders(w)
-		state.writeHTMLLoginPage(w, r, profilePath, "")
+		state.writeHTMLLoginPage(w, r, 200, profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1509,7 +1510,7 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	if r.URL.Path[:] == "/" {
 		//landing page
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, profilePath, "")
+			state.writeHTMLLoginPage(w, r, 200, profilePath, "")
 			return
 		}
 
