@@ -134,10 +134,11 @@ type Oauth2Config struct {
 }
 
 type OpenIDConnectClientConfig struct {
-	ClientID               string   `yaml:"client_id"`
-	ClientSecret           string   `yaml:"client_secret"`
-	AllowedRedirectURLRE   []string `yaml:"allowed_redirect_url_re"`
-	AllowedRedirectDomains []string `yaml:"allowed_redirect_domains"`
+	ClientID                   string   `yaml:"client_id"`
+	ClientSecret               string   `yaml:"client_secret"`
+	AllowClientChosenAudiences bool     `yaml:"allow_client_chose_audiences"`
+	AllowedRedirectURLRE       []string `yaml:"allowed_redirect_url_re"`
+	AllowedRedirectDomains     []string `yaml:"allowed_redirect_domains"`
 }
 
 type OpenIDConnectIDPConfig struct {
