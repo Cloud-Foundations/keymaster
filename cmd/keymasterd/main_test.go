@@ -21,6 +21,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -167,7 +168,8 @@ func setupPasswdFile() (f *os.File, err error) {
 
 func setupValidRuntimeStateSigner(t *testing.T) (
 	*RuntimeState, *os.File, error) {
-	state := RuntimeState{logger: testlogger.New(t)}
+	logger := testlogger.New(t)
+	state := RuntimeState{logger: logger}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -187,7 +189,10 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 	if err != nil {
 		return nil, nil, err
 	}
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	return &state, passwdFile, nil
@@ -569,7 +574,10 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
 	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)
@@ -623,7 +631,10 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
 	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)

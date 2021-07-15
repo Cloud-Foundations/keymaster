@@ -34,6 +34,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
@@ -518,6 +519,13 @@ func loadVerifyConfigFile(configFilename string,
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
 	// hacky and is limited to only one authentication backend.
+	if runtimeState.Config.Base.HtpasswdFilename != "" {
+		runtimeState.passwordChecker, err = htpassword.New(
+			runtimeState.Config.Base.HtpasswdFilename, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
 		runtimeState.passwordChecker, err = command.New(
