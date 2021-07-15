@@ -67,7 +67,6 @@ type baseConfig struct {
 	KerberosRealm                string     `yaml:"kerberos_realm"`
 	DataDirectory                string     `yaml:"data_directory"`
 	SharedDataDirectory          string     `yaml:"shared_data_directory"`
-	HideStandardLogin            bool       `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
 	AllowSelfServiceBootstrapOTP bool       `yaml:"allow_self_service_bootstrap_otp"`
@@ -508,12 +507,6 @@ func loadVerifyConfigFile(configFilename string,
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
-	//
-	if runtimeState.Config.Base.HideStandardLogin && !runtimeState.Config.Oauth2.Enabled {
-		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
-		return nil, err
-	}
-
 	//Load extra templates
 	err = runtimeState.loadTemplates()
 	if err != nil {
@@ -527,7 +520,8 @@ func loadVerifyConfigFile(configFilename string,
 	// hacky and is limited to only one authentication backend.
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
-		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
+		runtimeState.passwordChecker, err = command.New(
+			runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -565,6 +559,14 @@ func loadVerifyConfigFile(configFilename string,
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
+	// If not using an OAuth2 IDP for primary authentication, must have an
+	// alternative enabled.
+	if runtimeState.passwordChecker == nil &&
+		!runtimeState.Config.Oauth2.Enabled {
+		return nil, errors.New(
+			"invalid configuration: no primary authentication method")
+	}
+
 	if runtimeState.Config.Base.SecsBetweenDependencyChecks < 1 {
 		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
 	}
