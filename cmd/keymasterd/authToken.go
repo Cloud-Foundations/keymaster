@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
@@ -59,7 +60,8 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 	state.logger.Printf("%s requested authentication document export\n",
 		authData.Username)
 	// Fetch form/query data.
-	var portNumber, token string
+	var portNumber uint64
+	var token string
 	if val, ok := r.Form["port"]; !ok {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"No CLI port number provided")
@@ -72,7 +74,12 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 			state.logger.Printf("SendAuthDocument with multiple port values")
 			return
 		}
-		portNumber = val[0]
+		if portNumber, err = strconv.ParseUint(val[0], 10, 16); err != nil {
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Invalid port number")
+			state.logger.Printf("SendAuthDocument with invalid port number")
+			return
+		}
 	}
 	if val, ok := r.Form["token"]; !ok {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
@@ -120,7 +127,7 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 		return
 	}
 	http.Redirect(w, r,
-		fmt.Sprintf("http://localhost:%s%s?auth_cookie=%s",
+		fmt.Sprintf("http://localhost:%d%s?auth_cookie=%s",
 			portNumber, paths.ReceiveAuthDocument, authCookie.Value),
 		http.StatusPermanentRedirect)
 }
