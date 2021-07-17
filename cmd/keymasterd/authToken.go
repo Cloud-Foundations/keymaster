@@ -30,7 +30,7 @@ func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
 			state.Config.Base.WebauthTokenForCliLifetime/time.Second),
 		NotBefore: now,
 		IssuedAt:  now,
-		TokenType: "keymaster_token_auth",
+		TokenType: "keymaster_webauth_for_cli_identity",
 	}
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 }
@@ -95,7 +95,8 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 		}
 		token = val[0]
 	}
-	authInfo, err := state.getAuthInfoFromJWT(token, "keymaster_token_auth")
+	authInfo, err := state.getAuthInfoFromJWT(token,
+		"keymaster_webauth_for_cli_identity")
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Bad token")
 		state.logger.Debugln(0, err)
@@ -208,7 +209,8 @@ func (state *RuntimeState) VerifyAuthTokenHandler(w http.ResponseWriter,
 		}
 		token = val[0]
 	}
-	authInfo, err := state.getAuthInfoFromJWT(token, "keymaster_token_auth")
+	authInfo, err := state.getAuthInfoFromJWT(token,
+		"keymaster_webauth_for_cli_identity")
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusNotAcceptable, "Bad token")
 		state.logger.Debugln(0, err)
