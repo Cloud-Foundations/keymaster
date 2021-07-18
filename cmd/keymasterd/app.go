@@ -1525,15 +1525,15 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/static/favicon.ico", http.StatusFound)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"Error parsing form")
-		return
-	}
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
+		if err := r.ParseForm(); err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError,
+				"Error parsing form")
+			return
+		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
 			state.writeHTMLLoginPage(w, r, r.Form.Get("user"), profilePath, "")
 			return
