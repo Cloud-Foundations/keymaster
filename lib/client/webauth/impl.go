@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -64,15 +65,6 @@ func parseToken(serialisedToken string) (*authInfoJWT, error) {
 	return &data, nil
 }
 
-func removeNewline(data []byte) []byte {
-	if length := len(data); length < 1 {
-		return data
-	} else if data[length-1] == '\n' {
-		return data[:length-1]
-	}
-	return data
-}
-
 func startCommand(cmd *exec.Cmd, timeout time.Duration) error {
 	errorChannel := make(chan error, 1)
 	timer := time.NewTimer(timeout)
@@ -119,7 +111,7 @@ func (s *state) getToken() (string, error) {
 			return "", err
 		}
 		fmt.Println()
-		token = string(removeNewline(inputData))
+		token = strings.TrimSpace(string(inputData))
 		if _, err := parseToken(token); err != nil {
 			s.logger.Printf("Token appears invalid. Try again: %s\n", err)
 			continue
@@ -142,7 +134,7 @@ func (s *state) readToken() (string, error) {
 		}
 		return "", err
 	}
-	token := string(removeNewline(fileData))
+	token := strings.TrimSpace(string(fileData))
 	parsedToken, err := parseToken(token)
 	if err != nil {
 		return "", err
