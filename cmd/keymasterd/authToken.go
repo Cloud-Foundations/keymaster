@@ -114,22 +114,13 @@ func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,
 		state.logger.Debugln(0, "token expired")
 		return
 	}
-	var authCookie *http.Cookie
-	for _, cookie := range r.Cookies() {
-		if cookie.Name != authCookieName {
-			continue
-		}
-		authCookie = cookie
-	}
-	if authCookie == nil {
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"No auth_cookie")
-		state.logger.Debugln(0, "no auth_cookie")
-		return
-	}
+	// Generate a new cookie to send.
+	cookie, err := state.genNewSerializedAuthJWT(authInfo.Username,
+		AuthTypeWebauthForCLI,
+		int64(time.Until(authInfo.ExpiresAt)/time.Second))
 	http.Redirect(w, r,
 		fmt.Sprintf("http://localhost:%d%s?auth_cookie=%s",
-			portNumber, paths.ReceiveAuthDocument, authCookie.Value),
+			portNumber, paths.ReceiveAuthDocument, cookie),
 		http.StatusPermanentRedirect)
 }
 

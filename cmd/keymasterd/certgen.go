@@ -62,8 +62,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-	logger.Debugf(1, "Certgen, authenticated at level=%x, username=`%s`",
-		authData.AuthType, authData.Username)
+	logger.Debugf(1,
+		"Certgen, authenticated at level=%x, username=`%s`, expires=%s",
+		authData.AuthType, authData.Username, authData.ExpiresAt)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -91,6 +92,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			((authData.AuthType & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeWebauthForCLI &&
+			((authData.AuthType & AuthTypeWebauthForCLI) ==
+				AuthTypeWebauthForCLI) {
+			sufficientAuthLevel = true
+		}
 	}
 	// if you have u2f you can always get the cert
 	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {
@@ -99,7 +105,8 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 	if !sufficientAuthLevel {
 		logger.Printf("Not enough auth level for getting certs")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"Not enough auth level for getting certs")
 		return
 	}
 

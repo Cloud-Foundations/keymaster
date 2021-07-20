@@ -68,6 +68,7 @@ const (
 	AuthTypeOkta2FA
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
+	AuthTypeWebauthForCLI
 )
 
 const (
@@ -609,7 +610,8 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 }
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
-	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel)
+	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
+		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err

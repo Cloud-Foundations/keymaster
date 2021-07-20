@@ -46,7 +46,8 @@ func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (
 	return err
 }
 
-func (state *RuntimeState) genNewSerializedAuthJWT(username string, authLevel int) (string, error) {
+func (state *RuntimeState) genNewSerializedAuthJWT(username string,
+	authLevel int, durationSeconds int64) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
 	if err != nil {
@@ -57,8 +58,7 @@ func (state *RuntimeState) genNewSerializedAuthJWT(username string, authLevel in
 		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
-	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
-
+	authToken.Expiration = authToken.IssuedAt + durationSeconds
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 }
 
