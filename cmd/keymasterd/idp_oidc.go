@@ -194,9 +194,6 @@ func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (b
 	if len(client.AllowedRedirectURLRE) < 1 {
 		matchedRE = true
 	}
-	if len(client.AllowedRedirectURLRE) < 1 {
-		matchedRE = true
-	}
 	matchedDomain := false
 	for _, domain := range client.AllowedRedirectDomains {
 		matched := strings.HasSuffix(parsedURL.Hostname(), domain)
@@ -685,7 +682,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		valid = state.idpOpenIDCValidCodeVerifier(clientID, codeVerifier, keymasterToken)
 	}
 	if !valid && len(pass) > 0 {
-		valid = oidcClient.ValidClientSecret(pass) //state.idpOpenIDCValidClientSecret(clientID, pass)
+		valid = oidcClient.ValidClientSecret(pass)
 	}
 	if !valid {
 		logger.Debugf(0, "Error invalid client secret or code verifier")
@@ -745,7 +742,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 	signedIdToken, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
 	if err != nil {
-		panic(err)
+		log.Printf("error signing idToken in idpOpenIDCTokenHandler,: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 	logger.Debugf(2, "raw=%s", signedIdToken)
 	accessToken := bearerAccessToken{Issuer: state.idpGetIssuer(),
@@ -758,7 +757,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	signedAccessToken, err := jwt.Signed(signer).Claims(accessToken).CompactSerialize()
 	if err != nil {
-		panic(err)
+		log.Printf("error signing accessToken in idpOpenIDCTokenHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	// The access token will be yet another jwt.
@@ -944,15 +945,15 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	// Now we check for validity.
 	if parsedAccessToken.Expiration < time.Now().Unix() {
 		logger.Printf("expired token attempted to be used for bearer")
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Expired Token")
 		return
 	}
 	if parsedAccessToken.Type != "bearer" {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Wrong Token Type")
 		return
 	}
 	if parsedAccessToken.Issuer != state.idpGetIssuer() {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Token Issuer")
 		return
 	}
 	if len(parsedAccessToken.Audience) > 0 {
@@ -965,7 +966,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 			}
 		}
 		if !hasUserinfoAudience {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Audience in token")
 			return
 		}
 	}
