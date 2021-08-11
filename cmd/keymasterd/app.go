@@ -402,13 +402,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Presto/") {
 		return true
 	}
-	// Once FF support reaches main we can remove these silly checks.
-	if strings.Contains(r.UserAgent(), "Firefox/57") ||
-		strings.Contains(r.UserAgent(), "Firefox/58") ||
-		strings.Contains(r.UserAgent(), "Firefox/59") ||
-		strings.Contains(r.UserAgent(), "Firefox/6") ||
-		strings.Contains(r.UserAgent(), "Firefox/7") ||
-		strings.Contains(r.UserAgent(), "Firefox/8") {
+	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
 	return false
