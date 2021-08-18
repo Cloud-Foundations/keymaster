@@ -68,7 +68,7 @@ const loginFormText = `
         {{end}}
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
-            <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
+            <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18 autofocus></p>
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off"></p>
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
