@@ -20,6 +20,7 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/keymaster/lib/client/aws_role"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
 	libnet "github.com/Cloud-Foundations/keymaster/lib/client/net"
 	"github.com/Cloud-Foundations/keymaster/lib/client/sshagent"
@@ -186,6 +187,56 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 
 const rsaKeySize = 2048
 
+func generateAwsRolCert(homeDir string,
+	configContents config.AppConfigFile,
+	client *http.Client,
+	logger log.DebugLogger) error {
+	signers := makeSigners()
+	// Initialise the client connection.
+	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
+	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	if err != nil {
+		return err
+	}
+	if err := makeDirs(homeDir); err != nil {
+		return err
+	}
+	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	if err := signers.Wait(); err != nil {
+		return err
+	}
+	certPEM, err := aws_role.GetRoleCertificate(aws_role.Params{
+		KeymasterServer: targetURLs[0],
+		Logger:          logger,
+		HttpClient:      client,
+		KeyType:         "RSA",
+		Signer:          signers.X509Rsa,
+	})
+	if err != nil {
+		logger.Fatal(err)
+	}
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(
+		tlsKeyPath+".key",
+		pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: encodedx509Signer}),
+		0600)
+	if err != nil {
+		return err
+	}
+	x509CertPath := tlsKeyPath + ".cert"
+	err = ioutil.WriteFile(x509CertPath, certPEM, 0644)
+	if err != nil {
+		err := errors.New("Could not write ssh cert")
+		logger.Fatal(err)
+	}
+	return nil
+}
+
 // Beware, this function has inverted path.... at the beggining
 func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	signer interface{},
@@ -224,6 +275,20 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
+func makeDirs(homeDir string) error {
+	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
+	sshConfigPath, _ := filepath.Split(sshKeyPath)
+	if err := os.MkdirAll(sshConfigPath, 0700); err != nil {
+		return err
+	}
+	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
+	if err := os.MkdirAll(tlsConfigPath, 0700); err != nil {
+		return err
+	}
+	return nil
+}
+
 func setupCerts(
 	userName string,
 	homeDir string,
@@ -237,19 +302,11 @@ func setupCerts(
 	if err != nil {
 		return err
 	}
-	// create dirs
+	if err := makeDirs(homeDir); err != nil {
+		return err
+	}
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
-	sshConfigPath, _ := filepath.Split(sshKeyPath)
-	err = os.MkdirAll(sshConfigPath, 0700)
-	if err != nil {
-		return err
-	}
 	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
-	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
-	err = os.MkdirAll(tlsConfigPath, 0700)
-	if err != nil {
-		return err
-	}
 	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
@@ -373,8 +430,8 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 }
 
 func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	fmt.Fprintf(os.Stderr, "Usage: %s [flags...] [aws-role-cert]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Version: %s\n", Version)
 	flag.PrintDefaults()
 }
 
@@ -390,19 +447,16 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)
 		return
 	}
 	computeUserAgent()
-
 	userName, homeDir, err := getUserNameAndHomeDir(logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	config := loadConfigFile(client, logger)
-
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
 		userName = config.Base.Username
@@ -411,15 +465,17 @@ func main() {
 	if *cliUsername != "" {
 		userName = *cliUsername
 	}
-
 	if len(config.Base.FilePrefix) > 0 {
 		FilePrefix = config.Base.FilePrefix
 	}
 	if *cliFilePrefix != "" {
 		FilePrefix = *cliFilePrefix
 	}
-
-	err = setupCerts(userName, homeDir, config, client, logger)
+	if flag.Arg(0) == "aws-role-cert" {
+		err = generateAwsRolCert(homeDir, config, client, logger)
+	} else {
+		err = setupCerts(userName, homeDir, config, client, logger)
+	}
 	if err != nil {
 		logger.Fatal(err)
 	}
