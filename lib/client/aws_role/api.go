@@ -22,7 +22,7 @@ type Params struct {
 }
 
 // GetRoleCertificate requests an AWS role identify certificate from the
-// Keymaster server specified in params. It returns the certificate DER.
+// Keymaster server specified in params. It returns the certificate PEM.
 func GetRoleCertificate(params Params) ([]byte, error) {
 	return params.getRoleCertificate()
 }
