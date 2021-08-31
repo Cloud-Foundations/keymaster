@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"net/http"
+	"sync"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
 
@@ -29,6 +30,13 @@ type Params struct {
 	stsClient  *sts.Client
 }
 
+type Manager struct {
+	Params
+	mutex    sync.RWMutex // Protect everything below.
+	tlsCert  *tls.Certificate
+	tlsError error
+}
+
 // GetRoleCertificate requests an AWS role identify certificate from the
 // Keymaster server specified in params. It returns the certificate PEM.
 func GetRoleCertificate(params Params) ([]byte, error) {
@@ -39,4 +47,17 @@ func GetRoleCertificate(params Params) ([]byte, error) {
 // Keymaster server specified in params. It returns the certificate.
 func GetRoleCertificateTLS(params Params) (*tls.Certificate, error) {
 	return params.getRoleCertificateTLS()
+}
+
+// NewManager returns a certificate manager which provides AWS role identity
+// certificates from the Keymaster server specified in params. Certificates
+// are refreshed in the background.
+func NewManager(params Params) (*Manager, error) {
+	return newManager(params)
+}
+
+// GetClientCertificate returns a valid, cached certificate.
+func (m *Manager) GetClientCertificate(cri *tls.CertificateRequestInfo) (
+	*tls.Certificate, error) {
+	return m.getClientCertificate(cri)
 }

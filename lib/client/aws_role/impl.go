@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 
@@ -38,6 +39,55 @@ func parseArn(arnString string) (*arn.ARN, error) {
 	parsedArn.Service = "iam"
 	parsedArn.Resource = "role/" + splitResource[1]
 	return &parsedArn, nil
+}
+
+func newManager(p Params) (*Manager, error) {
+	cert, err := p.getRoleCertificateTLS()
+	if err != nil {
+		return nil, err
+	}
+	p.Logger.Printf("got AWS Role certificate for: %s\n", p.roleArn)
+	manager := &Manager{
+		Params:  p,
+		tlsCert: cert,
+	}
+	go manager.refreshLoop()
+	return manager, nil
+}
+
+func (m *Manager) getClientCertificate(cri *tls.CertificateRequestInfo) (
+	*tls.Certificate, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.tlsCert, m.tlsError
+}
+
+func (m *Manager) refreshLoop() {
+	for ; ; time.Sleep(time.Minute) {
+		m.refreshOnce()
+	}
+}
+
+func (m *Manager) refreshOnce() {
+	if m.tlsCert != nil {
+		refreshTime := m.tlsCert.Leaf.NotBefore.Add(
+			m.tlsCert.Leaf.NotAfter.Sub(m.tlsCert.Leaf.NotBefore) * 3 / 4)
+		time.Sleep(time.Until(refreshTime))
+	}
+	if cert, err := m.getRoleCertificateTLS(); err != nil {
+		m.Logger.Println(err)
+		if m.tlsCert == nil {
+			m.mutex.Lock()
+			m.tlsError = err
+			m.mutex.Unlock()
+		}
+	} else {
+		m.mutex.Lock()
+		m.tlsCert = cert
+		m.tlsError = nil
+		m.mutex.Unlock()
+		m.Logger.Printf("refreshed AWS Role certificate for: %s\n", m.roleArn)
+	}
 }
 
 func (p *Params) getCredentials() (aws.Credentials, error) {
