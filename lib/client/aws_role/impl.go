@@ -208,7 +208,8 @@ func (p *Params) setupVerify() error {
 		Bytes: p.derPubKey,
 		Type:  "PUBLIC KEY",
 	})
-	awsConfig, err := config.LoadDefaultConfig(p.Context)
+	awsConfig, err := config.LoadDefaultConfig(p.Context,
+		config.WithEC2IMDSRegion())
 	if err != nil {
 		return err
 	}
