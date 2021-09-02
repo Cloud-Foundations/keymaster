@@ -22,6 +22,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
+const toothlessPolicy = `{
+    "Version": "2012-10-17",
+    "Statement": {
+        "Sid": "HandCrafted",
+        "Effect": "Allow",
+        "Action": "sts:GetCallerIdentity",
+        "Resource": "*"
+    }
+}
+`
+
 func parseArn(arnString string) (*arn.ARN, error) {
 	parsedArn, err := arn.Parse(arnString)
 	if err != nil {
@@ -95,6 +106,7 @@ func (p *Params) getCredentials() (aws.Credentials, error) {
 		DurationSeconds: aws.Int32(900),
 		RoleArn:         aws.String(p.roleArn),
 		RoleSessionName: aws.String("identity-verifier"),
+		Policy:          aws.String(toothlessPolicy),
 	})
 	if err != nil {
 		p.Logger.Println(err)
