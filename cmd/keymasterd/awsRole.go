@@ -1,18 +1,19 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
@@ -21,21 +22,26 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
-func getCallerIdentity(key, secret, token string) (string, error) {
+type parsedArnType struct {
+	parsedArn arn.ARN
+	role      string
+}
+
+func getCallerIdentity(key, secret, token string) (*parsedArnType, error) {
 	creds := credentials.NewStaticCredentials(key, secret, token)
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{Credentials: creds}})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	stsSvc := sts.New(sess)
 	output, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	parsedArn, err := arn.Parse(*output.Arn)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	parsedArn.Region = ""
 	parsedArn.Service = "iam"
@@ -43,7 +49,10 @@ func getCallerIdentity(key, secret, token string) (string, error) {
 	if len(splitResource) > 1 && splitResource[0] == "assumed-role" {
 		parsedArn.Resource = "role/" + splitResource[1]
 	}
-	return parsedArn.String(), nil
+	return &parsedArnType{
+		parsedArn: parsedArn,
+		role:      splitResource[1],
+	}, nil
 }
 
 func (state *RuntimeState) requestAwsRoleCertificateHandler(
@@ -52,8 +61,24 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if r.Method != "GET" && r.Method != "POST" {
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	// First extract and validate AWS credentials.
+	key := r.Header.Get("aws-access-key-id")
+	secret := r.Header.Get("aws-secret-access-key")
+	token := r.Header.Get("aws-session-token")
+	if key == "" || secret == "" || token == "" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"missing credential data")
+		return
+	}
+	callerArn, err := getCallerIdentity(key, secret, token)
+	if err != nil {
+		state.logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"cannot identify credentials")
 		return
 	}
 	body, err := ioutil.ReadAll(r.Body)
@@ -63,39 +88,8 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 			"error reading body")
 		return
 	}
-	// First extract the AWS credentials.
-	var key, secret, token string
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	for scanner.Scan() {
-		splitLine := strings.SplitN(scanner.Text(), "=", 2)
-		if len(splitLine) != 2 {
-			continue
-		}
-		value := strings.TrimSpace(splitLine[1])
-		switch strings.ToLower(strings.TrimSpace(splitLine[0])) {
-		case "aws_access_key_id":
-			key = value
-		case "aws_secret_access_key":
-			secret = value
-		case "aws_session_token":
-			token = value
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"error parsing body")
-		return
-	}
 	// Now extract the public key PEM data.
-	index := bytes.Index(body, []byte("-----BEGIN"))
-	if index < 1 {
-		state.logger.Println("did not find start of PEM block")
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"missing PEM block")
-		return
-	}
-	block, _ := pem.Decode(body[index:])
+	block, _ := pem.Decode(body)
 	if block == nil {
 		state.logger.Println("unable to decode PEM block")
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
@@ -114,11 +108,15 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "invalid DER")
 		return
 	}
-	callerArn, err := getCallerIdentity(key, secret, token)
+	strong, err := certgen.ValidatePublicKeyStrength(pub)
 	if err != nil {
 		state.logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"cannot identify credentials")
+			"cannot check key strength")
+		return
+	}
+	if !strong {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "key too weak")
 		return
 	}
 	certDER, err := state.generateRoleCert(pub, callerArn)
@@ -133,12 +131,13 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 
 // Returns certificate DER.
 func (state *RuntimeState) generateRoleCert(publicKey interface{},
-	callerArn string) ([]byte, error) {
+	callerArn *parsedArnType) ([]byte, error) {
 	subject := pkix.Name{
-		CommonName:   "AWS_ARN",
+		CommonName: fmt.Sprintf("aws:iam:%s:%s",
+			callerArn.parsedArn.AccountID, callerArn.role),
 		Organization: []string{"keymaster"},
 	}
-	arnUrl, err := url.Parse(callerArn)
+	arnUrl, err := url.Parse(callerArn.parsedArn.String())
 	if err != nil {
 		return nil, err
 	}

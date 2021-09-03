@@ -164,14 +164,14 @@ func (p *Params) getRoleCertificateTLS() (*tls.Certificate, error) {
 func (p *Params) requestCertificate(creds aws.Credentials) ([]byte, error) {
 	hostPath := p.KeymasterServer + paths.RequestAwsRoleCertificatePath
 	body := &bytes.Buffer{}
-	fmt.Fprintf(body, "aws_access_key_id     = %s\n", creds.AccessKeyID)
-	fmt.Fprintf(body, "aws_secret_access_key = %s\n", creds.SecretAccessKey)
-	fmt.Fprintf(body, "aws_session_token     = %s\n", creds.SessionToken)
 	body.Write(p.pemPubKey)
-	req, err := http.NewRequestWithContext(p.Context, "GET", hostPath, body)
+	req, err := http.NewRequestWithContext(p.Context, "POST", hostPath, body)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Add("aws-access-key-id", creds.AccessKeyID)
+	req.Header.Add("aws-secret-access-key", creds.SecretAccessKey)
+	req.Header.Add("aws-session-token", creds.SessionToken)
 	resp, err := p.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -206,10 +206,6 @@ func (p *Params) setupVerify() error {
 			return err
 		}
 		p.Signer = signer
-		p.KeyType = "RSA"
-	}
-	if p.KeyType != "RSA" {
-		return fmt.Errorf("unsupported key type: %s", p.KeyType)
 	}
 	derPubKey, err := x509.MarshalPKIXPublicKey(p.Signer.Public())
 	if err != nil {

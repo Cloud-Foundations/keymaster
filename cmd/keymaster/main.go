@@ -209,11 +209,10 @@ func generateAwsRolCert(homeDir string,
 		KeymasterServer: targetURLs[0],
 		Logger:          logger,
 		HttpClient:      client,
-		KeyType:         "RSA",
 		Signer:          signers.X509Rsa,
 	})
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
 	if err != nil {

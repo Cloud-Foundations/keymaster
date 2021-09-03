@@ -20,7 +20,6 @@ type Params struct {
 	// Optional parameters.
 	Context    context.Context
 	HttpClient *http.Client
-	KeyType    string // "RSA"
 	Signer     crypto.Signer
 	awsConfig  aws.Config
 	derPubKey  []byte
