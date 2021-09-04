@@ -38,6 +38,17 @@ func getCallerIdentity(presignedUrl string,
 	if err != nil {
 		return nil, err
 	}
+	if parsedPresignedUrl.Scheme != "https" {
+		return nil, fmt.Errorf("invalid scheme: %s", parsedPresignedUrl.Scheme)
+	}
+	if parsedPresignedUrl.Path != "/" {
+		return nil, fmt.Errorf("invalid path: %s", parsedPresignedUrl.Path)
+	}
+	if !strings.HasPrefix(parsedPresignedUrl.RawQuery,
+		"Action=GetCallerIdentity&") {
+		return nil,
+			fmt.Errorf("invalid action: %s", parsedPresignedUrl.RawQuery)
+	}
 	splitHost := strings.Split(parsedPresignedUrl.Host, ".")
 	if len(splitHost) != 4 ||
 		splitHost[0] != "sts" ||
