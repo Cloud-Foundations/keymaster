@@ -16,7 +16,6 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -101,40 +100,36 @@ func (m *Manager) refreshOnce() {
 	}
 }
 
-func (p *Params) getCredentials() (aws.Credentials, error) {
-	assumeOutput, err := p.stsClient.AssumeRole(p.Context, &sts.AssumeRoleInput{
-		DurationSeconds: aws.Int32(900),
-		RoleArn:         aws.String(p.roleArn),
-		RoleSessionName: aws.String("identity-verifier"),
-		Policy:          aws.String(toothlessPolicy),
-	})
-	if err != nil {
-		p.Logger.Println(err)
-		creds, err := p.awsConfig.Credentials.Retrieve(p.Context)
-		if err != nil {
-			return aws.Credentials{}, err
-		}
-		p.Logger.Println(
-			"unable to assume limited role, passing primary credentials")
-		return creds, nil
-	}
-	return aws.Credentials{
-			AccessKeyID:     *assumeOutput.Credentials.AccessKeyId,
-			SecretAccessKey: *assumeOutput.Credentials.SecretAccessKey,
-			SessionToken:    *assumeOutput.Credentials.SessionToken},
-		nil
-}
-
 // Returns certificate PEM block.
 func (p *Params) getRoleCertificate() ([]byte, error) {
 	if err := p.setupVerify(); err != nil {
 		return nil, err
 	}
-	creds, err := p.getCredentials()
+	presignedReq, err := p.stsPresignClient.PresignGetCallerIdentity(p.Context,
+		&sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, err
 	}
-	return p.requestCertificate(creds)
+	hostPath := p.KeymasterServer + paths.RequestAwsRoleCertificatePath
+	body := &bytes.Buffer{}
+	body.Write(p.pemPubKey)
+	req, err := http.NewRequestWithContext(p.Context, "POST", hostPath, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("claimed-arn", p.roleArn)
+	req.Header.Add("presigned-url", presignedReq.URL)
+	req.Header.Add("presigned-method", presignedReq.Method)
+	resp, err := p.HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("got error from call %s, url='%s'\n",
+			resp.Status, hostPath)
+	}
+	return ioutil.ReadAll(resp.Body)
 }
 
 func (p *Params) getRoleCertificateTLS() (*tls.Certificate, error) {
@@ -158,30 +153,6 @@ func (p *Params) getRoleCertificateTLS() (*tls.Certificate, error) {
 		PrivateKey:  p.Signer,
 		Leaf:        x509Cert,
 	}, nil
-}
-
-// Returns certificate PEM block.
-func (p *Params) requestCertificate(creds aws.Credentials) ([]byte, error) {
-	hostPath := p.KeymasterServer + paths.RequestAwsRoleCertificatePath
-	body := &bytes.Buffer{}
-	body.Write(p.pemPubKey)
-	req, err := http.NewRequestWithContext(p.Context, "POST", hostPath, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("aws-access-key-id", creds.AccessKeyID)
-	req.Header.Add("aws-secret-access-key", creds.SecretAccessKey)
-	req.Header.Add("aws-session-token", creds.SessionToken)
-	resp, err := p.HttpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("got error from call %s, url='%s'\n",
-			resp.Status, hostPath)
-	}
-	return ioutil.ReadAll(resp.Body)
 }
 
 func (p *Params) setupVerify() error {
@@ -223,6 +194,7 @@ func (p *Params) setupVerify() error {
 	}
 	p.awsConfig = awsConfig
 	p.stsClient = sts.NewFromConfig(awsConfig)
+	p.stsPresignClient = sts.NewPresignClient(p.stsClient)
 	idOutput, err := p.stsClient.GetCallerIdentity(p.Context,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {

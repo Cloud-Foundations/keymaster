@@ -18,15 +18,16 @@ type Params struct {
 	KeymasterServer string
 	Logger          log.DebugLogger
 	// Optional parameters.
-	Context    context.Context
-	HttpClient *http.Client
-	Signer     crypto.Signer
-	awsConfig  aws.Config
-	derPubKey  []byte
-	isSetup    bool
-	pemPubKey  []byte
-	roleArn    string
-	stsClient  *sts.Client
+	Context          context.Context
+	HttpClient       *http.Client
+	Signer           crypto.Signer
+	awsConfig        aws.Config
+	derPubKey        []byte
+	isSetup          bool
+	pemPubKey        []byte
+	roleArn          string
+	stsClient        *sts.Client
+	stsPresignClient *sts.PresignClient
 }
 
 type Manager struct {

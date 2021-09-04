@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -15,11 +16,7 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 )
 
 type parsedArnType struct {
@@ -27,28 +24,58 @@ type parsedArnType struct {
 	role      string
 }
 
-func getCallerIdentity(key, secret, token string) (*parsedArnType, error) {
-	creds := credentials.NewStaticCredentials(key, secret, token)
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{Credentials: creds}})
+type getCallerIdentityResult struct {
+	Arn string
+}
+
+type getCallerIdentityResponse struct {
+	GetCallerIdentityResult getCallerIdentityResult
+}
+
+func getCallerIdentity(presignedUrl string,
+	presignedMethod string) (*parsedArnType, error) {
+	parsedPresignedUrl, err := url.Parse(presignedUrl)
 	if err != nil {
 		return nil, err
 	}
-	stsSvc := sts.New(sess)
-	output, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
+	splitHost := strings.Split(parsedPresignedUrl.Host, ".")
+	if len(splitHost) != 4 ||
+		splitHost[0] != "sts" ||
+		splitHost[2] != "amazonaws" ||
+		splitHost[3] != "com" {
+		return nil, fmt.Errorf("malformed presigned URL host")
+	}
+	validateReq, err := http.NewRequest(presignedMethod, presignedUrl, nil)
 	if err != nil {
 		return nil, err
 	}
-	parsedArn, err := arn.Parse(*output.Arn)
+	validateResp, err := http.DefaultClient.Do(validateReq)
+	if err != nil {
+		return nil, err
+	}
+	defer validateResp.Body.Close()
+	if validateResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("verification request failed")
+	}
+	body, err := ioutil.ReadAll(validateResp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var callerIdentity getCallerIdentityResponse
+	if err := xml.Unmarshal(body, &callerIdentity); err != nil {
+		return nil, err
+	}
+	parsedArn, err := arn.Parse(callerIdentity.GetCallerIdentityResult.Arn)
 	if err != nil {
 		return nil, err
 	}
 	parsedArn.Region = ""
 	parsedArn.Service = "iam"
 	splitResource := strings.Split(parsedArn.Resource, "/")
-	if len(splitResource) > 1 && splitResource[0] == "assumed-role" {
-		parsedArn.Resource = "role/" + splitResource[1]
+	if len(splitResource) < 2 || splitResource[0] != "assumed-role" {
+		return nil, fmt.Errorf("invalid resource: %s", parsedArn.Resource)
 	}
+	parsedArn.Resource = "role/" + splitResource[1]
 	return &parsedArnType{
 		parsedArn: parsedArn,
 		role:      splitResource[1],
@@ -65,20 +92,27 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
-	// First extract and validate AWS credentials.
-	key := r.Header.Get("aws-access-key-id")
-	secret := r.Header.Get("aws-secret-access-key")
-	token := r.Header.Get("aws-session-token")
-	if key == "" || secret == "" || token == "" {
+	// First extract and validate AWS credentials claim.
+	claimedArn := r.Header.Get("claimed-arn")
+	presignedUrl := r.Header.Get("presigned-url")
+	presignedMethod := r.Header.Get("presigned-method")
+	if claimedArn == "" || presignedUrl == "" || presignedMethod == "" {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"missing credential data")
+			"missing presigned request data")
 		return
 	}
-	callerArn, err := getCallerIdentity(key, secret, token)
+	callerArn, err := getCallerIdentity(presignedUrl, presignedMethod)
 	if err != nil {
 		state.logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
-			"cannot identify credentials")
+			"verification request failed")
+		return
+	}
+	if callerArn.parsedArn.String() != claimedArn {
+		state.logger.Printf("validated ARN: %s != claimed ARN: %s\n",
+			callerArn.parsedArn.String(), claimedArn)
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"ARN claim does not match")
 		return
 	}
 	body, err := ioutil.ReadAll(r.Body)
