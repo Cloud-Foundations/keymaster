@@ -187,7 +187,7 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 
 const rsaKeySize = 2048
 
-func generateAwsRolCert(homeDir string,
+func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
@@ -471,7 +471,7 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 	if flag.Arg(0) == "aws-role-cert" {
-		err = generateAwsRolCert(homeDir, config, client, logger)
+		err = generateAwsRoleCert(homeDir, config, client, logger)
 	} else {
 		err = setupCerts(userName, homeDir, config, client, logger)
 	}
