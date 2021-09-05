@@ -110,6 +110,7 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.Logger.Debugf(1, "presigned URL: %v\n", presignedReq.URL)
 	hostPath := p.KeymasterServer + paths.RequestAwsRoleCertificatePath
 	body := &bytes.Buffer{}
 	body.Write(p.pemPubKey)
@@ -118,8 +119,8 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Add("claimed-arn", p.roleArn)
-	req.Header.Add("presigned-url", presignedReq.URL)
 	req.Header.Add("presigned-method", presignedReq.Method)
+	req.Header.Add("presigned-url", presignedReq.URL)
 	resp, err := p.HttpClient.Do(req)
 	if err != nil {
 		return nil, err

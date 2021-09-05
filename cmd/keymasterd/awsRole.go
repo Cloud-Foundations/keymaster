@@ -32,29 +32,16 @@ type getCallerIdentityResponse struct {
 	GetCallerIdentityResult getCallerIdentityResult
 }
 
-func getCallerIdentity(presignedUrl string,
-	presignedMethod string) (*parsedArnType, error) {
-	parsedPresignedUrl, err := url.Parse(presignedUrl)
-	if err != nil {
+func getCallerIdentity(header http.Header,
+	validator func(presignedUrl string) error) (*parsedArnType, error) {
+	claimedArn := header.Get("claimed-arn")
+	presignedMethod := header.Get("presigned-method")
+	presignedUrl := header.Get("presigned-url")
+	if claimedArn == "" || presignedUrl == "" || presignedMethod == "" {
+		return nil, fmt.Errorf("missing presigned request data")
+	}
+	if err := validator(presignedUrl); err != nil {
 		return nil, err
-	}
-	if parsedPresignedUrl.Scheme != "https" {
-		return nil, fmt.Errorf("invalid scheme: %s", parsedPresignedUrl.Scheme)
-	}
-	if parsedPresignedUrl.Path != "/" {
-		return nil, fmt.Errorf("invalid path: %s", parsedPresignedUrl.Path)
-	}
-	if !strings.HasPrefix(parsedPresignedUrl.RawQuery,
-		"Action=GetCallerIdentity&") {
-		return nil,
-			fmt.Errorf("invalid action: %s", parsedPresignedUrl.RawQuery)
-	}
-	splitHost := strings.Split(parsedPresignedUrl.Host, ".")
-	if len(splitHost) != 4 ||
-		splitHost[0] != "sts" ||
-		splitHost[2] != "amazonaws" ||
-		splitHost[3] != "com" {
-		return nil, fmt.Errorf("malformed presigned URL host")
 	}
 	validateReq, err := http.NewRequest(presignedMethod, presignedUrl, nil)
 	if err != nil {
@@ -87,10 +74,39 @@ func getCallerIdentity(presignedUrl string,
 		return nil, fmt.Errorf("invalid resource: %s", parsedArn.Resource)
 	}
 	parsedArn.Resource = "role/" + splitResource[1]
+	if parsedArn.String() != claimedArn {
+		return nil, fmt.Errorf("validated ARN: %s != claimed ARN: %s",
+			parsedArn.String(), claimedArn)
+	}
 	return &parsedArnType{
 		parsedArn: parsedArn,
 		role:      splitResource[1],
 	}, nil
+}
+
+func validateStsPresignedUrl(presignedUrl string) error {
+	parsedPresignedUrl, err := url.Parse(presignedUrl)
+	if err != nil {
+		return err
+	}
+	if parsedPresignedUrl.Scheme != "https" {
+		return fmt.Errorf("invalid scheme: %s", parsedPresignedUrl.Scheme)
+	}
+	if parsedPresignedUrl.Path != "/" {
+		return fmt.Errorf("invalid path: %s", parsedPresignedUrl.Path)
+	}
+	if !strings.HasPrefix(parsedPresignedUrl.RawQuery,
+		"Action=GetCallerIdentity&") {
+		return fmt.Errorf("invalid action: %s", parsedPresignedUrl.RawQuery)
+	}
+	splitHost := strings.Split(parsedPresignedUrl.Host, ".")
+	if len(splitHost) != 4 ||
+		splitHost[0] != "sts" ||
+		splitHost[2] != "amazonaws" ||
+		splitHost[3] != "com" {
+		return fmt.Errorf("malformed presigned URL host")
+	}
+	return nil
 }
 
 func (state *RuntimeState) requestAwsRoleCertificateHandler(
@@ -104,26 +120,11 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 		return
 	}
 	// First extract and validate AWS credentials claim.
-	claimedArn := r.Header.Get("claimed-arn")
-	presignedUrl := r.Header.Get("presigned-url")
-	presignedMethod := r.Header.Get("presigned-method")
-	if claimedArn == "" || presignedUrl == "" || presignedMethod == "" {
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"missing presigned request data")
-		return
-	}
-	callerArn, err := getCallerIdentity(presignedUrl, presignedMethod)
+	callerArn, err := getCallerIdentity(r.Header, validateStsPresignedUrl)
 	if err != nil {
 		state.logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"verification request failed")
-		return
-	}
-	if callerArn.parsedArn.String() != claimedArn {
-		state.logger.Printf("validated ARN: %s != claimed ARN: %s\n",
-			callerArn.parsedArn.String(), claimedArn)
-		state.writeFailureResponse(w, r, http.StatusUnauthorized,
-			"ARN claim does not match")
 		return
 	}
 	body, err := ioutil.ReadAll(r.Body)
