@@ -82,6 +82,13 @@ type baseConfig struct {
 	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
 }
 
+type awsCertsConfig struct {
+	AllowedAccounts      []string `yaml:"allowed_accounts"`
+	ListAccountsRole     string   `yaml:"list_accounts_role"`
+	allowedAccounts      map[string]struct{}
+	organisationAccounts map[string]struct{}
+}
+
 type emailConfig struct {
 	configuredemail.EmailConfig `yaml:",inline"`
 	Domain                      string
@@ -165,6 +172,7 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	AwsCerts         awsCertsConfig  `yaml:"aws_certs"`
 	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
 	Watchdog         watchdog.Config `yaml:"watchdog"`
 	Email            emailConfig
@@ -579,7 +587,9 @@ func loadVerifyConfigFile(configFilename string,
 	if runtimeState.Config.Base.SecsBetweenDependencyChecks < 1 {
 		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
 	}
-
+	if err := runtimeState.configureAwsRoles(); err != nil {
+		return nil, err
+	}
 	logger.Debugf(1, "End of config initialization: %+v", &runtimeState)
 
 	// UserInfo setup.

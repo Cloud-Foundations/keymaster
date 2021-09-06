@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -16,12 +17,21 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-type parsedArnType struct {
-	parsedArn arn.ARN
-	role      string
+const (
+	awsAccountListInterval = time.Minute * 5
+)
+
+type assumeRoleCredentialsProvider struct {
+	credentials aws.Credentials
+	roleArn     *string
+	stsClient   *sts.Client
 }
 
 type getCallerIdentityResult struct {
@@ -30,6 +40,25 @@ type getCallerIdentityResult struct {
 
 type getCallerIdentityResponse struct {
 	GetCallerIdentityResult getCallerIdentityResult
+}
+
+type parsedArnType struct {
+	parsedArn arn.ARN
+	role      string
+}
+
+func awsListAccounts(ctx context.Context, orgClient *organizations.Client) (
+	map[string]struct{}, error) {
+	output, err := orgClient.ListAccounts(ctx,
+		&organizations.ListAccountsInput{})
+	if err != nil {
+		return nil, err
+	}
+	list := make(map[string]struct{}, len(output.Accounts))
+	for _, account := range output.Accounts {
+		list[*account.Id] = struct{}{}
+	}
+	return list, nil
 }
 
 func getCallerIdentity(header http.Header,
@@ -109,6 +138,99 @@ func validateStsPresignedUrl(presignedUrl string) error {
 	return nil
 }
 
+func (p *assumeRoleCredentialsProvider) Retrieve(ctx context.Context) (
+	aws.Credentials, error) {
+	if time.Until(p.credentials.Expires) > time.Minute {
+		return p.credentials, nil
+	}
+	output, err := p.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
+		RoleArn:         p.roleArn,
+		RoleSessionName: aws.String("keymaster"),
+	})
+	if err != nil {
+		return aws.Credentials{}, err
+	}
+	p.credentials = aws.Credentials{
+		AccessKeyID:     *output.Credentials.AccessKeyId,
+		CanExpire:       true,
+		Expires:         *output.Credentials.Expiration,
+		SecretAccessKey: *output.Credentials.SecretAccessKey,
+		SessionToken:    *output.Credentials.SessionToken,
+	}
+	return p.credentials, nil
+}
+
+func (state *RuntimeState) checkAwsRolesEnabled() bool {
+	if len(state.Config.AwsCerts.AllowedAccounts) > 0 {
+		return true
+	}
+	if state.Config.AwsCerts.ListAccountsRole != "" {
+		return true
+	}
+	return false
+}
+
+func (state *RuntimeState) configureAwsRoles() error {
+	if len(state.Config.AwsCerts.AllowedAccounts) > 0 {
+		state.Config.AwsCerts.allowedAccounts =
+			make(map[string]struct{})
+		for _, id := range state.Config.AwsCerts.AllowedAccounts {
+			state.Config.AwsCerts.allowedAccounts[id] = struct{}{}
+		}
+	}
+	if state.Config.AwsCerts.ListAccountsRole != "" {
+		ctx := context.TODO()
+		awsConfig, err := awsconfig.LoadDefaultConfig(ctx,
+			awsconfig.WithEC2IMDSRegion())
+		if err != nil {
+			return err
+		}
+		credsProvider := &assumeRoleCredentialsProvider{
+			roleArn:   aws.String(state.Config.AwsCerts.ListAccountsRole),
+			stsClient: sts.NewFromConfig(awsConfig),
+		}
+		awsConfig, err = awsconfig.LoadDefaultConfig(ctx,
+			awsconfig.WithEC2IMDSRegion(),
+			awsconfig.WithCredentialsProvider(credsProvider))
+		if err != nil {
+			return err
+		}
+		orgClient := organizations.NewFromConfig(awsConfig)
+		state.Config.AwsCerts.organisationAccounts, err =
+			awsListAccounts(ctx, orgClient)
+		if err != nil {
+			return err
+		}
+		go state.refreshAwsAccounts(ctx, orgClient)
+	}
+	return nil
+}
+
+func (state *RuntimeState) checkAwsAccountAllowed(accountId string) bool {
+	if _, ok := state.Config.AwsCerts.allowedAccounts[accountId]; ok {
+		return true
+	}
+	if _, ok := state.Config.AwsCerts.organisationAccounts[accountId]; ok {
+		return true
+	}
+	if _, ok := state.Config.AwsCerts.allowedAccounts["*"]; ok {
+		return true
+	}
+	return false
+}
+
+func (state *RuntimeState) refreshAwsAccounts(ctx context.Context,
+	orgClient *organizations.Client) {
+	for {
+		time.Sleep(awsAccountListInterval)
+		if list, err := awsListAccounts(ctx, orgClient); err != nil {
+			state.logger.Println(err)
+		} else {
+			state.Config.AwsCerts.organisationAccounts = list
+		}
+	}
+}
+
 func (state *RuntimeState) requestAwsRoleCertificateHandler(
 	w http.ResponseWriter, r *http.Request) {
 	state.logger.Debugln(1, "Entered requestAwsRoleCertificateHandler()")
@@ -126,6 +248,12 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"verification request failed")
 		return
+	}
+	if !state.checkAwsAccountAllowed(callerArn.parsedArn.AccountID) {
+		state.logger.Printf("AWS account: %s not allowed\n",
+			callerArn.parsedArn.AccountID)
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"AWS account not allowed")
 	}
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {

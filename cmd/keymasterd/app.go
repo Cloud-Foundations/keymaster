@@ -1658,8 +1658,10 @@ func main() {
 		serviceMux.HandleFunc(oktaPollCheckPath,
 			runtimeState.oktaPollCheckHandler)
 	}
-	serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
-		runtimeState.requestAwsRoleCertificateHandler)
+	if runtimeState.checkAwsRolesEnabled() {
+		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
+			runtimeState.requestAwsRoleCertificateHandler)
+	}
 	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
 	//               The inline calls to getRequiredWebUIAuthLevel() should be
 	//               moved to the config section and replaced with a simple
