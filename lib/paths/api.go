@@ -2,7 +2,7 @@ package paths
 
 const (
 	ReceiveAuthDocument           = "/receiveAuthDocument"
-	RequestAwsRoleCertificatePath = "/aws/requestRoleCertificate"
+	RequestAwsRoleCertificatePath = "/aws/requestRoleCertificate/v1"
 	SendAuthDocument              = "/sendAuthDocument"
 	ShowAuthToken                 = "/showAuthToken"
 )

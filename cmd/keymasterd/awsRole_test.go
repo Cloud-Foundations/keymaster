@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -28,7 +29,9 @@ const (
 
 type testAwsGetCallerIdentityType struct{}
 
-func testValidatePresignedUrl(presignedUrl string) error { return nil }
+func testValidatePresignedUrl(presignedUrl string) (*url.URL, error) {
+	return url.Parse(presignedUrl)
+}
 
 func (testAwsGetCallerIdentityType) ServeHTTP(w http.ResponseWriter,
 	r *http.Request) {
@@ -36,13 +39,13 @@ func (testAwsGetCallerIdentityType) ServeHTTP(w http.ResponseWriter,
 }
 
 func TestAwsPresignedUrlValidation(t *testing.T) {
-	if err := validateStsPresignedUrl(awsPresignedUrlBadAction); err == nil {
+	if _, err := validateStsPresignedUrl(awsPresignedUrlBadAction); err == nil {
 		t.Error(err)
 	}
-	if err := validateStsPresignedUrl(awsPresignedUrlBadDomain); err == nil {
+	if _, err := validateStsPresignedUrl(awsPresignedUrlBadDomain); err == nil {
 		t.Error(err)
 	}
-	if err := validateStsPresignedUrl(awsPresignedUrlGood); err != nil {
+	if _, err := validateStsPresignedUrl(awsPresignedUrlGood); err != nil {
 		t.Error("valid URL does not validate")
 	}
 }

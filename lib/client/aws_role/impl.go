@@ -21,16 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-const toothlessPolicy = `{
-    "Version": "2012-10-17",
-    "Statement": {
-        "Sid": "HandCrafted",
-        "Effect": "Allow",
-        "Action": "sts:GetCallerIdentity",
-        "Resource": "*"
-    }
-}
-`
+const rsaKeySize = 2048
 
 func parseArn(arnString string) (*arn.ARN, error) {
 	parsedArn, err := arn.Parse(arnString)
@@ -46,6 +37,10 @@ func parseArn(arnString string) (*arn.ARN, error) {
 	if len(splitResource) < 2 || splitResource[0] != "assumed-role" {
 		return nil, fmt.Errorf("invalid resource: %s", parsedArn.Resource)
 	}
+	// Normalise to the actual role ARN, rather than an ARN showing how the
+	// credentials were obtained. This mirrors the way AWS policy documents are
+	// written.
+	parsedArn.Region = ""
 	parsedArn.Service = "iam"
 	parsedArn.Resource = "role/" + splitResource[1]
 	return &parsedArn, nil
@@ -127,6 +122,7 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		ioutil.ReadAll(resp.Body)
 		return nil, fmt.Errorf("got error from call %s, url='%s'\n",
 			resp.Status, hostPath)
 	}
@@ -173,7 +169,7 @@ func (p *Params) setupVerify() error {
 		p.HttpClient = http.DefaultClient
 	}
 	if p.Signer == nil {
-		signer, err := rsa.GenerateKey(rand.Reader, 2048)
+		signer, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
 		if err != nil {
 			return err
 		}
