@@ -43,6 +43,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
@@ -1656,6 +1657,10 @@ func main() {
 			runtimeState.oktaPushStartHandler)
 		serviceMux.HandleFunc(oktaPollCheckPath,
 			runtimeState.oktaPollCheckHandler)
+	}
+	if runtimeState.checkAwsRolesEnabled() {
+		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
+			runtimeState.requestAwsRoleCertificateHandler)
 	}
 	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
 	//               The inline calls to getRequiredWebUIAuthLevel() should be
