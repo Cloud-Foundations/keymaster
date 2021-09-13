@@ -51,7 +51,7 @@ var (
 	cliUsername      = flag.String("username", "", "username for keymaster")
 	checkDevices     = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 	cliFilePrefix    = flag.String("fileprefix", "", "Prefix for the output files")
-	roundRobinDialer = flag.Bool("roundRobinDialer", false,
+	roundRobinDialer = flag.Bool("roundRobinDialer", true,
 		"If true, use the smart round-robin dialer")
 
 	FilePrefix = "keymaster"
