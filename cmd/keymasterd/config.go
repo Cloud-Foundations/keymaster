@@ -34,6 +34,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
@@ -67,7 +68,6 @@ type baseConfig struct {
 	KerberosRealm                string        `yaml:"kerberos_realm"`
 	DataDirectory                string        `yaml:"data_directory"`
 	SharedDataDirectory          string        `yaml:"shared_data_directory"`
-	HideStandardLogin            bool          `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts  []string      `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI  []string      `yaml:"allowed_auth_backends_for_webui"`
 	AllowSelfServiceBootstrapOTP bool          `yaml:"allow_self_service_bootstrap_otp"`
@@ -81,6 +81,13 @@ type baseConfig struct {
 	EnableLocalTOTP              bool          `yaml:"enable_local_totp"`
 	EnableBootstrapOTP           bool          `yaml:"enable_bootstrapotp"`
 	WebauthTokenForCliLifetime   time.Duration `yaml:"webauth_token_for_cli_lifetime"`
+}
+
+type awsCertsConfig struct {
+	AllowedAccounts      []string `yaml:"allowed_accounts"`
+	ListAccountsRole     string   `yaml:"list_accounts_role"`
+	allowedAccounts      map[string]struct{}
+	organisationAccounts map[string]struct{}
 }
 
 type emailConfig struct {
@@ -135,10 +142,11 @@ type Oauth2Config struct {
 }
 
 type OpenIDConnectClientConfig struct {
-	ClientID               string   `yaml:"client_id"`
-	ClientSecret           string   `yaml:"client_secret"`
-	AllowedRedirectURLRE   []string `yaml:"allowed_redirect_url_re"`
-	AllowedRedirectDomains []string `yaml:"allowed_redirect_domains"`
+	ClientID                   string   `yaml:"client_id"`
+	ClientSecret               string   `yaml:"client_secret"`
+	AllowClientChosenAudiences bool     `yaml:"allow_client_chose_audiences"`
+	AllowedRedirectURLRE       []string `yaml:"allowed_redirect_url_re"`
+	AllowedRedirectDomains     []string `yaml:"allowed_redirect_domains"`
 }
 
 type OpenIDConnectIDPConfig struct {
@@ -165,6 +173,7 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	AwsCerts         awsCertsConfig  `yaml:"aws_certs"`
 	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
 	Watchdog         watchdog.Config `yaml:"watchdog"`
 	Email            emailConfig
@@ -509,12 +518,6 @@ func loadVerifyConfigFile(configFilename string,
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
-	//
-	if runtimeState.Config.Base.HideStandardLogin && !runtimeState.Config.Oauth2.Enabled {
-		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
-		return nil, err
-	}
-
 	//Load extra templates
 	err = runtimeState.loadTemplates()
 	if err != nil {
@@ -526,9 +529,17 @@ func loadVerifyConfigFile(configFilename string,
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
 	// hacky and is limited to only one authentication backend.
+	if runtimeState.Config.Base.HtpasswdFilename != "" {
+		runtimeState.passwordChecker, err = htpassword.New(
+			runtimeState.Config.Base.HtpasswdFilename, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
-		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
+		runtimeState.passwordChecker, err = command.New(
+			runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -566,10 +577,20 @@ func loadVerifyConfigFile(configFilename string,
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
+	// If not using an OAuth2 IDP for primary authentication, must have an
+	// alternative enabled.
+	if runtimeState.passwordChecker == nil &&
+		!runtimeState.Config.Oauth2.Enabled {
+		return nil, errors.New(
+			"invalid configuration: no primary authentication method")
+	}
+
 	if runtimeState.Config.Base.SecsBetweenDependencyChecks < 1 {
 		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
 	}
-
+	if err := runtimeState.configureAwsRoles(); err != nil {
+		return nil, err
+	}
 	logger.Debugf(1, "End of config initialization: %+v", &runtimeState)
 
 	// UserInfo setup.

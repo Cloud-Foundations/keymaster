@@ -41,7 +41,6 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
@@ -382,20 +381,6 @@ func checkUserPassword(username string, password string, config AppConfigFile,
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-	if config.Base.HtpasswdFilename != "" {
-		logger.Debugf(3, "I have htpasswed filename")
-		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
-		if err != nil {
-			return false, err
-		}
-		valid, err := authutil.CheckHtpasswdUserPassword(username, password,
-			buffer)
-		if err != nil {
-			return false, err
-		}
-		metricLogAuthOperation(clientType, "password", valid)
-		return valid, nil
-	}
 	metricLogAuthOperation(clientType, "password", false)
 	return false, nil
 }
@@ -422,13 +407,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Presto/") {
 		return true
 	}
-	// Once FF support reaches main we can remove these silly checks.
-	if strings.Contains(r.UserAgent(), "Firefox/57") ||
-		strings.Contains(r.UserAgent(), "Firefox/58") ||
-		strings.Contains(r.UserAgent(), "Firefox/59") ||
-		strings.Contains(r.UserAgent(), "Firefox/6") ||
-		strings.Contains(r.UserAgent(), "Firefox/7") ||
-		strings.Contains(r.UserAgent(), "Firefox/8") {
+	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
 	return false
@@ -487,23 +466,25 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
-	r *http.Request,
-	defaultUsername, loginDestination, errorMessage string) error {
-	//footerText := state.getFooterText()
+	r *http.Request, statusCode int,
+	defaultUsername, loginDestination, errorMessage string) {
+	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
+		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
+		return
+	}
+	w.WriteHeader(statusCode)
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
 		DefaultUsername:  defaultUsername,
 		ShowOauth2:       state.Config.Oauth2.Enabled,
-		HideStdLogin:     state.Config.Base.HideStandardLogin,
 		LoginDestination: loginDestination,
 		ErrorMessage:     errorMessage}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
-		return err
+		return
 	}
-	return nil
 }
 
 func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
@@ -525,7 +506,6 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	}
-	w.WriteHeader(code)
 	switch code {
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
@@ -551,7 +531,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
 					loginDestination, message)
 				return
 			}
@@ -559,12 +539,12 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			if err != nil {
 				logger.Debugf(3,
 					"write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
 					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
 					loginDestination, "")
 				return
 			}
@@ -572,13 +552,19 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, r.Form.Get("user"), loginDestination,
-				message)
+			if (info.AuthType & AuthTypeFederated) == AuthTypeFederated {
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
+				return
+			}
+			state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
+				loginDestination, message)
 			return
 		default:
+			w.WriteHeader(code)
 			w.Write([]byte(publicErrorText))
 		}
 	default:
+		w.WriteHeader(code)
 		w.Write([]byte(publicErrorText))
 	}
 }
@@ -922,10 +908,9 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	switch target {
 	case "loginForm":
-		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
 		setSecurityHeaders(w)
-		state.writeHTMLLoginPage(w, r, "", profilePath, "")
+		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1537,7 +1522,8 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, r.Form.Get("user"), profilePath, "")
+			state.writeHTMLLoginPage(w, r, 200, r.Form.Get("user"), profilePath,
+				"")
 			return
 		}
 
@@ -1704,6 +1690,10 @@ func main() {
 			runtimeState.oktaPushStartHandler)
 		serviceMux.HandleFunc(oktaPollCheckPath,
 			runtimeState.oktaPollCheckHandler)
+	}
+	if runtimeState.checkAwsRolesEnabled() {
+		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
+			runtimeState.requestAwsRoleCertificateHandler)
 	}
 	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
 	//               The inline calls to getRequiredWebUIAuthLevel() should be
