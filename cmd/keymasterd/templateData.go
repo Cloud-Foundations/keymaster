@@ -69,11 +69,12 @@ const loginFormText = `
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             {{if .DefaultUsername}}
-            <p>Username: <INPUT TYPE="text" NAME="username" VALUE={{.DefaultUsername}} SIZE=18 autofocus></p>
+            <p>Username: <INPUT TYPE="text" NAME="username" VALUE={{.DefaultUsername}} SIZE=18></p>
+            <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off" autofocus></p>
             {{else}}
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18 autofocus></p>
-            {{end}}
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off"></p>
+            {{end}}
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
         </form>
