@@ -595,16 +595,24 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	return false
 }
 
-func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
+func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
+	username string, authlevel int) (string, error) {
 	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
 		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
-
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+		time.Second)
+	authCookie := http.Cookie{
+		Name:    authCookieName,
+		Value:   cookieVal,
+		Expires: expiration,
+		Path:    "/", HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	}
 	//use handler with original request.
 	if w != nil {
 		http.SetCookie(w, &authCookie)
@@ -1174,7 +1182,6 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
 		return
 	}
 	//TODO: check for CSRF (simple way: makeit post only)
-
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -1202,11 +1209,8 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-
 	http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
 }
-
-///
 
 func (state *RuntimeState) _IsAdminUser(user string) (bool, error) {
 	for _, adminUser := range state.Config.Base.AdminUsers {
