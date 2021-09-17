@@ -432,6 +432,19 @@ func getClientType(r *http.Request) string {
 	}
 }
 
+// getUser will return the "user" value from the request form. If the username
+// contains invalid characters, the empty string is returned.
+func getUser(r *http.Request) string {
+	user := r.Form.Get("user")
+	if user == "" {
+		return ""
+	}
+	if m, _ := regexp.MatchString("^[-.a-zA-Z0-9_+]+$", user); !m {
+		return ""
+	}
+	return user
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
@@ -531,7 +544,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, getUser(r),
 					loginDestination, message)
 				return
 			}
@@ -539,12 +552,12 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			if err != nil {
 				logger.Debugf(3,
 					"write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, getUser(r),
 					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
+				state.writeHTMLLoginPage(w, r, code, getUser(r),
 					loginDestination, "")
 				return
 			}
@@ -556,8 +569,8 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, code, r.Form.Get("user"),
-				loginDestination, message)
+			state.writeHTMLLoginPage(w, r, code, getUser(r), loginDestination,
+				message)
 			return
 		default:
 			w.WriteHeader(code)
@@ -1209,7 +1222,11 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-	http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
+	if loginUser == "" {
+		http.Redirect(w, r, "/", 302)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
+	}
 }
 
 func (state *RuntimeState) _IsAdminUser(user string) (bool, error) {
@@ -1526,8 +1543,7 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, 200, r.Form.Get("user"), profilePath,
-				"")
+			state.writeHTMLLoginPage(w, r, 200, getUser(r), profilePath, "")
 			return
 		}
 
