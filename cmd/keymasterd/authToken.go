@@ -154,17 +154,21 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	if err != nil {
 		state.logger.Debugf(1, "%s", err)
 		displayData.ErrorMessage = "Unable to generate token"
-	} else {
-		state.logger.Printf(
-			"generated webauth CLI token for: %s, lifetime: %s\n",
-			authData.Username, state.Config.Base.WebauthTokenForCliLifetime)
-		displayData.Token = token
+		err := state.htmlTemplate.ExecuteTemplate(w, "authTokenPage",
+			displayData)
+		if err != nil {
+			logger.Printf("Failed to execute %s", err)
+		}
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
 	}
+	state.logger.Printf("generated webauth CLI token for: %s, lifetime: %s\n",
+		authData.Username, state.Config.Base.WebauthTokenForCliLifetime)
+	displayData.Token = token
 	err = state.htmlTemplate.ExecuteTemplate(w, "authTokenPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %s", err)
 		http.Error(w, "error", http.StatusInternalServerError)
-		return
 	}
 }
 
