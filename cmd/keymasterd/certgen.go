@@ -15,6 +15,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"golang.org/x/crypto/ssh"
 )
@@ -110,6 +111,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			authData.Username, targetUser)
 		return
 	}
+	targetUser = authData.Username
 	logger.Debugf(3, "auth succedded for %s", authData.Username)
 
 	if r.Method != "POST" {
@@ -150,7 +152,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	if val, ok := r.Form["type"]; ok {
 		certType = val[0]
 	}
-	logger.Printf("cert type =%s", certType)
+	logger.Debugf(1, "cert type =%s", certType)
 
 	switch certType {
 	case "ssh":
@@ -258,11 +260,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 
 	eventNotifier.PublishSSH(cert.Marshal())
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
+	clientIpAddress := util.GetRequestRealIp(r)
 
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+cert.Type()+"-cert.pub\"")
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", certString)
-	logger.Printf("Generated SSH Certifcate for %s. Serial:%d", targetUser, cert.Serial)
+	logger.Printf("Generated SSH Certificate for %s (from %s) . Serial: %d",
+		targetUser, clientIpAddress, cert.Serial)
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
@@ -351,72 +355,80 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		organizations = userGroups
 	}
 	var cert string
-	switch r.Method {
-	case "POST":
-		file, _, err := r.FormFile("pubkeyfile")
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Missing public key file")
-			return
-		}
-		defer file.Close()
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(file)
-
-		block, _ := pem.Decode(buf.Bytes())
-		if block == nil || block.Type != "PUBLIC KEY" {
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Invalid File, Unable to decode pem")
-			logger.Printf("invalid file, unable to decode pem")
-			return
-		}
-		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Cannot parse public key")
-			logger.Printf("Cannot parse public key")
-			return
-		}
-		validKey, err := certgen.ValidatePublicKeyStrength(userPub)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if !validKey {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
-			logger.Printf("Invalid File, Check Key strength/key type")
-			return
-		}
-		caCert, err := x509.ParseCertificate(state.caCertDer)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("Cannot parse CA Der data")
-			return
-		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-			keySigner, state.KerberosRealm, duration, groups, organizations)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("Cannot Generate x509cert")
-			return
-		}
-		eventNotifier.PublishX509(derCert)
-		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
-			Bytes: derCert}))
-
-	default:
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
-
 	}
+
+	file, _, err := r.FormFile("pubkeyfile")
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Missing public key file")
+		return
+	}
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(file)
+
+	block, _ := pem.Decode(buf.Bytes())
+	if block == nil || block.Type != "PUBLIC KEY" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid File, Unable to decode pem")
+		logger.Printf("invalid file, unable to decode pem")
+		return
+	}
+	userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Cannot parse public key")
+		logger.Printf("Cannot parse public key")
+		return
+	}
+	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if !validKey {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
+		logger.Printf("Invalid File, Check Key strength/key type")
+		return
+	}
+	caCert, err := x509.ParseCertificate(state.caCertDer)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot parse CA Der data")
+		return
+	}
+	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
+		keySigner, state.KerberosRealm, duration, groups, organizations)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot Generate x509cert")
+		return
+	}
+	parsedCert, err := x509.ParseCertificate(derCert)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot Parse Generated x509cert")
+		return
+	}
+
+	eventNotifier.PublishX509(derCert)
+	cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
+		Bytes: derCert}))
+
 	metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
+
+	clientIpAddress := util.GetRequestRealIp(r)
 
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	logger.Printf("Generated x509 Certifcate for %s", targetUser)
+	logger.Printf("Generated x509 Certificate for %s (from %s). Serial: %s",
+		targetUser, clientIpAddress, parsedCert.SerialNumber.String())
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
