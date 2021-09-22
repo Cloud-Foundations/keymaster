@@ -111,6 +111,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			authData.Username, targetUser)
 		return
 	}
+	targetUser = authData.Username
 	logger.Debugf(3, "auth succedded for %s", authData.Username)
 
 	if r.Method != "POST" {
