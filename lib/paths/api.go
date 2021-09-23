@@ -5,4 +5,5 @@ const (
 	RequestAwsRoleCertificatePath = "/aws/requestRoleCertificate/v1"
 	SendAuthDocument              = "/sendAuthDocument"
 	ShowAuthToken                 = "/showAuthToken"
+	VerifyAuthToken               = "/verifyAuthToken"
 )

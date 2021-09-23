@@ -210,7 +210,8 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +250,8 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +289,8 @@ func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +328,8 @@ func TestFailFullSigningX509GroupsBadLDAPNoGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +366,8 @@ func TestFailCertgenDurationTooLong(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}

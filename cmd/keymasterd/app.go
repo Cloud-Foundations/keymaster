@@ -67,9 +67,13 @@ const (
 	AuthTypeOkta2FA
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
+	AuthTypeWebauthForCLI
 )
 
-const AuthTypeAny = 0xFFFF
+const (
+	AuthTypeAny                   = 0xFFFF
+	maxWebauthForCliTokenLifetime = time.Hour * 24 * 366
+)
 
 type authInfo struct {
 	AuthType  int
@@ -428,6 +432,19 @@ func getClientType(r *http.Request) string {
 	}
 }
 
+// getUser will return the "user" value from the request form. If the username
+// contains invalid characters, the empty string is returned.
+func getUserFromRequest(r *http.Request) string {
+	user := r.Form.Get("user")
+	if user == "" {
+		return ""
+	}
+	if m, _ := regexp.MatchString("^[-.a-zA-Z0-9_+]+$", user); !m {
+		return ""
+	}
+	return user
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
@@ -462,8 +479,8 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
-	r *http.Request, statusCode int, loginDestination string,
-	errorMessage string) {
+	r *http.Request, statusCode int,
+	defaultUsername, loginDestination, errorMessage string) {
 	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
 		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
 		return
@@ -471,6 +488,7 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	w.WriteHeader(statusCode)
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
+		DefaultUsername:  defaultUsername,
 		ShowOauth2:       state.Config.Oauth2.Enabled,
 		LoginDestination: loginDestination,
 		ErrorMessage:     errorMessage}
@@ -512,40 +530,47 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				}
 				authCookie = cookie
 			}
-			loginDestnation := profilePath
-			if r.URL.Path == idpOpenIDCAuthorizationPath {
-				loginDestnation = r.URL.String()
+			loginDestination := profilePath
+			switch r.URL.Path {
+			case idpOpenIDCAuthorizationPath, paths.ShowAuthToken,
+				paths.SendAuthDocument:
+				loginDestination = r.URL.String()
 			}
 			if r.Method == "POST" {
 				/// assume it has been parsed... otherwise why are we here?
 				if r.Form.Get("login_destination") != "" {
-					loginDestnation = getLoginDestination(r)
+					loginDestination = getLoginDestination(r)
 				}
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, code, loginDestnation, message)
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
-				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, code, loginDestnation, "")
+				logger.Debugf(3,
+					"write failure state, error from getinfo authInfoJWT")
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, code, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
 			if (info.AuthType & AuthTypeFederated) == AuthTypeFederated {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, code, loginDestnation, message)
+			state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+				loginDestination, message)
 			return
 		default:
 			w.WriteHeader(code)
@@ -583,15 +608,24 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	return false
 }
 
-func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
-	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel)
+func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
+	username string, authlevel int) (string, error) {
+	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
+		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
-
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+		time.Second)
+	authCookie := http.Cookie{
+		Name:    authCookieName,
+		Value:   cookieVal,
+		Expires: expiration,
+		Path:    "/", HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	}
 	//use handler with original request.
 	if w != nil {
 		http.SetCookie(w, &authCookie)
@@ -897,7 +931,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	case "loginForm":
 		//fmt.Fprintf(w, "%s", loginFormText)
 		setSecurityHeaders(w)
-		state.writeHTMLLoginPage(w, r, 200, profilePath, "")
+		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1153,15 +1187,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 	return
 }
 
-///
 const logoutPath = "/api/v0/logout"
 
-func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 	//TODO: check for CSRF (simple way: makeit post only)
-
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -1170,17 +1203,31 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 		}
 		authCookie = cookie
 	}
-
+	var loginUser string
 	if authCookie != nil {
+		info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
+		if err == nil {
+			loginUser = info.Username
+		}
 		expiration := time.Unix(0, 0)
-		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
+		updatedAuthCookie := http.Cookie{
+			Name:     authCookieName,
+			Value:    "",
+			Expires:  expiration,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		}
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-	http.Redirect(w, r, "/", 302)
+	if loginUser == "" {
+		http.Redirect(w, r, "/", 302)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
+	}
 }
-
-///
 
 func (state *RuntimeState) _IsAdminUser(user string) (bool, error) {
 	for _, adminUser := range state.Config.Base.AdminUsers {
@@ -1489,8 +1536,15 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
+		if err := r.ParseForm(); err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError,
+				"Error parsing form")
+			return
+		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, 200, profilePath, "")
+			state.writeHTMLLoginPage(w, r, 200, getUserFromRequest(r),
+				profilePath, "")
 			return
 		}
 
@@ -1668,6 +1722,14 @@ func main() {
 	//               bitfield test.
 	serviceMux.HandleFunc(bootstrapOtpAuthPath,
 		runtimeState.BootstrapOtpAuthHandler)
+	if runtimeState.Config.Base.WebauthTokenForCliLifetime > 0 {
+		serviceMux.HandleFunc(paths.SendAuthDocument,
+			runtimeState.SendAuthDocumentHandler)
+		serviceMux.HandleFunc(paths.ShowAuthToken,
+			runtimeState.ShowAuthTokenHandler)
+		serviceMux.HandleFunc(paths.VerifyAuthToken,
+			runtimeState.VerifyAuthTokenHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
