@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -307,32 +308,34 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "key too weak")
 		return
 	}
-	certDER, err := state.generateRoleCert(pub, callerArn)
+	certDER, commonName, err := state.generateRoleCert(pub, callerArn)
 	if err != nil {
 		state.logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError,
 			"cannot generate certificate")
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(commonName)
 	pem.Encode(w, &pem.Block{Bytes: certDER, Type: "CERTIFICATE"})
 }
 
-// Returns certificate DER.
+// Returns certificate DER and CommonName.
 func (state *RuntimeState) generateRoleCert(publicKey interface{},
-	callerArn *parsedArnType) ([]byte, error) {
+	callerArn *parsedArnType) ([]byte, string, error) {
+	commonName := fmt.Sprintf("aws:iam:%s:%s",
+		callerArn.parsedArn.AccountID, callerArn.role)
 	subject := pkix.Name{
-		CommonName: fmt.Sprintf("aws:iam:%s:%s",
-			callerArn.parsedArn.AccountID, callerArn.role),
+		CommonName:   commonName,
 		Organization: []string{"keymaster"},
 	}
 	arnUrl, err := url.Parse(callerArn.parsedArn.String())
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	now := time.Now()
 	template := x509.Certificate{
@@ -348,8 +351,21 @@ func (state *RuntimeState) generateRoleCert(publicKey interface{},
 	}
 	caCert, err := x509.ParseCertificate(state.caCertDer)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return x509.CreateCertificate(rand.Reader, &template, caCert, publicKey,
-		state.Signer)
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, caCert,
+		publicKey, state.Signer)
+	if err != nil {
+		return nil, "", err
+	}
+	state.logger.Printf("Generated x509 Certificate for ARN=`%s`, expires=%s",
+		callerArn.parsedArn.String(), template.NotAfter)
+	metricLogCertDuration("x509", "granted",
+		float64(time.Until(template.NotAfter).Seconds()))
+	go func(username string, certType string) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certGenCounter.WithLabelValues(username, certType).Inc()
+	}(commonName, "x509")
+	return certDER, commonName, nil
 }
