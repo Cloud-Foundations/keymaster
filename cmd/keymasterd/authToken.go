@@ -136,7 +136,7 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	}
 	if err := r.ParseForm(); err != nil {
 		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
 			"Error parsing form")
 		return
 	}
@@ -152,14 +152,9 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	}
 	token, err := state.generateAuthJWT(authData.Username)
 	if err != nil {
-		state.logger.Debugf(1, "%s", err)
-		displayData.ErrorMessage = "Unable to generate token"
-		err := state.htmlTemplate.ExecuteTemplate(w, "authTokenPage",
-			displayData)
-		if err != nil {
-			logger.Printf("Failed to execute %s", err)
-		}
-		http.Error(w, "error", http.StatusInternalServerError)
+		state.logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"Unable to generate token")
 		return
 	}
 	state.logger.Printf("generated webauth CLI token for: %s, lifetime: %s\n",
@@ -167,8 +162,9 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	displayData.Token = token
 	err = state.htmlTemplate.ExecuteTemplate(w, "authTokenPage", displayData)
 	if err != nil {
-		logger.Printf("Failed to execute %s", err)
-		http.Error(w, "error", http.StatusInternalServerError)
+		logger.Printf("Failed to execute: %s\n", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"Error executing template")
 	}
 }
 

@@ -434,7 +434,7 @@ func getClientType(r *http.Request) string {
 
 // getUser will return the "user" value from the request form. If the username
 // contains invalid characters, the empty string is returned.
-func getUser(r *http.Request) string {
+func getUserFromRequest(r *http.Request) string {
 	user := r.Form.Get("user")
 	if user == "" {
 		return ""
@@ -544,7 +544,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, code, getUser(r),
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
 					loginDestination, message)
 				return
 			}
@@ -552,12 +552,12 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 			if err != nil {
 				logger.Debugf(3,
 					"write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, code, getUser(r),
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
 					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, code, getUser(r),
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
 					loginDestination, "")
 				return
 			}
@@ -569,8 +569,8 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, code, getUser(r), loginDestination,
-				message)
+			state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+				loginDestination, message)
 			return
 		default:
 			w.WriteHeader(code)
@@ -1543,7 +1543,8 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, 200, getUser(r), profilePath, "")
+			state.writeHTMLLoginPage(w, r, 200, getUserFromRequest(r),
+				profilePath, "")
 			return
 		}
 
