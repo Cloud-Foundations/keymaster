@@ -358,9 +358,14 @@ func (state *RuntimeState) generateRoleCert(publicKey interface{},
 	if err != nil {
 		return nil, "", err
 	}
-	state.logger.Debugf(1, "generateRoleCert: ARN=`%s`, expires=%s",
+	state.logger.Printf("Generated x509 Certificate for ARN=`%s`, expires=%s",
 		callerArn.parsedArn.String(), template.NotAfter)
 	metricLogCertDuration("x509", "granted",
 		float64(time.Until(template.NotAfter).Seconds()))
+	go func(username string, certType string) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certGenCounter.WithLabelValues(username, certType).Inc()
+	}(commonName, "x509")
 	return certDER, commonName, nil
 }
