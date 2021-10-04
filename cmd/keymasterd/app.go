@@ -445,6 +445,14 @@ func getUserFromRequest(r *http.Request) string {
 	return user
 }
 
+func (ai *authInfo) expires() string {
+	if ai.ExpiresAt.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("at: %s (in: %s)",
+		ai.ExpiresAt, time.Until(ai.ExpiresAt).Round(time.Second).String())
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
@@ -1375,6 +1383,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	displayData := profilePageTemplateData{
 		Username:             assumedUser,
 		AuthUsername:         authData.Username,
+		SessionExpires:       authData.expires(),
 		Title:                "Keymaster User Profile",
 		ShowU2F:              showU2F,
 		JSSources:            JSSources,

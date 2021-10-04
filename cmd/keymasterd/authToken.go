@@ -147,8 +147,9 @@ func (state *RuntimeState) ShowAuthTokenHandler(w http.ResponseWriter,
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	displayData := authCodePageTemplateData{
-		Title:        "Keymaster CLI Token Display",
-		AuthUsername: authData.Username,
+		Title:          "Keymaster CLI Token Display",
+		AuthUsername:   authData.Username,
+		SessionExpires: authData.expires(),
 	}
 	token, err := state.generateAuthJWT(authData.Username)
 	if err != nil {

@@ -9,10 +9,17 @@ const headerTemplateText = `
 {{define "header"}}
 <div class="header">
 <table style="width:100%;border-collapse: separate;border-spacing: 0;">
-<tr>
-<th style="text-align:left;"> <div class="header_extra">{{template "header_extra"}}</div></th>
-<th style="text-align:right;padding-right: .5em;">  {{if .AuthUsername}} <b> {{.AuthUsername}} </b> <a href="/api/v0/logout" >Logout </a> {{end}}</th>
-</tr>
+  <tr>
+    <th style="text-align:left;"> <div class="header_extra">
+      {{template "header_extra"}}</div>
+    </th>
+    <th style="text-align:center">
+      {{if .SessionExpires}} Session expires {{.SessionExpires}}{{end}}
+    </th>
+    <th style="text-align:right;padding-right: .5em;">
+      {{if .AuthUsername}} <b> {{.AuthUsername}} </b><a href="/api/v0/logout">Logout</a>{{end}}
+    </th>
+  </tr>
 </table>
 </div>
 
@@ -25,7 +32,7 @@ const footerTemplateText = `
 <div class="footer">
 <hr>
 <center>
-Copright 2017-2019 Symantec Corporation; 2019-2020 Cloud-Foundations.org.
+Copright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
 {{template "footer_extra"}}
 </center>
 </div>
@@ -35,6 +42,7 @@ Copright 2017-2019 Symantec Corporation; 2019-2020 Cloud-Foundations.org.
 type loginPageTemplateData struct {
 	Title            string
 	AuthUsername     string
+	SessionExpires   string
 	DefaultUsername  string
 	JSSources        []string
 	ShowOauth2       bool
@@ -63,7 +71,7 @@ const loginFormText = `
 	{{end}}
 	{{if .ShowOauth2}}
 	<p>
-	<a href="/auth/oauth2/login"> Oauth2 Login </a>
+	<a href="/auth/oauth2/login">Oauth2 Login</a>
 	</p>
         {{end}}
 	{{template "login_pre_password" .}}
@@ -90,6 +98,7 @@ const loginFormText = `
 type secondFactorAuthTemplateData struct {
 	Title            string
 	AuthUsername     string
+	SessionExpires   string
 	JSSources        []string
 	ShowBootstrapOTP bool
 	ShowVIP          bool
@@ -205,10 +214,11 @@ const secondFactorAuthFormText = `
 `
 
 type usersPageTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	Users        []string
+	Title          string
+	AuthUsername   string
+	SessionExpires string
+	JSSources      []string
+	Users          []string
 }
 
 const usersHTML = `
@@ -281,6 +291,7 @@ type profilePageTemplateData struct {
 	Title                string
 	AuthUsername         string
 	Username             string
+	SessionExpires       string
 	JSSources            []string
 	BootstrapOTP         *bootstrapOtpTemplateData
 	ShowU2F              bool
@@ -443,6 +454,7 @@ const profileHTML = `
 type newTOTPPageTemplateData struct {
 	Title           string
 	AuthUsername    string
+	SessionExpires  string
 	JSSources       []string
 	ErrorMessage    string
 	TOTPBase64Image template.HTML
@@ -502,6 +514,7 @@ const newTOTPHTML = `
 type newBootstrapOTPPPageTemplateData struct {
 	Title             string
 	AuthUsername      string
+	SessionExpires    string
 	JSSources         []string
 	ErrorMessage      string
 	Username          string
@@ -555,11 +568,12 @@ const newBootstrapOTPPHTML = `
 `
 
 type authCodePageTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	ErrorMessage string
-	Token        string
+	Title          string
+	AuthUsername   string
+	SessionExpires string
+	JSSources      []string
+	ErrorMessage   string
+	Token          string
 }
 
 const showAuthTokenHTML = `
