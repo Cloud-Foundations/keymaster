@@ -16,47 +16,56 @@ const redirCookieName = "oauth2_redir"
 
 const oauth2LoginBeginPath = "/auth/oauth2/login"
 
-func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWriter, r *http.Request) {
-
+func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(
+	w http.ResponseWriter, r *http.Request) {
 	if state.Config.Oauth2.Config == nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println("asking for oauth2, but it is not defined")
 		return
 	}
 	if !state.Config.Oauth2.Enabled {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Oauth2 is not enabled in for this system")
 		logger.Println("asking for oauth2, but it is not enabled")
 		return
 	}
 	cookieVal, err := genRandomString()
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
-
 	// we have to create new context and set redirector...
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsRedirCookie) * time.Second)
-
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsRedirCookie) *
+		time.Second)
 	stateString, err := genRandomString()
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
-
-	cookie := http.Cookie{Name: redirCookieName, Value: cookieVal,
-		Expires: expiration, Path: "/", HttpOnly: true}
+	cookie := http.Cookie{
+		Name:     redirCookieName,
+		Value:    cookieVal,
+		Expires:  expiration,
+		Path:     "/",
+		HttpOnly: true,
+	}
 	http.SetCookie(w, &cookie)
-
 	pending := pendingAuth2Request{
-		ExpiresAt: expiration,
-		state:     stateString,
-		ctx:       context.Background()}
+		ctx:              context.Background(),
+		ExpiresAt:        expiration,
+		loginDestination: r.FormValue("login_destination"),
+		state:            stateString,
+	}
 	state.Mutex.Lock()
 	state.pendingOauth2[cookieVal] = pending
 	state.Mutex.Unlock()
-	http.Redirect(w, r, state.Config.Oauth2.Config.AuthCodeURL(stateString), http.StatusFound)
+	http.Redirect(w, r, state.Config.Oauth2.Config.AuthCodeURL(stateString),
+		http.StatusFound)
 }
 
 func httpGet(client *http.Client, url string) ([]byte, error) {
@@ -188,6 +197,10 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	state.Mutex.Unlock()
 
 	eventNotifier.PublishWebLoginEvent(username)
-	//and redirect to profile page
-	http.Redirect(w, r, profilePath, 302)
+	loginDestination := pending.loginDestination
+	if loginDestination == "" {
+		// Nowhere else to go: go to profile page.
+		loginDestination = profilePath
+	}
+	http.Redirect(w, r, loginDestination, 302)
 }

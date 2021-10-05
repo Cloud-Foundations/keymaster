@@ -144,9 +144,10 @@ type localUserData struct {
 }
 
 type pendingAuth2Request struct {
-	ExpiresAt time.Time
-	state     string
-	ctx       context.Context
+	ctx              context.Context
+	ExpiresAt        time.Time
+	loginDestination string
+	state            string
 }
 
 type pushPollTransaction struct {

@@ -63,7 +63,14 @@ const loginFormText = `
 	{{end}}
 	{{if .ShowOauth2}}
 	<p>
-	<a href="/auth/oauth2/login"> Oauth2 Login </a>
+    {{if .LoginDestination}}
+    <form enctype="application/x-www-form-urlencoded" action="/auth/oauth2/login" method="post">
+	<INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+        <p><input type="submit" value="Oauth2 Login" /></p>
+    </form>
+    {{else}}
+	<a href="/auth/oauth2/login">Oauth2 Login</a>
+    {{end}}
 	</p>
         {{end}}
 	{{template "login_pre_password" .}}
