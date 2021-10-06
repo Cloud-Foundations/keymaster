@@ -58,7 +58,7 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(
 	pending := pendingAuth2Request{
 		ctx:              context.Background(),
 		ExpiresAt:        expiration,
-		loginDestination: r.FormValue("login_destination"),
+		loginDestination: getLoginDestination(r),
 		state:            stateString,
 	}
 	state.Mutex.Lock()
