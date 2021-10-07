@@ -11,10 +11,11 @@ import (
 	"golang.org/x/net/context"
 )
 
-const maxAgeSecondsRedirCookie = 120
-const redirCookieName = "oauth2_redir"
-
-const oauth2LoginBeginPath = "/auth/oauth2/login"
+const (
+	maxAgeSecondsRedirCookie = 120
+	redirCookieName          = "oauth2_redir"
+	oauth2LoginBeginPath     = "/auth/oauth2/login"
+)
 
 func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(
 	w http.ResponseWriter, r *http.Request) {
@@ -73,45 +74,43 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	defer r.Body.Close()
-
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}
-
 	if r.StatusCode >= 300 {
 		return nil, fmt.Errorf(string(body))
 	}
-
 	logger.Debugf(8, "HTTP GET %s: %s %s", url, r.Status, string(body))
-
 	return body, nil
 }
 
-func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *http.Request) {
-
+func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.Config.Oauth2.Config == nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println("asking for oauth2, but it is not defined")
 		return
 	}
 	if !state.Config.Oauth2.Enabled {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Oauth2 is not enabled in for this system")
 		logger.Println("asking for oauth2, but it is not enabled")
 		return
 	}
-
 	redirCookie, err := r.Cookie(redirCookieName)
 	if err != nil {
 		if err == http.ErrNoCookie {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing setup cookie!")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Missing setup cookie!")
 			logger.Println(err)
 			return
 		}
 		// TODO: this is probably a user error? send back to oath2 login path?
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
@@ -121,34 +120,33 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	state.Mutex.Unlock()
 	if !ok {
 		// clear cookie here!!!!
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid setup cookie!")
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid setup cookie!")
 		logger.Println(err)
 		return
 	}
-
 	if r.URL.Query().Get("state") != pending.state {
 		logger.Printf("state does not match")
 		http.Error(w, "state did not match", http.StatusBadRequest)
 		return
 	}
-	//if Debug {
-	//logger.Printf("req : %+v", r)
-	//}
-	oauth2Token, err := state.Config.Oauth2.Config.Exchange(pending.ctx, r.URL.Query().Get("code"))
+	oauth2Token, err := state.Config.Oauth2.Config.Exchange(pending.ctx,
+		r.URL.Query().Get("code"))
 	if err != nil {
 		logger.Printf("failed to get token: ctx: %+v", pending.ctx)
-		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to exchange token: "+err.Error(),
+			http.StatusInternalServerError)
 		return
 	}
 	client := state.Config.Oauth2.Config.Client(pending.ctx, oauth2Token)
-	//client.Get("...")
 	body, err := httpGet(client, state.Config.Oauth2.UserinfoUrl)
 	if err != nil {
-		logger.Printf("fail to fetch %s (%s) ", state.Config.Oauth2.UserinfoUrl, err.Error())
-		http.Error(w, "Failed to get userinfo from url: "+err.Error(), http.StatusInternalServerError)
+		logger.Printf("fail to fetch %s (%s) ", state.Config.Oauth2.UserinfoUrl,
+			err.Error())
+		http.Error(w, "Failed to get userinfo from url: "+err.Error(),
+			http.StatusInternalServerError)
 		return
 	}
-
 	var data struct {
 		Name        string              `json:"name"`
 		DisplayName string              `json:"display_name"`
@@ -157,45 +155,41 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		Email       string              `json:"email"`
 		Attributes  map[string][]string `json:"attributes"`
 	}
-
 	logger.Debugf(3, "Userinfo body:'%s'", string(body))
 	err = json.Unmarshal(body, &data)
 	if err != nil {
 		logger.Printf("failed to unmarshall userinfo to fetch %s ", body)
-		http.Error(w, "Failed to get unmarshall userinfo: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to get unmarshall userinfo: "+err.Error(),
+			http.StatusInternalServerError)
 		return
 	}
-
 	// The Name field could also be useful
 	logger.Debugf(2, "%+v", data)
-
 	// Check if name is there..
-
-	// TODO: we need a more robust way to get the username and to add some filters. This
-	// mechanism is ok for 0.2 but not for 0.3.
+	// TODO: we need a more robust way to get the username and to add some
+	// filters. This mechanism is ok for 0.2 but not for 0.3.
 	username := data.Login
 	if username == "" {
 		components := strings.Split(data.Email, "@")
 		if len(components[0]) < 1 {
-			http.Error(w, "Email from userinfo is invalid: ", http.StatusInternalServerError)
+			http.Error(w, "Email from userinfo is invalid: ",
+				http.StatusInternalServerError)
 			return
 		}
 		username = strings.ToLower(components[0])
 	}
-
-	//Make new auth cookie
+	// Make new auth cookie
 	_, err = state.setNewAuthCookie(w, username, AuthTypeFederated)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError,
+			"error internal")
 		logger.Println(err)
 		return
 	}
-
-	// delete peding cookie
+	// Delete pending cookie
 	state.Mutex.Lock()
 	delete(state.pendingOauth2, index)
 	state.Mutex.Unlock()
-
 	eventNotifier.PublishWebLoginEvent(username)
 	loginDestination := pending.loginDestination
 	if loginDestination == "" {
