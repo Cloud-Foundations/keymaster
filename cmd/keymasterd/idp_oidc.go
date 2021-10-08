@@ -358,7 +358,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	clientID := r.Form.Get("client_id")
 	if clientID == "" {
-		logger.Debugf(1, "empty client_id abourting")
+		logger.Debugf(1, "empty client_id aborting")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Empty cleint_id for Auth Handler")
 		return
 	}
