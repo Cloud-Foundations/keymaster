@@ -993,7 +993,7 @@ func genRandomString() (string, error) {
 // // is interpreted as: use whatever protocol you think is OK
 func getLoginDestination(r *http.Request) string {
 	loginDestination := profilePath
-	if r.Form.Get("login_destination") != "" {
+	if r.FormValue("login_destination") != "" {
 		inboundLoginDestination := r.Form.Get("login_destination")
 		if strings.HasPrefix(inboundLoginDestination, "/") &&
 			!strings.HasPrefix(inboundLoginDestination, "//") {

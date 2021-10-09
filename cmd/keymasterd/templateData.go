@@ -32,7 +32,7 @@ const footerTemplateText = `
 <div class="footer">
 <hr>
 <center>
-Copright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
+Copyright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
 {{template "footer_extra"}}
 </center>
 </div>
@@ -71,16 +71,14 @@ const loginFormText = `
 	{{end}}
 	{{if .ShowOauth2}}
 	<p>
-    {{if .LoginDestination}}
     <form enctype="application/x-www-form-urlencoded" action="/auth/oauth2/login" method="post">
+    {{if .LoginDestination}}
 	<INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
-        <p><input type="submit" value="Oauth2 Login" /></p>
-    </form>
-    {{else}}
-	<a href="/auth/oauth2/login">Oauth2 Login</a>
     {{end}}
+    <p><input type="submit" value="Oauth2 Login" /></p>
+    </form>
 	</p>
-        {{end}}
+    {{end}}
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             {{if .DefaultUsername}}
