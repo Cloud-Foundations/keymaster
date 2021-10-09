@@ -446,12 +446,11 @@ func getUserFromRequest(r *http.Request) string {
 	return user
 }
 
-func (ai *authInfo) expires() string {
+func (ai *authInfo) expires() int64 {
 	if ai.ExpiresAt.IsZero() {
-		return ""
+		return 0
 	}
-	return fmt.Sprintf("at: %s (in: %s)",
-		ai.ExpiresAt, time.Until(ai.ExpiresAt).Round(time.Second).String())
+	return ai.ExpiresAt.Unix()
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
@@ -1686,6 +1685,7 @@ func main() {
 			"static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/",
 		http.FileServer(http.Dir(staticFilesPath))))
+	registerJavaScriptHandlers(serviceMux)
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
