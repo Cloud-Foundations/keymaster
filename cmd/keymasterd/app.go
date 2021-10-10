@@ -1685,7 +1685,8 @@ func main() {
 			"static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/",
 		http.FileServer(http.Dir(staticFilesPath))))
-	registerJavaScriptHandlers(serviceMux)
+	serviceMux.Handle("/static/compiled/",
+		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile())))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
