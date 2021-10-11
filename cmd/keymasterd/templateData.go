@@ -352,10 +352,11 @@ const profileHTML = `
       <li><a href="/users/">Users</a></li>
     {{end}}
     </ul>
-    <div id="bootstrap-otp">
     {{if .BootstrapOTP}}
+    <div id="bootstrap-otp">
     Bootstrap OTP fingerprint: <code>{{printf "%x" .BootstrapOTP.Fingerprint}}</code>
     expires at: {{.BootstrapOTP.ExpiresAt}}<p>
+    </div>
     {{end}}
     <div id="u2f-tokens">
     <h3>U2F</h3>
