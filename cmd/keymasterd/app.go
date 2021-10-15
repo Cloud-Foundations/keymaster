@@ -1343,8 +1343,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	if fromCache {
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
-
-	JSSources := []string{"/static/jquery-3.5.1.min.js"}
+	JSSources := []string{
+		"/static/jquery-3.5.1.min.js",
+		"/static/compiled/session.js",
+	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
 		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")

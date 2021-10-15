@@ -11,7 +11,6 @@ const headerTemplateText = `
 <section
  id="session-data"
  date="{{.SessionExpires}}"
- user="{{.AuthUsername}}"
 ></section>
 {{end}}
 <div class="header">
@@ -22,11 +21,7 @@ const headerTemplateText = `
     </th>
     <th style="text-align:right;padding-right: .5em;">
       {{if .AuthUsername}}
-      {{if .SessionExpires}}
-      <script type="text/javascript" src="/static/compiled/session.js"></script>
-      {{else}}
-      <b>{{.AuthUsername}}</b>
-      {{end}}
+      <b id="authUsername">{{.AuthUsername}}</b>
       &nbsp;&nbsp;<a href="/api/v0/logout">Logout</a>
       {{end}}
     </th>

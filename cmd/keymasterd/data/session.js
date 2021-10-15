@@ -1,4 +1,10 @@
-user = document.getElementById("session-data").getAttribute("user");
-date = parseInt(document.getElementById("session-data").getAttribute("date"));
-expirationTime = new Date(date*1000);
-document.write("<b title=\"Session expires: ", expirationTime.toString(), "\">", user, "</b>");
+function showSessionExpiration() {
+    date = parseInt(document.getElementById("session-data").getAttribute("date"));
+    expirationTime = new Date(date*1000);
+    titleText = "Session expires: "+expirationTime.toString();
+    authUsername.setAttribute("title", titleText);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    showSessionExpiration();
+});
