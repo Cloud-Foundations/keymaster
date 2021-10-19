@@ -86,7 +86,7 @@ func (s state) writeActivity(writer io.Writer, usernames []string,
 	for _, username := range usernames {
 		writeUser(writer, username, eventsMap[username], time.Now(), totals)
 	}
-	totals.writeHtml(writer, "<b>ALL USERS</b>")
+	totals.writeHtml(writer, fmt.Sprintf("<b>ALL %d USERS</b>", len(usernames)))
 	fmt.Fprintln(writer, "</table>")
 }
 
