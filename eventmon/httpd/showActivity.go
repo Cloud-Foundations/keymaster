@@ -116,15 +116,13 @@ func (s state) writeSPLoginActivity(writer io.Writer,
 	}
 	sort.Sort(sort.Reverse(pairs))
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
-	fmt.Fprintln(writer, "  <tr>")
-	fmt.Fprintln(writer, "    <th>Service Provider URL</th>")
-	fmt.Fprintln(writer, "    <th>Login Count</th>")
-	fmt.Fprintln(writer, "  </tr>")
+	tw, _ := html.NewTableWriter(writer, true,
+		"Service Provider URL",
+		"Login Count")
 	for _, pair := range pairs {
-		fmt.Fprintln(writer, "  <tr>")
-		fmt.Fprintf(writer, "    <td>%s</td>\n", pair.url)
-		fmt.Fprintf(writer, "    <td>%d</td>\n", pair.count)
-		fmt.Fprintln(writer, "  </tr>")
+		tw.WriteRow("", "",
+			pair.url,
+			fmt.Sprintf("%d", pair.count))
 	}
 	fmt.Fprintln(writer, "</table>")
 }
