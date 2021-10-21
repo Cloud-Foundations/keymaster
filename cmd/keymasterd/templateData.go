@@ -7,12 +7,25 @@ import (
 
 const headerTemplateText = `
 {{define "header"}}
+{{if .SessionExpires}}
+<section
+ id="session-data"
+ date="{{.SessionExpires}}"
+></section>
+{{end}}
 <div class="header">
 <table style="width:100%;border-collapse: separate;border-spacing: 0;">
-<tr>
-<th style="text-align:left;"> <div class="header_extra">{{template "header_extra"}}</div></th>
-<th style="text-align:right;padding-right: .5em;">  {{if .AuthUsername}} <b> {{.AuthUsername}} </b> <a href="/api/v0/logout" >Logout </a> {{end}}</th>
-</tr>
+  <tr>
+    <th style="text-align:left;"> <div class="header_extra">
+      {{template "header_extra"}}</div>
+    </th>
+    <th style="text-align:right;padding-right: .5em;">
+      {{if .AuthUsername}}
+      <b id="authUsername">{{.AuthUsername}}</b>
+      &nbsp;&nbsp;<a href="/api/v0/logout">Logout</a>
+      {{end}}
+    </th>
+  </tr>
 </table>
 </div>
 
@@ -35,6 +48,7 @@ Copyright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
 type loginPageTemplateData struct {
 	Title            string
 	AuthUsername     string
+	SessionExpires   int64
 	DefaultUsername  string
 	JSSources        []string
 	ShowOauth2       bool
@@ -95,6 +109,7 @@ const loginFormText = `
 type secondFactorAuthTemplateData struct {
 	Title            string
 	AuthUsername     string
+	SessionExpires   int64
 	JSSources        []string
 	ShowBootstrapOTP bool
 	ShowVIP          bool
@@ -210,10 +225,11 @@ const secondFactorAuthFormText = `
 `
 
 type usersPageTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	Users        []string
+	Title          string
+	AuthUsername   string
+	SessionExpires int64
+	JSSources      []string
+	Users          []string
 }
 
 const usersHTML = `
@@ -286,6 +302,7 @@ type profilePageTemplateData struct {
 	Title                string
 	AuthUsername         string
 	Username             string
+	SessionExpires       int64
 	JSSources            []string
 	BootstrapOTP         *bootstrapOtpTemplateData
 	ShowU2F              bool
@@ -330,10 +347,11 @@ const profileHTML = `
       <li><a href="/users/">Users</a></li>
     {{end}}
     </ul>
-    <div id="bootstrap-otp">
     {{if .BootstrapOTP}}
+    <div id="bootstrap-otp">
     Bootstrap OTP fingerprint: <code>{{printf "%x" .BootstrapOTP.Fingerprint}}</code>
     expires at: {{.BootstrapOTP.ExpiresAt}}<p>
+    </div>
     {{end}}
     <div id="u2f-tokens">
     <h3>U2F</h3>
@@ -448,6 +466,7 @@ const profileHTML = `
 type newTOTPPageTemplateData struct {
 	Title           string
 	AuthUsername    string
+	SessionExpires  int64
 	JSSources       []string
 	ErrorMessage    string
 	TOTPBase64Image template.HTML
@@ -507,6 +526,7 @@ const newTOTPHTML = `
 type newBootstrapOTPPPageTemplateData struct {
 	Title             string
 	AuthUsername      string
+	SessionExpires    int64
 	JSSources         []string
 	ErrorMessage      string
 	Username          string
@@ -560,11 +580,12 @@ const newBootstrapOTPPHTML = `
 `
 
 type authCodePageTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	ErrorMessage string
-	Token        string
+	Title          string
+	AuthUsername   string
+	SessionExpires int64
+	JSSources      []string
+	ErrorMessage   string
+	Token          string
 }
 
 const showAuthTokenHTML = `

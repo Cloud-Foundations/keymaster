@@ -89,15 +89,15 @@ func TestAuthNoTLS(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	w := &instrumentedwriter.LoggingWriter{ResponseWriter: recorder}
 	req := httptest.NewRequest("GET", usersPath, nil)
-	errorSent, username := state.sendFailureToClientIfNonAdmin(w, req)
+	errorSent, authData := state.sendFailureToClientIfNonAdmin(w, req)
 	if errorSent {
 		return
 	}
 	if recorder.Result().StatusCode != http.StatusUnauthorized {
 		t.Errorf("unexpected status code: %d", recorder.Result().StatusCode)
 	}
-	if username != "" {
-		t.Errorf("expected no username, got: %s", username)
+	if authData.Username != "" {
+		t.Errorf("expected no username, got: %s", authData.Username)
 	}
 }
 
@@ -112,15 +112,15 @@ func TestAuthCertAdminUser(t *testing.T) {
 	req := httptest.NewRequest("GET", usersPath, nil)
 	req.TLS, err = testMakeConnectionState("testdata/alice.pem",
 		"testdata/KeymasterCA.pem")
-	errorSent, username := state.sendFailureToClientIfNonAdmin(w, req)
+	errorSent, authData := state.sendFailureToClientIfNonAdmin(w, req)
 	if errorSent {
 		t.Fatal("error was sent")
 	}
 	if recorder.Result().StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status code: %d", recorder.Result().StatusCode)
 	}
-	if username != "alice" {
-		t.Fatalf("unexpected username: alice, got: %s", username)
+	if authData.Username != "alice" {
+		t.Fatalf("unexpected username: alice, got: %s", authData.Username)
 	}
 }
 
@@ -135,15 +135,15 @@ func TestAuthCertPlainUser(t *testing.T) {
 	req := httptest.NewRequest("GET", usersPath, nil)
 	req.TLS, err = testMakeConnectionState("testdata/bob.pem",
 		"testdata/KeymasterCA.pem")
-	errorSent, username := state.sendFailureToClientIfNonAdmin(w, req)
+	errorSent, authData := state.sendFailureToClientIfNonAdmin(w, req)
 	if !errorSent {
 		t.Error("no error was sent")
 	}
 	if recorder.Result().StatusCode != http.StatusUnauthorized {
 		t.Errorf("unexpected status code: %d", recorder.Result().StatusCode)
 	}
-	if username != "" {
-		t.Errorf("expected no username, got: %s", username)
+	if authData != nil {
+		t.Errorf("expected no authData, got: %v", authData)
 	}
 }
 
@@ -158,15 +158,15 @@ func TestAuthCertFakeAdminUser(t *testing.T) {
 	req := httptest.NewRequest("GET", usersPath, nil)
 	req.TLS, err = testMakeConnectionState("testdata/alice-fake.pem",
 		"testdata/AdminCA.pem")
-	errorSent, username := state.sendFailureToClientIfNonAdmin(w, req)
+	errorSent, authData := state.sendFailureToClientIfNonAdmin(w, req)
 	if !errorSent {
 		t.Error("no error was sent")
 	}
 	if recorder.Result().StatusCode != http.StatusUnauthorized {
 		t.Errorf("unexpected status code: %d", recorder.Result().StatusCode)
 	}
-	if username != "" {
-		t.Errorf("expected no username, got: %s", username)
+	if authData != nil {
+		t.Errorf("expected no authData, got: %v", authData)
 	}
 }
 
