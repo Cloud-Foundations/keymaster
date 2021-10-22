@@ -73,20 +73,19 @@ func (s state) writeActivity(writer io.Writer, usernames []string,
 	fmt.Fprintln(writer,
 		"SPlogin/SSH/Web/X509 Password/VIPotp/VIPpush/U2F/TOTP")
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
-	fmt.Fprintln(writer, "  <tr>")
-	fmt.Fprintln(writer, "    <th>Username</th>")
-	fmt.Fprintln(writer, "    <th>Last Day</th>")
-	fmt.Fprintln(writer, "    <th>Last Week</th>")
-	fmt.Fprintln(writer, "    <th>Last Month</th>")
-	fmt.Fprintln(writer, "    <th>Min Lifetime</th>")
-	fmt.Fprintln(writer, "    <th>Med Lifetime</th>")
-	fmt.Fprintln(writer, "    <th>Max Lifetime</th>")
-	fmt.Fprintln(writer, "  </tr>")
+	tw, _ := html.NewTableWriter(writer, true,
+		"Username",
+		"Last Day",
+		"Last Week",
+		"Last Month",
+		"Min Lifetime",
+		"Med Lifetime",
+		"Max Lifetime")
 	totals := &statsType{minLifetime: durationMonth * 120, maxLifetime: -1}
 	for _, username := range usernames {
-		writeUser(writer, username, eventsMap[username], time.Now(), totals)
+		writeUser(tw, username, eventsMap[username], time.Now(), totals)
 	}
-	totals.writeHtml(writer, "<b>ALL USERS</b>")
+	totals.writeHtml(tw, fmt.Sprintf("<b>ALL %d USERS</b>", len(usernames)))
 	fmt.Fprintln(writer, "</table>")
 }
 
@@ -117,20 +116,18 @@ func (s state) writeSPLoginActivity(writer io.Writer,
 	}
 	sort.Sort(sort.Reverse(pairs))
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
-	fmt.Fprintln(writer, "  <tr>")
-	fmt.Fprintln(writer, "    <th>Service Provider URL</th>")
-	fmt.Fprintln(writer, "    <th>Login Count</th>")
-	fmt.Fprintln(writer, "  </tr>")
+	tw, _ := html.NewTableWriter(writer, true,
+		"Service Provider URL",
+		"Login Count")
 	for _, pair := range pairs {
-		fmt.Fprintln(writer, "  <tr>")
-		fmt.Fprintf(writer, "    <td>%s</td>\n", pair.url)
-		fmt.Fprintf(writer, "    <td>%d</td>\n", pair.count)
-		fmt.Fprintln(writer, "  </tr>")
+		tw.WriteRow("", "",
+			pair.url,
+			fmt.Sprintf("%d", pair.count))
 	}
 	fmt.Fprintln(writer, "</table>")
 }
 
-func writeUser(writer io.Writer, username string,
+func writeUser(tw *html.TableWriter, username string,
 	events []eventrecorder.EventType, now time.Time, totals *statsType) {
 	stats := &statsType{
 		lifetimes:   make([]int, 0, len(events)),
@@ -171,7 +168,7 @@ func writeUser(writer io.Writer, username string,
 			totals.countOverLastMonth.increment(event)
 		}
 	}
-	stats.writeHtml(writer, username)
+	stats.writeHtml(tw, username)
 }
 
 func (counter *counterType) increment(event eventrecorder.EventType) {
@@ -239,25 +236,21 @@ type statsType struct {
 	maxLifetime        time.Duration
 }
 
-func (stats *statsType) writeHtml(writer io.Writer, username string) {
-	fmt.Fprintf(writer, "  <tr>\n")
-	fmt.Fprintf(writer, "    <td>%s</td>\n", username)
-	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastDay.string())
-	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastWeek.string())
-	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastMonth.string())
+func (stats *statsType) writeHtml(tw *html.TableWriter, username string) {
+	var minLifetime, medLifetime, maxLifetime string
 	if len(stats.lifetimes) > 0 {
+		minLifetime = format.Duration(stats.minLifetime)
 		sort.Ints(stats.lifetimes)
-		medLifetime := time.Duration(
-			stats.lifetimes[len(stats.lifetimes)/2]) * time.Second
-		fmt.Fprintf(writer, "    <td>%s</td>\n",
-			format.Duration(stats.minLifetime))
-		fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(medLifetime))
-		fmt.Fprintf(writer, "    <td>%s</td>\n",
-			format.Duration(stats.maxLifetime))
-	} else {
-		fmt.Fprintln(writer, "    <td></td>")
-		fmt.Fprintln(writer, "    <td></td>")
-		fmt.Fprintln(writer, "    <td></td>")
+		medLifetime = format.Duration(time.Duration(
+			stats.lifetimes[len(stats.lifetimes)/2]) * time.Second)
+		maxLifetime = format.Duration(stats.maxLifetime)
 	}
-	fmt.Fprintf(writer, "  </tr>\n")
+	tw.WriteRow("", "",
+		username,
+		stats.countOverLastDay.string(),
+		stats.countOverLastWeek.string(),
+		stats.countOverLastMonth.string(),
+		minLifetime,
+		medLifetime,
+		maxLifetime)
 }
