@@ -19,11 +19,12 @@ const generateBoostrapOTPPath = "/admin/newBoostrapOTP"
 const defaultBootstrapOTPDuration = 6 * time.Hour
 const maximumBootstrapOTPDuration = 24 * time.Hour
 
-// Returns (true, "") if an error was sent, (false, adminUser) if an admin user.
+// Returns (true, nil) if an error was sent, (false, *authInfo) if an admin
+// user.
 func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
-	r *http.Request) (bool, string) {
+	r *http.Request) (bool, *authInfo) {
 	if state.sendFailureToClientIfLocked(w, r) {
-		return true, ""
+		return true, nil
 	}
 	// TODO: probably this should be just u2f and AuthTypeKeymasterX509... but
 	// probably we want also to allow configurability for this. Leaving
@@ -32,15 +33,15 @@ func (state *RuntimeState) sendFailureToClientIfNonAdmin(w http.ResponseWriter,
 		state.getRequiredWebUIAuthLevel()|AuthTypeKeymasterX509)
 	if err != nil {
 		state.logger.Debugf(1, "%v", err)
-		return true, ""
+		return true, nil
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	if !state.IsAdminUser(authData.Username) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"Not an admin user")
-		return true, ""
+		return true, nil
 	}
-	return false, authData.Username
+	return false, authData
 }
 
 func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
@@ -84,23 +85,27 @@ func (state *RuntimeState) ensurePostAndGetUsername(w http.ResponseWriter,
 func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 	r *http.Request) {
 	state.logger.Debugf(3, "Top of usersHandler r=%+v", r)
-	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
-	if failure || authUser == "" {
+	failure, authData := state.sendFailureToClientIfNonAdmin(w, r)
+	if failure || authData == nil {
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	users, _, err := state.GetUsers()
 	if err != nil {
 		state.logger.Printf("Getting users error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	JSSources := []string{"/static/jquery-3.5.1.min.js"}
+	JSSources := []string{
+		"/static/jquery-3.5.1.min.js",
+		"/static/compiled/session.js",
+	}
 	displayData := usersPageTemplateData{
-		AuthUsername: authUser,
-		Title:        "Keymaster Users",
-		Users:        users,
-		JSSources:    JSSources}
+		AuthUsername:   authData.Username,
+		SessionExpires: authData.expires(),
+		Title:          "Keymaster Users",
+		Users:          users,
+		JSSources:      JSSources}
 	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
 	if err != nil {
 		state.logger.Printf("Failed to execute %v", err)
@@ -177,7 +182,7 @@ func (state *RuntimeState) deleteUserHandler(w http.ResponseWriter,
 
 func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 	r *http.Request) {
-	failure, authUser := state.sendFailureToClientIfNonAdmin(w, r)
+	failure, authData := state.sendFailureToClientIfNonAdmin(w, r)
 	if failure {
 		return
 	}
@@ -244,8 +249,9 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 	var fingerprint [4]byte
 	copy(fingerprint[:], bootstrapOtpHash[:4])
 	displayData := newBootstrapOTPPPageTemplateData{
-		Title:        "New Bootstrap OTP Value",
-		AuthUsername: authUser,
+		Title:          "New Bootstrap OTP Value",
+		AuthUsername:   authData.Username,
+		SessionExpires: authData.expires(),
 		//JSSources         []string
 		//ErrorMessage      string
 		Username:    username,
@@ -256,7 +262,7 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 		displayData.BootstrapOTPValue = bootstrapOtpValue
 	} else {
 		err := state.sendBootstrapOtpEmail(bootstrapOtpHash[:],
-			bootstrapOtpValue, duration, authUser, username)
+			bootstrapOtpValue, duration, authData.Username, username)
 		if err != nil {
 			state.logger.Printf("error sending email: %s", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError,
@@ -272,7 +278,7 @@ func (state *RuntimeState) generateBootstrapOTP(w http.ResponseWriter,
 	}
 	state.logger.Debugf(0,
 		"%s: generated bootstrap OTP for: %s, duration: %s, hash: %x\n",
-		authUser, username, duration, bootstrapOtpHash)
+		authData.Username, username, duration, bootstrapOtpHash)
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":

@@ -134,6 +134,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Security-Policy", "default-src 'self' ;img-src 'self'  data: ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 	displayData := newTOTPPageTemplateData{
 		AuthUsername:    authData.Username,
+		SessionExpires:  authData.expires(),
 		Title:           "New TOTP Generation", //TODO: maybe include username?
 		TOTPSecret:      key.Secret(),
 		TOTPBase64Image: template.HTML("<img src=\"data:image/png;base64," + base64Image + "\" alt=\"beastie.png\" scale=\"0\" />"),

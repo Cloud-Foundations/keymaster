@@ -446,6 +446,13 @@ func getUserFromRequest(r *http.Request) string {
 	return user
 }
 
+func (ai *authInfo) expires() int64 {
+	if ai.ExpiresAt.IsZero() {
+		return 0
+	}
+	return ai.ExpiresAt.Unix()
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
@@ -1336,8 +1343,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	if fromCache {
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
-
-	JSSources := []string{"/static/jquery-3.5.1.min.js"}
+	JSSources := []string{
+		"/static/jquery-3.5.1.min.js",
+		"/static/compiled/session.js",
+	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
 		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
@@ -1376,6 +1385,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	displayData := profilePageTemplateData{
 		Username:             assumedUser,
 		AuthUsername:         authData.Username,
+		SessionExpires:       authData.expires(),
 		Title:                "Keymaster User Profile",
 		ShowU2F:              showU2F,
 		JSSources:            JSSources,
@@ -1677,6 +1687,8 @@ func main() {
 			"static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/",
 		http.FileServer(http.Dir(staticFilesPath))))
+	serviceMux.Handle("/static/compiled/",
+		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile())))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
