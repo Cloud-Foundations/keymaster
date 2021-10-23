@@ -1,3 +1,19 @@
+/*
+Package aws_role may be used by service code to obtain Keymaster-issued identity
+certificates. The identity certificate will contain the AWS IAM role that the
+service code is able to assume (i.e. EC2 instance profile, EKS IRSA, Lambda
+role). The full AWS Role ARN is stored in a certificate URI SAN extension and a
+simplified form of the ARN is stored in the certificate CN.
+
+The service code does not require any extra permissions. It uses the
+sts:GetCallerIdentity permission that is available to all AWS identities. Thus,
+no policy configuration is required.
+
+This code uses the AWS IAM credentials to request a pre-signed URL from the AWS
+Security Token Service (STS). This pre-signed URL is passed to Keymaster which
+can make a request using the URL to verify the identity of the caller. No
+credentials are sent.
+*/
 package aws_role
 
 import (
