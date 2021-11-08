@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -154,6 +155,7 @@ func doU2FAuthenticate(
 	}
 	// Now we ask the token to sign/authenticate
 	logger.Println("authenticating, provide user presence")
+	retryCount := 0
 	var rawBytes []byte
 	for {
 		res, err := t.Authenticate(req)
@@ -161,6 +163,20 @@ func doU2FAuthenticate(
 			time.Sleep(200 * time.Millisecond)
 			continue
 		} else if err != nil {
+			if runtime.GOOS == "darwin" && retryCount < 3 {
+				retryCount += 1
+				if err.Error() == "hid: general error" {
+					logger.Printf("retry on darwin general error")
+					//t.Close()
+					t = u2ftoken.NewToken(dev)
+					continue
+				}
+				if err.Error() == "u2fhid: received error from device: invalid message sequencing" {
+					logger.Printf("Error, message sequencing")
+					continue
+				}
+
+			}
 			logger.Fatal(err)
 		}
 		rawBytes = res.RawResponse
