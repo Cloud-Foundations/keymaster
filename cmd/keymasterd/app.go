@@ -475,7 +475,8 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 		ShowU2F:          showU2F,
 		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
 		ShowOktaOTP:      state.Config.Okta.Enable2FA,
-		LoginDestination: loginDestination}
+		LoginDestination: htmltemplate.URL(loginDestination),
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
 		displayData)
 	if err != nil {
@@ -498,7 +499,7 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 		Title:            "Keymaster Login",
 		DefaultUsername:  defaultUsername,
 		ShowOauth2:       state.Config.Oauth2.Enabled,
-		LoginDestination: loginDestination,
+		LoginDestination: htmltemplate.URL(loginDestination),
 		ErrorMessage:     errorMessage}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {

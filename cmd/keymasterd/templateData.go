@@ -52,7 +52,7 @@ type loginPageTemplateData struct {
 	DefaultUsername  string
 	JSSources        []string
 	ShowOauth2       bool
-	LoginDestination string
+	LoginDestination template.URL
 	ErrorMessage     string
 }
 
@@ -79,7 +79,7 @@ const loginFormText = `
 	<p>
     <form enctype="application/x-www-form-urlencoded" action="/auth/oauth2/login" method="post">
     {{if .LoginDestination}}
-	<INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	<INPUT TYPE="hidden" NAME="login_destination" VALUE="{{.LoginDestination}}">
     {{end}}
     <p><input type="submit" value="Oauth2 Login" /></p>
     </form>
@@ -116,7 +116,7 @@ type secondFactorAuthTemplateData struct {
 	ShowU2F          bool
 	ShowTOTP         bool
 	ShowOktaOTP      bool
-	LoginDestination string
+	LoginDestination template.URL
 }
 
 const secondFactorAuthFormText = `
