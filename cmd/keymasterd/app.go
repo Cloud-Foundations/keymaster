@@ -488,7 +488,6 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 		ShowU2F:               showU2F,
 		ShowTOTP:              state.Config.Base.EnableLocalTOTP,
 		ShowOktaOTP:           state.Config.Okta.Enable2FA,
-		LoginDestination:      htmltemplate.URL(loginDestination),
 		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
 	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
