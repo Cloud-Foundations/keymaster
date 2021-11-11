@@ -46,14 +46,14 @@ Copyright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
 `
 
 type loginPageTemplateData struct {
-	Title            string
-	AuthUsername     string
-	SessionExpires   int64
-	DefaultUsername  string
-	JSSources        []string
-	ShowOauth2       bool
-	LoginDestination template.URL
-	ErrorMessage     string
+	Title                 string
+	AuthUsername          string
+	SessionExpires        int64
+	DefaultUsername       string
+	JSSources             []string
+	ShowOauth2            bool
+	LoginDestinationInput template.HTML
+	ErrorMessage          string
 }
 
 const loginFormText = `
@@ -78,8 +78,8 @@ const loginFormText = `
 	{{if .ShowOauth2}}
 	<p>
     <form enctype="application/x-www-form-urlencoded" action="/auth/oauth2/login" method="post">
-    {{if .LoginDestination}}
-	<INPUT TYPE="hidden" NAME="login_destination" VALUE="{{.LoginDestination}}">
+    {{if .LoginDestinationInput}}
+	 {{.LoginDestinationInput}}
     {{end}}
     <p><input type="submit" value="Oauth2 Login" /></p>
     </form>
@@ -94,7 +94,7 @@ const loginFormText = `
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18 autofocus></p>
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off"></p>
             {{end}}
-	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	    {{.LoginDestinationInput}}
             <p><input type="submit" value="Submit" /></p>
         </form>
 	{{template "login_form_footer" .}}
@@ -107,16 +107,18 @@ const loginFormText = `
 `
 
 type secondFactorAuthTemplateData struct {
-	Title            string
-	AuthUsername     string
-	SessionExpires   int64
-	JSSources        []string
-	ShowBootstrapOTP bool
-	ShowVIP          bool
-	ShowU2F          bool
-	ShowTOTP         bool
-	ShowOktaOTP      bool
-	LoginDestination template.URL
+	Title                 string
+	AuthUsername          string
+	SessionExpires        int64
+	JSSources             []string
+	ShowBootstrapOTP      bool
+	ShowVIP               bool
+	ShowU2F               bool
+	ShowTOTP              bool
+	ShowOktaOTP           bool
+	LoginDestination      template.URL
+	LoginDestinationInput template.HTML
+	LoginDestinationDiv   template.HTML
 }
 
 const secondFactorAuthFormText = `
@@ -142,20 +144,22 @@ const secondFactorAuthFormText = `
         <h2> Keymaster second factor authentication </h2>
 	{{if .ShowBootstrapOTP}}
 	<div id="bootstrap_otp_login_destination" style="display: none;">{{.LoginDestination}}</div>
+	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/bootstrapOtpAuth" method="post">
             <p>
 	    Enter Bootstrap OTP value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
-	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	    {{.LoginDestinationInput}}
             <input type="submit" value="Submit" />
 	    </p>
         </form>
 	{{end}}
 	{{if .ShowVIP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
+	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
 	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
-	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	    {{.LoginDestinationInput}}
             <input type="submit" value="Submit" />
 	    </p>
         </form>
@@ -173,6 +177,7 @@ const secondFactorAuthFormText = `
 	{{if .ShowU2F}}
 	<p>
 	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
+	       {{.LoginDestinationDiv}} 
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
         {{if .ShowVIP}}
@@ -189,7 +194,7 @@ const secondFactorAuthFormText = `
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/TOTPAuth" method="post">
             <p>
             Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
-            <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	     {{.LoginDestinationInput}}
             <input type="submit" value="Submit" />
             </p>
         </form>
@@ -197,6 +202,7 @@ const secondFactorAuthFormText = `
 
         {{if .ShowOktaOTP}}
 	<div id="okta_login_destination" style="display: none;">{{.LoginDestination}}</div>
+	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/okta2FAAuth" method="post">
             <p>
             Okta push has been automatically started. If you are not able to receive the
@@ -204,7 +210,7 @@ const secondFactorAuthFormText = `
             </p>
             <p>
             Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
-            <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+	    {{.LoginDestinationInput}}
             <input type="submit" value="Submit" />
             </p>
         </form>
@@ -214,6 +220,7 @@ const secondFactorAuthFormText = `
 	    <p>
 	    If you have login issues, you can also
 	    <input type="submit" value="Logout" />
+	     {{.LoginDestinationInput}}
 	    </p>
 	</form>
 	</div>

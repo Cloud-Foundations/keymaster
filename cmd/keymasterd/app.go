@@ -453,6 +453,18 @@ func (ai *authInfo) expires() int64 {
 	return ai.ExpiresAt.Unix()
 }
 
+func ensureHTMLSafeLoginDestination(loginDestination string) string {
+	if loginDestination == "" {
+		return profilePath
+	}
+	parsedLoginDestination, err := url.Parse(loginDestination)
+	if err != nil {
+		return profilePath
+	}
+	return parsedLoginDestination.String()
+
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
@@ -467,15 +479,18 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	if state.Config.Okta.Enable2FA {
 		JSSources = append(JSSources, "/static/webui-2fa-okta-push.js")
 	}
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
 	displayData := secondFactorAuthTemplateData{
-		Title:            "Keymaster 2FA Auth",
-		JSSources:        JSSources,
-		ShowBootstrapOTP: showBootstrapOTP,
-		ShowVIP:          state.Config.SymantecVIP.Enabled,
-		ShowU2F:          showU2F,
-		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
-		ShowOktaOTP:      state.Config.Okta.Enable2FA,
-		LoginDestination: htmltemplate.URL(loginDestination),
+		Title:                 "Keymaster 2FA Auth",
+		JSSources:             JSSources,
+		ShowBootstrapOTP:      showBootstrapOTP,
+		ShowVIP:               state.Config.SymantecVIP.Enabled,
+		ShowU2F:               showU2F,
+		ShowTOTP:              state.Config.Base.EnableLocalTOTP,
+		ShowOktaOTP:           state.Config.Okta.Enable2FA,
+		LoginDestination:      htmltemplate.URL(loginDestination),
+		LoginDestinationDiv:   htmltemplate.HTML("<div id=\"login_destination_div\" style=\"display: none;\">" + safeLoginDestination + " </div>"),
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
 	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
 		displayData)
@@ -495,12 +510,17 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 		return
 	}
 	w.WriteHeader(statusCode)
+
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
+	logger.Printf("writeFailureRespons loginDestination='%s'", loginDestination)
 	displayData := loginPageTemplateData{
-		Title:            "Keymaster Login",
-		DefaultUsername:  defaultUsername,
-		ShowOauth2:       state.Config.Oauth2.Enabled,
-		LoginDestination: htmltemplate.URL(loginDestination),
-		ErrorMessage:     errorMessage}
+		Title:           "Keymaster Login",
+		DefaultUsername: defaultUsername,
+		ShowOauth2:      state.Config.Oauth2.Enabled,
+		//LoginDestination:      htmltemplate.URL(loginDestination),
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
+		ErrorMessage:          errorMessage,
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
