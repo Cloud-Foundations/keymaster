@@ -510,7 +510,6 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	w.WriteHeader(statusCode)
 
 	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
-	logger.Printf("writeFailureRespons loginDestination='%s'", loginDestination)
 	displayData := loginPageTemplateData{
 		Title:                 "Keymaster Login",
 		DefaultUsername:       defaultUsername,
