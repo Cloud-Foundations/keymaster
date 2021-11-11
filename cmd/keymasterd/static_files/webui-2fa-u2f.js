@@ -45,7 +45,8 @@ function checkError(resp) {
     }
     $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
       //alert('Success');
-      var destination = document.getElementById("u2f_login_destination").innerHTML;
+      var destination = document.getElementById("login_destination_input").getAttribute("value");
+      alert(destination)
       window.location.href = destination;
     }).fail(serverError);
   }

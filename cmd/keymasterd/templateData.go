@@ -116,9 +116,7 @@ type secondFactorAuthTemplateData struct {
 	ShowU2F               bool
 	ShowTOTP              bool
 	ShowOktaOTP           bool
-	LoginDestination      template.URL
 	LoginDestinationInput template.HTML
-	LoginDestinationDiv   template.HTML
 }
 
 const secondFactorAuthFormText = `
@@ -143,8 +141,6 @@ const secondFactorAuthFormText = `
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor authentication </h2>
 	{{if .ShowBootstrapOTP}}
-	<div id="bootstrap_otp_login_destination" style="display: none;">{{.LoginDestination}}</div>
-	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/bootstrapOtpAuth" method="post">
             <p>
 	    Enter Bootstrap OTP value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
@@ -154,8 +150,6 @@ const secondFactorAuthFormText = `
         </form>
 	{{end}}
 	{{if .ShowVIP}}
-	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
-	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
 	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
@@ -176,8 +170,6 @@ const secondFactorAuthFormText = `
 
 	{{if .ShowU2F}}
 	<p>
-	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
-	       {{.LoginDestinationDiv}} 
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
         {{if .ShowVIP}}
@@ -201,8 +193,6 @@ const secondFactorAuthFormText = `
 	{{end}}
 
         {{if .ShowOktaOTP}}
-	<div id="okta_login_destination" style="display: none;">{{.LoginDestination}}</div>
-	{{.LoginDestinationDiv}} 
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/okta2FAAuth" method="post">
             <p>
             Okta push has been automatically started. If you are not able to receive the
