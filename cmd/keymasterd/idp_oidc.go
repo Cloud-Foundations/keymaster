@@ -345,6 +345,15 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	err = r.ParseForm()
 	if err != nil {
+		if err.Error() == "invalid semicolon separator in query" {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid URL, contains semicolons")
+			return
+		}
+		if strings.Contains(err.Error(), "invalid") {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid URL")
+			return
+		}
+		logger.Printf("idpOpenIDCAuthorizationHandler Error parsing From err: %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
