@@ -51,6 +51,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -114,6 +115,13 @@ type u2fAuthData struct {
 	Registration *u2f.Registration
 }
 
+type webauthAuthData struct {
+	Enabled    bool
+	CreatedAt  time.Time
+	Name       string
+	Credential webauthn.Credential
+}
+
 type totpAuthData struct {
 	Enabled         bool
 	CreatedAt       time.Time
@@ -136,6 +144,12 @@ type userProfile struct {
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
+
+	WebauthnData        map[int64]webauthAuthData
+	WebauthnID          uint64 // maybe more specific?
+	DisplayName         string
+	Username            string
+	WebauthnSessionData *webauthn.SessionData
 }
 
 type localUserData struct {
@@ -193,6 +207,7 @@ type RuntimeState struct {
 	emailManager         configuredemail.EmailManager
 	textTemplates        *texttemplate.Template
 
+	webAuthn                *webauthn.WebAuthn
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
 	logger                  log.DebugLogger
