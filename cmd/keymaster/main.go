@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Cloud-Foundations/Dominator/lib/fsutil"
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -216,7 +218,7 @@ func generateAwsRoleCert(homeDir string,
 	if err := signers.Wait(); err != nil {
 		return err
 	}
-	certPEM, err := aws_role.GetRoleCertificate(aws_role.Params{
+	manager, err := aws_role.NewManager(aws_role.Params{
 		KeymasterServer: targetURLs[0],
 		Logger:          logger,
 		HttpClient:      client,
@@ -239,10 +241,24 @@ func generateAwsRoleCert(homeDir string,
 		return err
 	}
 	x509CertPath := tlsKeyPath + ".cert"
-	err = ioutil.WriteFile(x509CertPath, certPEM, 0644)
+	certPEM, _, err := manager.GetRoleCertificate()
 	if err != nil {
-		err := errors.New("Could not write ssh cert")
-		logger.Fatal(err)
+		return err
+	}
+	if err := ioutil.WriteFile(x509CertPath, certPEM, 0644); err != nil {
+		return errors.New("Could not write ssh cert")
+	}
+	for {
+		logger.Println("starting loop waiting for certificate refreshes")
+		manager.WaitForRefresh()
+		certPEM, _, err := manager.GetRoleCertificate()
+		if err != nil {
+			return err
+		}
+		err = fsutil.CopyToFile(x509CertPath, 0644, bytes.NewReader(certPEM), 0)
+		if err != nil {
+			return errors.New("Could not write ssh cert")
+		}
 	}
 	return nil
 }

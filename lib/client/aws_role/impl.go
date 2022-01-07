@@ -47,14 +47,16 @@ func parseArn(arnString string) (*arn.ARN, error) {
 }
 
 func newManager(p Params) (*Manager, error) {
-	cert, err := p.getRoleCertificateTLS()
+	certPEM, certTLS, err := p.getRoleCertificateTLS()
 	if err != nil {
 		return nil, err
 	}
 	p.Logger.Printf("got AWS Role certificate for: %s\n", p.roleArn)
 	manager := &Manager{
-		Params:  p,
-		tlsCert: cert,
+		params:  p,
+		certPEM: certPEM,
+		certTLS: certTLS,
+		waiters: make(map[chan<- struct{}]struct{}),
 	}
 	go manager.refreshLoop()
 	return manager, nil
@@ -64,7 +66,13 @@ func (m *Manager) getClientCertificate(cri *tls.CertificateRequestInfo) (
 	*tls.Certificate, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	return m.tlsCert, m.tlsError
+	return m.certTLS, m.certError
+}
+
+func (m *Manager) getRoleCertificate() ([]byte, *tls.Certificate, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return m.certPEM, m.certTLS, m.certError
 }
 
 func (m *Manager) refreshLoop() {
@@ -74,25 +82,45 @@ func (m *Manager) refreshLoop() {
 }
 
 func (m *Manager) refreshOnce() {
-	if m.tlsCert != nil {
-		refreshTime := m.tlsCert.Leaf.NotBefore.Add(
-			m.tlsCert.Leaf.NotAfter.Sub(m.tlsCert.Leaf.NotBefore) * 3 / 4)
-		time.Sleep(time.Until(refreshTime))
+	if m.certTLS != nil {
+		refreshTime := m.certTLS.Leaf.NotBefore.Add(
+			m.certTLS.Leaf.NotAfter.Sub(m.certTLS.Leaf.NotBefore) * 3 / 4)
+		duration := time.Until(refreshTime)
+		m.params.Logger.Debugf(1, "sleeping: %s before refresh\n",
+			(duration + time.Millisecond*50).Truncate(time.Millisecond*100))
+		time.Sleep(duration)
 	}
-	if cert, err := m.getRoleCertificateTLS(); err != nil {
-		m.Logger.Println(err)
-		if m.tlsCert == nil {
+	if certPEM, certTLS, err := m.params.getRoleCertificateTLS(); err != nil {
+		m.params.Logger.Println(err)
+		if m.certTLS == nil {
 			m.mutex.Lock()
-			m.tlsError = err
+			m.certError = err
 			m.mutex.Unlock()
 		}
 	} else {
 		m.mutex.Lock()
-		m.tlsCert = cert
-		m.tlsError = nil
+		m.certError = nil
+		m.certPEM = certPEM
+		m.certTLS = certTLS
+		for waiter := range m.waiters {
+			select {
+			case waiter <- struct{}{}:
+			default:
+			}
+			delete(m.waiters, waiter)
+		}
 		m.mutex.Unlock()
-		m.Logger.Printf("refreshed AWS Role certificate for: %s\n", m.roleArn)
+		m.params.Logger.Printf("refreshed AWS Role certificate for: %s\n",
+			m.params.roleArn)
 	}
+}
+
+func (m *Manager) waitForRefresh() {
+	ch := make(chan struct{}, 1)
+	m.mutex.Lock()
+	m.waiters[ch] = struct{}{}
+	m.mutex.Unlock()
+	<-ch
 }
 
 // Returns certificate PEM block.
@@ -105,7 +133,7 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.Logger.Debugf(1, "presigned URL: %v\n", presignedReq.URL)
+	p.Logger.Debugf(2, "presigned URL: %v\n", presignedReq.URL)
 	hostPath := p.KeymasterServer + paths.RequestAwsRoleCertificatePath
 	body := &bytes.Buffer{}
 	body.Write(p.pemPubKey)
@@ -129,27 +157,30 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	return ioutil.ReadAll(resp.Body)
 }
 
-func (p *Params) getRoleCertificateTLS() (*tls.Certificate, error) {
+// Returns certificate PEM block, TLS certificate and error.
+func (p *Params) getRoleCertificateTLS() ([]byte, *tls.Certificate, error) {
 	certPEM, err := p.getRoleCertificate()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
-		return nil, fmt.Errorf("unable to decode certificate PEM block")
+		return nil, nil, fmt.Errorf("unable to decode certificate PEM block")
 	}
 	if block.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("invalid certificate type: %s", block.Type)
+		return nil, nil, fmt.Errorf("invalid certificate type: %s", block.Type)
 	}
 	x509Cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &tls.Certificate{
-		Certificate: [][]byte{block.Bytes},
-		PrivateKey:  p.Signer,
-		Leaf:        x509Cert,
-	}, nil
+	return certPEM,
+		&tls.Certificate{
+			Certificate: [][]byte{block.Bytes},
+			PrivateKey:  p.Signer,
+			Leaf:        x509Cert,
+		},
+		nil
 }
 
 func (p *Params) setupVerify() error {
