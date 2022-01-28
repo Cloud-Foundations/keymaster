@@ -145,7 +145,7 @@ type userProfile struct {
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
 
-	WebauthnData        map[int64]webauthAuthData
+	WebauthnData        map[int64]*webauthAuthData
 	WebauthnID          uint64 // maybe more specific?
 	DisplayName         string
 	Username            string
@@ -1364,7 +1364,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js", "/static/keymaster-webauthn.js")
 	}
 
 	// TODO: move deviceinfo mapping/sorting to its own function
@@ -1377,6 +1377,18 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Index:      i}
 		u2fdevices = append(u2fdevices, deviceData)
 	}
+	// TODO: make some difference
+	// also add the webauthn devices...
+	for i, tokenInfo := range profile.WebauthnData {
+		deviceData := registeredU2FTokenDisplayInfo{
+			DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
+			Enabled:    tokenInfo.Enabled,
+			Name:       tokenInfo.Name, //Display name?
+			Index:      i,
+		}
+		u2fdevices = append(u2fdevices, deviceData)
+	}
+
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
@@ -1493,7 +1505,8 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
-	if !ok {
+	_, ok2 := profile.WebauthnData[tokenIndex]
+	if !ok && !ok2 {
 		//if tokenIndex >= len(profile.U2fAuthData) {
 		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
@@ -1510,13 +1523,30 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
-		profile.U2fAuthData[tokenIndex].Name = tokenName
+		if ok {
+			profile.U2fAuthData[tokenIndex].Name = tokenName
+		} else {
+			profile.WebauthnData[tokenIndex].Name = tokenName
+		}
+
 	case "Disable":
-		profile.U2fAuthData[tokenIndex].Enabled = false
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = false
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = false
+		}
 	case "Enable":
-		profile.U2fAuthData[tokenIndex].Enabled = true
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = true
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = true
+		}
 	case "Delete":
-		delete(profile.U2fAuthData, tokenIndex)
+		if ok {
+			delete(profile.U2fAuthData, tokenIndex)
+		} else {
+			delete(profile.WebauthnData, tokenIndex)
+		}
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return
@@ -1717,6 +1747,8 @@ func main() {
 		runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
+	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
 	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath,
 		runtimeState.u2fTokenManagerHandler)

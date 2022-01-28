@@ -51,7 +51,7 @@ func (u *userProfile) FixupCredential(username string, displayname string) {
 		u.Username = displayname
 	}
 	if u.WebauthnData == nil {
-		u.WebauthnData = make(map[int64]webauthAuthData)
+		u.WebauthnData = make(map[int64]*webauthAuthData)
 	}
 }
 
@@ -63,6 +63,6 @@ func (u *userProfile) AddWebAuthnCredential(cred webauthn.Credential) error {
 		Enabled:    true,
 		Credential: cred,
 	}
-	u.WebauthnData[index] = authData
+	u.WebauthnData[index] = &authData
 	return nil
 }

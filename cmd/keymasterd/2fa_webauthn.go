@@ -22,10 +22,11 @@ func webauthnJsonResponse(w http.ResponseWriter, d interface{}, c int) {
 	fmt.Fprintf(w, "%s", dj)
 }
 
-const webAutnRegustisterRequestPath = "/webauthn/RegisterRequest/"
+const webAutnRegististerRequestPath = "/webauthn/RegisterRequest/"
 
 // RegisterRequest?
 func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf(3, "top of webauthnBeginRegistration")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -38,6 +39,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	if len(pieces) >= 4 {
 		assumedUser = pieces[3]
 	} else {
+		logger.Debugf(1, "webauthnBeginRegistration: bad number of pieces")
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 	}
@@ -58,7 +60,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 
 	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
-		logger.Printf("loading profile error: %v", err)
+		logger.Printf("webauthnBeginRegistration: loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -69,9 +71,13 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 		return
 	}
 
-	options, sessionData, err := state.webAuthn.BeginLogin(profile)
+	profile.FixupCredential(assumedUser, assumedUser)
+	logger.Debugf(2, "webauthnBeginRegistration profile=%+v", profile)
+
+	logger.Debugf(2, "webauthnBeginRegistration: About to begin BeginRegistration")
+	options, sessionData, err := state.webAuthn.BeginRegistration(profile)
 	if err != nil {
-		state.logger.Printf("%s", err)
+		state.logger.Printf("webauthnBeginRegistration: begin login failed %s", err)
 		// TODO: we should not be sending ALL the errors to clients
 		webauthnJsonResponse(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -86,7 +92,10 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	webauthnJsonResponse(w, options, http.StatusOK)
 }
 
+const webAutnRegististerFinishPath = "/webauthn/RegisterFinish/"
+
 func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf(3, "top of webauthnFinishRegistration")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
