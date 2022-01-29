@@ -69,6 +69,7 @@ const (
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
+	AuthTypeFIDO2
 )
 
 const (
@@ -153,8 +154,9 @@ type userProfile struct {
 }
 
 type localUserData struct {
-	U2fAuthChallenge *u2f.Challenge
-	ExpiresAt        time.Time
+	U2fAuthChallenge  *u2f.Challenge
+	WebAuthnChallenge *webauthn.SessionData
+	ExpiresAt         time.Time
 }
 
 type pendingAuth2Request struct {
@@ -1749,6 +1751,9 @@ func main() {
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
 	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
 	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
+	serviceMux.HandleFunc(webAuthnAuthBeginPath, runtimeState.webauthnAuthLogin)
+	serviceMux.HandleFunc(webAuthnAuthFinishPath, runtimeState.webauthnAuthFinish)
+
 	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath,
 		runtimeState.u2fTokenManagerHandler)
