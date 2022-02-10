@@ -167,7 +167,7 @@ func doU2FAuthenticate(
 				retryCount += 1
 				if err.Error() == "hid: general error" || err.Error() == "hid: privilege violation" {
 					logger.Printf("retry on darwin general error")
-					//t.Close()
+					// There is no t.Close() .. so we dot close and create a new one.
 					t = u2ftoken.NewToken(dev)
 					continue
 				}
