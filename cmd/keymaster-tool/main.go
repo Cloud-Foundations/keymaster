@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
@@ -165,6 +167,12 @@ func decryptDecodeArmoredPrivateKey(cipherText []byte, passPhrase []byte) (crypt
 	return certgen.GetSignerFromPEMBytes(plaintext)
 }
 
+func goSSHPubToFileString(pub ssh.PublicKey, comment string) (string, error) {
+	pubBytes := pub.Marshal()
+	encoded := base64.StdEncoding.EncodeToString(pubBytes)
+	return pub.Type() + " " + encoded + " " + comment, nil
+}
+
 //copied from https://golang.org/src/crypto/tls/generate_cert.go
 func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
@@ -181,7 +189,7 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
-func printPublicKey(passPhrase []byte, inFilename string, outWriter io.Writer, logger log.DebugLogger) error {
+func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outWriter io.Writer, logger log.DebugLogger) error {
 	inFile, err := os.Open(inFilename) // For read access.
 	if err != nil {
 		return err
@@ -199,16 +207,32 @@ func printPublicKey(passPhrase []byte, inFilename string, outWriter io.Writer, l
 	if pubKey == nil {
 		return fmt.Errorf("Invalid private key type")
 	}
-	pubKeyBytes, err := x509.MarshalPKIXPublicKey(pubKey)
-	if err != nil {
+	switch outFormat {
+	case "pem":
+		pubKeyBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+		if err != nil {
+			return err
+		}
+		block := &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: pubKeyBytes,
+		}
+		return pem.Encode(outWriter, block)
+	case "ssh":
+		sshPub, err := ssh.NewPublicKey(pubKey)
+		if err != nil {
+			return err
+		}
+		sshPubFileString, err := goSSHPubToFileString(sshPub, "keymaster")
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(outWriter, "%s\n", sshPubFileString)
 		return err
-	}
-	block := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubKeyBytes,
-	}
 
-	return pem.Encode(outWriter, block)
+	default:
+		return fmt.Errorf("invalid outpur format")
+	}
 }
 
 func main() {
@@ -231,7 +255,7 @@ func main() {
 		if err != nil {
 			stdlog.Fatalf("Error: %s", err)
 		}
-		err = printPublicKey(passPhrase, *printPublicFilenameIn, os.Stdout, logger)
+		err = printPublicKey(passPhrase, *printPublicFilenameIn, *printFormat, os.Stdout, logger)
 		if err != nil {
 			stdlog.Fatalf("Error: %s", err)
 		}
