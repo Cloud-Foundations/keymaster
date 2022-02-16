@@ -15,6 +15,9 @@ import (
 	stdlog "log"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/secretsmanager"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -42,17 +45,28 @@ var (
 const rsaBits = 3072
 
 func getPasswordFromConsole() ([]byte, error) {
-	fmt.Printf("Passphrase for key ")
+	fmt.Fprintf(os.Stderr, "Passphrase for key ")
 	return gopass.GetPasswd()
 }
 
-func getPassphraseFromARN(secretArn string) ([]byte, error) {
-	return nil, fmt.Errorf("not implemented")
+func getPassphraseFromAWS(awsSecretId string, awsRegion string) ([]byte, error) {
+	svc := secretsmanager.New(session.New(),
+		aws.NewConfig().WithRegion(awsRegion))
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId:     aws.String(awsSecretId),
+		VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
+	}
+	result, err := svc.GetSecretValue(input)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(*result.SecretString), nil
+
 }
 
-func getPassPhrase(secretArn string) ([]byte, error) {
+func getPassPhrase(secretArn string, awsRegion string) ([]byte, error) {
 	if secretArn != "" {
-		return getPassphraseFromARN(secretArn)
+		return getPassphraseFromAWS(secretArn, awsRegion)
 	}
 	return getPasswordFromConsole()
 
@@ -121,6 +135,7 @@ func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
 	decbuf := bytes.NewBuffer(cipherText)
 	armorBlock, err := armor.Decode(decbuf)
 	if err != nil {
+		fmt.Printf("ciphertext=%s", string(cipherText))
 		return nil, fmt.Errorf("cannot decode armored file")
 	}
 	failed := false
@@ -176,7 +191,7 @@ func printPublicKey(passPhrase []byte, inFilename string, outWriter io.Writer, l
 	if err != nil {
 		return err
 	}
-	signer, err := decryptDecodeArmoredPrivateKey(passPhrase, cipherText)
+	signer, err := decryptDecodeArmoredPrivateKey(cipherText, passPhrase)
 	if err != nil {
 		return err
 	}
@@ -188,9 +203,12 @@ func printPublicKey(passPhrase []byte, inFilename string, outWriter io.Writer, l
 	if err != nil {
 		return err
 	}
-	_, err = outWriter.Write(pubKeyBytes)
+	block := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubKeyBytes,
+	}
 
-	return err
+	return pem.Encode(outWriter, block)
 }
 
 func main() {
@@ -200,7 +218,7 @@ func main() {
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	// Register user
 	case generateCmd.FullCommand():
-		passPhrase, err := getPassPhrase(*inSecretARN)
+		passPhrase, err := getPassPhrase(*inSecretARN, *inAWSRegion)
 		if err != nil {
 			stdlog.Fatalf("Error: %s", err)
 		}
@@ -209,7 +227,7 @@ func main() {
 			stdlog.Fatalf("Error: %s", err)
 		}
 	case printPublicCmd.FullCommand():
-		passPhrase, err := getPassPhrase(*inSecretARN)
+		passPhrase, err := getPassPhrase(*inSecretARN, *inAWSRegion)
 		if err != nil {
 			stdlog.Fatalf("Error: %s", err)
 		}
