@@ -18,9 +18,13 @@ VERSION=1.10.1
 
 all:	init-config-host cmd/keymasterd/binData.go
 	cd cmd/keymaster; go build -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster; go install
 	cd cmd/keymasterd; go build -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymasterd; go install
 	cd cmd/keymaster-unlocker; go build -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-unlocker; go install
 	cd cmd/keymaster-eventmond;  go build -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-eventmond;  go install
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
