@@ -22,7 +22,7 @@ all:	init-config-host cmd/keymasterd/binData.go
 	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
 	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
 
-build:
+build:	cmd/keymasterd/binData.go
 	go build -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
 
 cmd/keymasterd/binData.go:
