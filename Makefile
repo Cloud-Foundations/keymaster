@@ -17,14 +17,13 @@ VERSION=1.10.1
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
 all:	init-config-host cmd/keymasterd/binData.go
-	cd cmd/keymaster; go build -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster; go install
-	cd cmd/keymasterd; go build -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymasterd; go install
-	cd cmd/keymaster-unlocker; go build -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-unlocker; go install
-	cd cmd/keymaster-eventmond;  go build -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-eventmond;  go install
+	cd cmd/keymaster; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymasterd; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
+
+build:
+	go build -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
@@ -51,7 +50,7 @@ ${BINARY}-${VERSION}.tar.gz:
 	rsync -av proto/ ${BINARY}-${VERSION}/proto/
 	rsync -av keymasterd/ ${BINARY}-${VERSION}/keymasterd/
 	rsync -av eventmon/ ${BINARY}-${VERSION}/eventmon/
-	cp LICENSE Makefile keymaster.spec README.md go.mod go.sum ${BINARY}-${VERSION}/
+	cp -p LICENSE Makefile keymaster.spec README.md go.mod go.sum ${BINARY}-${VERSION}/
 	tar -cvzf ${BINARY}-${VERSION}.tar.gz ${BINARY}-${VERSION}/
 	rm -rf ${BINARY}-${VERSION}/
 
