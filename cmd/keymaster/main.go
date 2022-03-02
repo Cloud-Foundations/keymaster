@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/fsutil"
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -255,7 +253,7 @@ func generateAwsRoleCert(homeDir string,
 		if err != nil {
 			return err
 		}
-		err = fsutil.CopyToFile(x509CertPath, 0644, bytes.NewReader(certPEM), 0)
+		err = ioutil.WriteFile(x509CertPath, certPEM, 0644)
 		if err != nil {
 			return errors.New("Could not write ssh cert")
 		}
