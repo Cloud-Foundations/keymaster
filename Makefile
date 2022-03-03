@@ -28,9 +28,11 @@ build:	cmd/keymasterd/binData.go
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
 
-win-client:
-	cd $(GOPATH)\src && go install -ldflags "-X main.Version=${VERSION}" github.com\Cloud-Foundations\keymaster\cmd\keymaster
-	cd $(GOPATH)\src\github.com\Cloud-Foundations\keymaster\cmd\keymaster && go test -v ./...
+win-client: client-test
+	 go build -ldflags "-X main.Version=${VERSION}" -o bin .\cmd\keymaster\
+
+client-test:
+	go test -v  ./cmd/keymaster/...
 
 get-deps:	init-config-host
 	go get -t ./...
