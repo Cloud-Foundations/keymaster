@@ -253,10 +253,14 @@ func generateAwsRoleCert(homeDir string,
 		if err != nil {
 			return err
 		}
-		err = ioutil.WriteFile(x509CertPath, certPEM, 0644)
+		tempPath := x509CertPath + "~"
+		err = ioutil.WriteFile(tempPath, certPEM, 0644)
 		if err != nil {
 			return errors.New("Could not write ssh cert")
 		}
+		defer os.Remove(tempPath)
+		return os.Rename(tempPath, x509CertPath)
+
 	}
 	return nil
 }
