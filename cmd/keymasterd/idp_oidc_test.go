@@ -201,6 +201,67 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 }
 
+// Related to Issue 141: U2F redirect comes w/ semicolons
+func TestIDPOpenIDCAuthorizationInvalidURL(t *testing.T) {
+	badURLList := []string{
+		"/idp/oauth2/authorize?client_id=generc-purestorage&amp;redirect_uri=https%3Acloudgate.example.com%2Foauth2%2Fredirectendpoint&amp;response_type=code&amp;scope=openid+mail+profile&amp;state=eyJhbGciOiJIUzI1NiIsInR5cCI",
+	}
+
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
+
+	valid_client_id := "valid_client_id"
+	valid_client_secret := "secret_password"
+	//valid_redirect_uri := "https://localhost:12345"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+
+	//url := idpOpenIDCAuthorizationPath
+	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//First we do a simple request.. no auth should fail for now.. after build out it
+	// should be a redirect to the login page
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// now we add a cookie for auth
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+	// and we retry with no params... it should fail again
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, invalidURL := range badURLList {
+		req, err := http.NewRequest("GET", invalidURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&authCookie)
+		_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+}
+
 func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {

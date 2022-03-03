@@ -1,6 +1,6 @@
 Name:           keymaster
-Version:        1.10.0
-Release:        1%{?dist}
+Version:        1.10.1
+Release:        2%{?dist}
 Summary:        Short term access certificate generator and client
 
 #Group:
@@ -25,14 +25,14 @@ Simple utilites for checking state of ldap infrastructure
 
 
 %build
-make
+make build
 
 
 %install
 #%make_install
-%{__install} -Dp -m0755 ~/go/bin/keymasterd %{buildroot}%{_sbindir}/keymasterd
-%{__install} -Dp -m0755 ~/go/bin/keymaster %{buildroot}%{_bindir}/keymaster
-%{__install} -Dp -m0755 ~/go/bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
+%{__install} -Dp -m0755 bin/keymasterd %{buildroot}%{_sbindir}/keymasterd
+%{__install} -Dp -m0755 bin/keymaster %{buildroot}%{_bindir}/keymaster
+%{__install} -Dp -m0755 bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
 install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
