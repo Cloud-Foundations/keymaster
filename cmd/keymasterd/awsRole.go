@@ -51,14 +51,21 @@ type parsedArnType struct {
 
 func awsListAccounts(ctx context.Context, orgClient *organizations.Client) (
 	map[string]struct{}, error) {
-	output, err := orgClient.ListAccounts(ctx,
-		&organizations.ListAccountsInput{})
-	if err != nil {
-		return nil, err
-	}
-	list := make(map[string]struct{}, len(output.Accounts))
-	for _, account := range output.Accounts {
-		list[*account.Id] = struct{}{}
+	list := make(map[string]struct{})
+	var nextToken *string
+	for {
+		output, err := orgClient.ListAccounts(ctx,
+			&organizations.ListAccountsInput{NextToken: nextToken})
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range output.Accounts {
+			list[*account.Id] = struct{}{}
+		}
+		if output.NextToken == nil {
+			break
+		}
+		nextToken = output.NextToken
 	}
 	return list, nil
 }
@@ -187,8 +194,10 @@ func (state *RuntimeState) configureAwsRoles() error {
 		state.Config.AwsCerts.allowedAccounts =
 			make(map[string]struct{})
 		for _, id := range state.Config.AwsCerts.AllowedAccounts {
-			if _, err := strconv.ParseUint(id, 10, 64); err != nil {
-				return fmt.Errorf("accountID: %s is not a number", id)
+			if id != "*" {
+				if _, err := strconv.ParseUint(id, 10, 64); err != nil {
+					return fmt.Errorf("accountID: %s is not a number", id)
+				}
 			}
 			state.Config.AwsCerts.allowedAccounts[id] = struct{}{}
 		}
@@ -269,6 +278,7 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 			callerArn.parsedArn.AccountID)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"AWS account not allowed")
+		return
 	}
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
