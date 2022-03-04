@@ -225,6 +225,8 @@ func (state *RuntimeState) configureAwsRoles() error {
 		if err != nil {
 			return err
 		}
+		state.logger.Printf("Discovered %d accounts in AWS Organisation\n",
+			len(state.Config.AwsCerts.organisationAccounts))
 		go state.refreshAwsAccounts(ctx, orgClient)
 	}
 	return nil
@@ -250,7 +252,13 @@ func (state *RuntimeState) refreshAwsAccounts(ctx context.Context,
 		if list, err := awsListAccounts(ctx, orgClient); err != nil {
 			state.logger.Println(err)
 		} else {
+			oldLength := len(state.Config.AwsCerts.organisationAccounts)
 			state.Config.AwsCerts.organisationAccounts = list
+			if len(list) != oldLength {
+				state.logger.Printf(
+					"Discovered %d accounts in AWS Organisation, was %d\n",
+					len(list), oldLength)
+			}
 		}
 	}
 }
