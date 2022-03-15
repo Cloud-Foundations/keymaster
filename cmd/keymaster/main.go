@@ -391,15 +391,8 @@ func setupCerts(
 	logger.Debugf(0, "certificates successfully generated")
 
 	// Time to write certs and keys
-	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		signers.SshRsa,
-		FilePrefix+"-rsa",
-		userName,
-		sshKeyPath+"-rsa",
-		logger)
-	if err != nil {
-		return err
-	}
+	// old agents do not understand sha2 certs, so we inject Ed25519 first
+	// if present
 	if sshEd25519Cert != nil {
 		err = insertSSHCertIntoAgentORWriteToFilesystem(sshEd25519Cert,
 			signers.SshEd25519,
@@ -410,6 +403,15 @@ func setupCerts(
 		if err != nil {
 			return err
 		}
+	}
+	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
+		signers.SshRsa,
+		FilePrefix+"-rsa",
+		userName,
+		sshKeyPath+"-rsa",
+		logger)
+	if err != nil {
+		return err
 	}
 	// Now x509
 	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
