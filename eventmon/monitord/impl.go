@@ -187,7 +187,8 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 		}
 	}
 	conn := tls.Client(rawConn,
-		&tls.Config{ServerName: m.keymasterServerHostname})
+		&tls.Config{ServerName: m.keymasterServerHostname,
+			MinVersion: tls.VersionTLS12})
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
