@@ -1064,6 +1064,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				return
 			}
 			username = val[0]
+			// Since we are getting username from Form we need some minimal sanitization
+			// TODO: actually whitelist the username characters
+			escapedUsername := strings.Replace(username, "\n", "", -1)
+			escapedUsername = strings.Replace(escapedUsername, "\r", "", -1)
+			username = escapedUsername
 		}
 		//var password string
 		if val, ok := r.Form["password"]; ok {
@@ -1776,7 +1781,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
@@ -1792,7 +1796,7 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 	srpc.RegisterServerTlsConfig(
-		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool, MinVersion: tls.VersionTLS12},
 		true)
 	go func() {
 		err := adminSrv.ListenAndServeTLS("", "")
@@ -1844,7 +1848,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	serviceSrv := &http.Server{

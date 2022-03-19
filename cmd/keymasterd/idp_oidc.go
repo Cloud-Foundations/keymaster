@@ -158,15 +158,15 @@ func (state *RuntimeState) idpOpenIDCGetClientConfig(client_id string) (*OpenIDC
 // 1. redirect_urls scheme MUST be https (to prevent code snooping).
 // 2. redirect_urls MUST not include a query  (to prevent stealing of code with faulty clients (open redirect))
 // 3. redirect_url path MUST NOT contain ".." to prevent path traversal attacks
-func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, error) {
+func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, *url.URL, error) {
 	if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
-		return false, nil
+		return false, nil, nil
 	}
 	matchedRE := false
 	for _, re := range client.AllowedRedirectURLRE {
 		matched, err := regexp.MatchString(re, redirectUrl)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if matched {
 			matchedRE = true
@@ -176,20 +176,20 @@ func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (b
 	parsedURL, err := url.Parse(redirectUrl)
 	if err != nil {
 		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
-		return false, nil
+		return false, nil, nil
 	}
 	if parsedURL.Scheme != "https" {
-		return false, nil
+		return false, nil, nil
 	}
 	if len(parsedURL.RawQuery) > 0 {
-		return false, nil
+		return false, nil, nil
 	}
 	if strings.Contains(parsedURL.Path, "..") {
-		return false, nil
+		return false, nil, nil
 	}
 	// if no domains, the matchedRE answer is authoritative
 	if len(client.AllowedRedirectDomains) < 1 {
-		return matchedRE, nil
+		return matchedRE, parsedURL, nil
 	}
 	if len(client.AllowedRedirectURLRE) < 1 {
 		matchedRE = true
@@ -202,7 +202,7 @@ func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (b
 			break
 		}
 	}
-	return matchedDomain && matchedRE, nil
+	return matchedDomain && matchedRE, parsedURL, nil
 }
 
 func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool, error) {
@@ -396,7 +396,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	requestRedirectURLString := r.Form.Get("redirect_uri")
-	ok, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
+	ok, parsedRedirectURL, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
 	if err != nil {
 		logger.Printf("%v", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -506,7 +506,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
 	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
-	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, requestRedirectURLString)
+	logger.Debugf(0, "IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, parsedRedirectURL.Redacted())
 	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authData.Username)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
@@ -931,7 +931,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	logger.Debugf(1, "access_token='%s'", accessToken)
 	if accessToken == "" {
-		logger.Printf("access_token='%s'", accessToken)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Missing access token")
 		return

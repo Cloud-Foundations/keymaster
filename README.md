@@ -1,7 +1,7 @@
 # Keymaster
-[![Build Status](https://travis-ci.org/Cloud-Foundations/keymaster.svg?branch=master)](https://travis-ci.org/Cloud-Foundations/keymaster)
+
+[![Build Status](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml/badge.svg?query=branch%3Amaster)](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml?query=branch%3Amaster)
 [![Coverage Status](https://coveralls.io/repos/github/Cloud-Foundations/keymaster/badge.svg?branch=master)](https://coveralls.io/github/Cloud-Foundations/keymaster?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Cloud-Foundations/keymaster)](https://goreportcard.com/report/github.com/Cloud-Foundations/keymaster)
 
 Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/), [U2F](https://fidoalliance.org/specifications/overview/) tokens or [TOTP](https://en.wikipedia.org/wiki/Time-based_One-time_Password_algorithm) compatible apps ([FreeOTP](https://freeotp.github.io/)/google authenticator ) ) for CLI operations (both SSHD and TLS).
 
