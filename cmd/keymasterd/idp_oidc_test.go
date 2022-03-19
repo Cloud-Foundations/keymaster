@@ -299,7 +299,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, mustFailURL := range attackerTestURLS {
-			resultMatch, err := client.CanRedirectToURL(mustFailURL)
+			resultMatch, _, err := client.CanRedirectToURL(mustFailURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,12 +308,15 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 		for _, mustPassURL := range expectedSuccessURLS {
-			resultMatch, err := client.CanRedirectToURL(mustPassURL)
+			resultMatch, parsedURL, err := client.CanRedirectToURL(mustPassURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if resultMatch == false {
 				t.Fatal("should have allowed this url")
+			}
+			if parsedURL == nil {
+				t.Fatal("should have parsed this url")
 			}
 		}
 	}

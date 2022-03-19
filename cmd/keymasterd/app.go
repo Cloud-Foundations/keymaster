@@ -1064,6 +1064,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				return
 			}
 			username = val[0]
+			// Since we are getting username from Form we need some minimal sanitization
+			// TODO: actually whitelist the username characters
+			escapedUsername := strings.Replace(username, "\n", "", -1)
+			escapedUsername = strings.Replace(escapedUsername, "\r", "", -1)
+			username = escapedUsername
 		}
 		//var password string
 		if val, ok := r.Form["password"]; ok {

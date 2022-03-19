@@ -25,12 +25,18 @@ func GetRequestRealIp(r *http.Request) string {
 	for _, address := range strings.Split(xForwardedFor, ",") {
 		address = strings.TrimSpace(address)
 		if address != "" {
-			return address
+			parsedAddress := net.ParseIP(address)
+			if parsedAddress != nil {
+				return parsedAddress.String()
+			}
 		}
 	}
 
 	if xRealIP != "" {
-		return xRealIP
+		parsedAddress := net.ParseIP(xRealIP)
+		if parsedAddress != nil {
+			return parsedAddress.String()
+		}
 	}
 	return ip
 }
