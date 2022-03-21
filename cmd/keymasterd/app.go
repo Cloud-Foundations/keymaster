@@ -72,6 +72,7 @@ const (
 
 const (
 	AuthTypeAny                   = 0xFFFF
+	maxCacheLifetime              = time.Hour
 	maxWebauthForCliTokenLifetime = time.Hour * 24 * 366
 )
 
@@ -252,6 +253,16 @@ var (
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier *eventnotifier.EventNotifier
 )
+
+func cacheControlHandler(h http.Handler) http.Handler {
+	maxAgeSeconds := maxCacheLifetime / time.Second
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				maxAgeSeconds))
+		h.ServeHTTP(w, r)
+	})
+}
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
 	validStr := strconv.FormatBool(success)
@@ -1707,16 +1718,19 @@ func main() {
 	staticFilesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"static_files")
-	serviceMux.Handle("/static/", http.StripPrefix("/static/",
-		http.FileServer(http.Dir(staticFilesPath))))
-	serviceMux.Handle("/static/compiled/",
-		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile())))
+	serviceMux.Handle("/static/", cacheControlHandler(
+		http.StripPrefix("/static/",
+			http.FileServer(http.Dir(staticFilesPath)))))
+	serviceMux.Handle("/static/compiled/", cacheControlHandler(
+		http.StripPrefix("/static/compiled/", cacheControlHandler(
+			http.FileServer(AssetFile())))))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
 	if _, err = os.Stat(customWebResourcesPath); err == nil {
-		serviceMux.Handle("/custom_static/", http.StripPrefix("/custom_static/",
-			http.FileServer(http.Dir(customWebResourcesPath))))
+		serviceMux.Handle("/custom_static/", cacheControlHandler(
+			http.StripPrefix("/custom_static/",
+				http.FileServer(http.Dir(customWebResourcesPath)))))
 	}
 	serviceMux.HandleFunc(u2fRegustisterRequestPath,
 		runtimeState.u2fRegisterRequest)
