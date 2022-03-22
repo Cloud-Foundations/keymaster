@@ -1722,8 +1722,7 @@ func main() {
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir(staticFilesPath)))))
 	serviceMux.Handle("/static/compiled/", cacheControlHandler(
-		http.StripPrefix("/static/compiled/", cacheControlHandler(
-			http.FileServer(AssetFile())))))
+		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile()))))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
