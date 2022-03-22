@@ -38,7 +38,7 @@ const footerTemplateText = `
 <div class="footer">
 <hr>
 <center>
-Copyright 2017-2019 Symantec Corporation; 2019-2021 Cloud-Foundations.org.
+Copyright 2017-2019 Symantec Corporation; 2019-2022 Cloud-Foundations.org.
 {{template "footer_extra"}}
 </center>
 </div>
