@@ -10,21 +10,29 @@ endif
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION=1.10.0
+VERSION=1.10.3
 #BUILD_TIME=`date +%FT%T%z`
 
 # Setup the -ldflags option for go build here, interpolate the variable values
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
-all:	init-config-host keymasterd-bin-data
-	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Cloud-Foundations/keymaster/cmd/*
+all:	init-config-host cmd/keymasterd/binData.go
+	cd cmd/keymaster; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymasterd; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
 
-keymasterd-bin-data:
+build:	cmd/keymasterd/binData.go
+	go build -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
+
+cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
 
-win-client:
-	cd $(GOPATH)\src && go install -ldflags "-X main.Version=${VERSION}" github.com\Cloud-Foundations\keymaster\cmd\keymaster
-	cd $(GOPATH)\src\github.com\Cloud-Foundations\keymaster\cmd\keymaster && go test -v ./...
+win-client: client-test
+	 go build -ldflags "-X main.Version=${VERSION}" -o bin .\cmd\keymaster\
+
+client-test:
+	go test -v  ./cmd/keymaster/...
 
 get-deps:	init-config-host
 	go get -t ./...
@@ -41,7 +49,10 @@ ${BINARY}-${VERSION}.tar.gz:
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" lib/ ${BINARY}-${VERSION}/lib/
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" --exclude="*.key" cmd/ ${BINARY}-${VERSION}/cmd/
 	rsync -av  misc/ ${BINARY}-${VERSION}/misc/
-	cp LICENSE Makefile keymaster.spec README.md ${BINARY}-${VERSION}/
+	rsync -av proto/ ${BINARY}-${VERSION}/proto/
+	rsync -av keymasterd/ ${BINARY}-${VERSION}/keymasterd/
+	rsync -av eventmon/ ${BINARY}-${VERSION}/eventmon/
+	cp -p LICENSE Makefile keymaster.spec README.md go.mod go.sum ${BINARY}-${VERSION}/
 	tar -cvzf ${BINARY}-${VERSION}.tar.gz ${BINARY}-${VERSION}/
 	rm -rf ${BINARY}-${VERSION}/
 

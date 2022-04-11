@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/fsutil"
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -255,10 +253,14 @@ func generateAwsRoleCert(homeDir string,
 		if err != nil {
 			return err
 		}
-		err = fsutil.CopyToFile(x509CertPath, 0644, bytes.NewReader(certPEM), 0)
+		tempPath := x509CertPath + "~"
+		err = ioutil.WriteFile(tempPath, certPEM, 0644)
 		if err != nil {
 			return errors.New("Could not write ssh cert")
 		}
+		defer os.Remove(tempPath)
+		return os.Rename(tempPath, x509CertPath)
+
 	}
 	return nil
 }
@@ -389,15 +391,8 @@ func setupCerts(
 	logger.Debugf(0, "certificates successfully generated")
 
 	// Time to write certs and keys
-	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		signers.SshRsa,
-		FilePrefix+"-rsa",
-		userName,
-		sshKeyPath+"-rsa",
-		logger)
-	if err != nil {
-		return err
-	}
+	// old agents do not understand sha2 certs, so we inject Ed25519 first
+	// if present
 	if sshEd25519Cert != nil {
 		err = insertSSHCertIntoAgentORWriteToFilesystem(sshEd25519Cert,
 			signers.SshEd25519,
@@ -408,6 +403,15 @@ func setupCerts(
 		if err != nil {
 			return err
 		}
+	}
+	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
+		signers.SshRsa,
+		FilePrefix+"-rsa",
+		userName,
+		sshKeyPath+"-rsa",
+		logger)
+	if err != nil {
+		return err
 	}
 	// Now x509
 	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
