@@ -42,6 +42,7 @@ import (
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
+	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
 )
 
@@ -51,36 +52,38 @@ type autoUnseal struct {
 }
 
 type baseConfig struct {
-	HttpAddress                  string `yaml:"http_address"`
-	AdminAddress                 string `yaml:"admin_address"`
-	HttpRedirectPort             uint16 `yaml:"http_redirect_port"`
-	TLSCertFilename              string `yaml:"tls_cert_filename"`
-	TLSKeyFilename               string `yaml:"tls_key_filename"`
-	ACME                         acmecfg.AcmeConfig
-	SSHCAFilename                string        `yaml:"ssh_ca_filename"`
-	Ed25519CAFilename            string        `yaml:"ed25519_ca_keyfilename"`
-	AutoUnseal                   autoUnseal    `yaml:"auto_unseal"`
-	HtpasswdFilename             string        `yaml:"htpasswd_filename"`
-	ExternalAuthCmd              string        `yaml:"external_auth_command"`
-	ClientCAFilename             string        `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename  string        `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                 string        `yaml:"host_identity"`
-	KerberosRealm                string        `yaml:"kerberos_realm"`
-	DataDirectory                string        `yaml:"data_directory"`
-	SharedDataDirectory          string        `yaml:"shared_data_directory"`
-	AllowedAuthBackendsForCerts  []string      `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI  []string      `yaml:"allowed_auth_backends_for_webui"`
-	AllowSelfServiceBootstrapOTP bool          `yaml:"allow_self_service_bootstrap_otp"`
-	AdminUsers                   []string      `yaml:"admin_users"`
-	AdminGroups                  []string      `yaml:"admin_groups"`
-	PublicLogs                   bool          `yaml:"public_logs"`
-	SecsBetweenDependencyChecks  int           `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups         []string      `yaml:"automation_user_groups"`
-	AutomationUsers              []string      `yaml:"automation_users"`
-	DisableUsernameNormalization bool          `yaml:"disable_username_normalization"`
-	EnableLocalTOTP              bool          `yaml:"enable_local_totp"`
-	EnableBootstrapOTP           bool          `yaml:"enable_bootstrapotp"`
-	WebauthTokenForCliLifetime   time.Duration `yaml:"webauth_token_for_cli_lifetime"`
+	HttpAddress                     string `yaml:"http_address"`
+	AdminAddress                    string `yaml:"admin_address"`
+	HttpRedirectPort                uint16 `yaml:"http_redirect_port"`
+	TLSCertFilename                 string `yaml:"tls_cert_filename"`
+	TLSKeyFilename                  string `yaml:"tls_key_filename"`
+	ACME                            acmecfg.AcmeConfig
+	SSHCAFilename                   string        `yaml:"ssh_ca_filename"`
+	Ed25519CAFilename               string        `yaml:"ed25519_ca_keyfilename"`
+	AutoUnseal                      autoUnseal    `yaml:"auto_unseal"`
+	HtpasswdFilename                string        `yaml:"htpasswd_filename"`
+	ExternalAuthCmd                 string        `yaml:"external_auth_command"`
+	ClientCAFilename                string        `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename     string        `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                    string        `yaml:"host_identity"`
+	KerberosRealm                   string        `yaml:"kerberos_realm"`
+	DataDirectory                   string        `yaml:"data_directory"`
+	SharedDataDirectory             string        `yaml:"shared_data_directory"`
+	AllowedAuthBackendsForCerts     []string      `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI     []string      `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP    bool          `yaml:"allow_self_service_bootstrap_otp"`
+	AdminUsers                      []string      `yaml:"admin_users"`
+	AdminGroups                     []string      `yaml:"admin_groups"`
+	PublicLogs                      bool          `yaml:"public_logs"`
+	SecsBetweenDependencyChecks     int           `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups            []string      `yaml:"automation_user_groups"`
+	AutomationUsers                 []string      `yaml:"automation_users"`
+	DisableUsernameNormalization    bool          `yaml:"disable_username_normalization"`
+	EnableLocalTOTP                 bool          `yaml:"enable_local_totp"`
+	EnableBootstrapOTP              bool          `yaml:"enable_bootstrapotp"`
+	WebauthTokenForCliLifetime      time.Duration `yaml:"webauth_token_for_cli_lifetime"`
+	PasswordAttemptGlobalBurstLimit uint          `yaml:"password_attempt_global_burst_limit"`
+	PasswordAttemptGlobalRateLimit  rate.Limit    `yaml:"password_attempt_global_rate_limit"`
 }
 
 type awsCertsConfig struct {
@@ -367,6 +370,8 @@ func loadVerifyConfigFile(configFilename string,
 	}
 	runtimeState.initEmailDefaults()
 	runtimeState.Config.Watchdog.SetDefaults()
+	runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit = 100
+	runtimeState.Config.Base.PasswordAttemptGlobalRateLimit = 10
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -379,6 +384,15 @@ func loadVerifyConfigFile(configFilename string,
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse config file: %s", err)
 	}
+	if runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit < 10 {
+		runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit = 10
+	}
+	if runtimeState.Config.Base.PasswordAttemptGlobalRateLimit < 1 {
+		runtimeState.Config.Base.PasswordAttemptGlobalRateLimit = 1
+	}
+	runtimeState.passwordAttemptGlobalLimiter = rate.NewLimiter(
+		runtimeState.Config.Base.PasswordAttemptGlobalRateLimit,
+		int(runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit))
 
 	//share config
 	//runtimeState.userProfile = make(map[string]userProfile)

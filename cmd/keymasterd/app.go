@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
@@ -165,34 +166,35 @@ type totpRateLimitInfo struct {
 }
 
 type RuntimeState struct {
-	Config               AppConfigFile
-	SSHCARawFileContent  []byte
-	Signer               crypto.Signer
-	Ed25519CAFileContent []byte
-	Ed25519Signer        crypto.Signer
-	ClientCAPool         *x509.CertPool
-	HostIdentity         string
-	KerberosRealm        *string
-	caCertDer            []byte
-	certManager          *certmanager.CertificateManager
-	vipPushCookie        map[string]pushPollTransaction
-	localAuthData        map[string]localUserData
-	SignerIsReady        chan bool
-	oktaUsernameFilterRE *regexp.Regexp
-	Mutex                sync.Mutex
-	gitDB                *gitdb.UserInfo
-	pendingOauth2        map[string]pendingAuth2Request
-	storageRWMutex       sync.RWMutex
-	db                   *sql.DB
-	dbType               string
-	cacheDB              *sql.DB
-	remoteDBQueryTimeout time.Duration
-	htmlTemplate         *htmltemplate.Template
-	passwordChecker      pwauth.PasswordAuthenticator
-	KeymasterPublicKeys  []crypto.PublicKey
-	isAdminCache         *admincache.Cache
-	emailManager         configuredemail.EmailManager
-	textTemplates        *texttemplate.Template
+	Config                       AppConfigFile
+	SSHCARawFileContent          []byte
+	Signer                       crypto.Signer
+	Ed25519CAFileContent         []byte
+	Ed25519Signer                crypto.Signer
+	ClientCAPool                 *x509.CertPool
+	HostIdentity                 string
+	KerberosRealm                *string
+	caCertDer                    []byte
+	certManager                  *certmanager.CertificateManager
+	vipPushCookie                map[string]pushPollTransaction
+	localAuthData                map[string]localUserData
+	SignerIsReady                chan bool
+	oktaUsernameFilterRE         *regexp.Regexp
+	passwordAttemptGlobalLimiter *rate.Limiter
+	Mutex                        sync.Mutex
+	gitDB                        *gitdb.UserInfo
+	pendingOauth2                map[string]pendingAuth2Request
+	storageRWMutex               sync.RWMutex
+	db                           *sql.DB
+	dbType                       string
+	cacheDB                      *sql.DB
+	remoteDBQueryTimeout         time.Duration
+	htmlTemplate                 *htmltemplate.Template
+	passwordChecker              pwauth.PasswordAuthenticator
+	KeymasterPublicKeys          []crypto.PublicKey
+	isAdminCache                 *admincache.Cache
+	emailManager                 configuredemail.EmailManager
+	textTemplates                *texttemplate.Template
 
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
@@ -474,6 +476,19 @@ func ensureHTMLSafeLoginDestination(loginDestination string) string {
 	}
 	return parsedLoginDestination.String()
 
+}
+
+// checkPasswordAttemptLimit will check if the limit on password attempts has
+// been reached. If the limit has been reached, an error response is written to
+// w and an error message is returned.
+func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
+	r *http.Request) error {
+	if !state.passwordAttemptGlobalLimiter.Allow() {
+		state.writeFailureResponse(w, r, http.StatusTooManyRequests,
+			"Too many password attempts")
+		return errors.New("too many password attempts")
+	}
+	return nil
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
@@ -850,7 +865,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
-			err := errors.New("check_Auth, Invalid or no auth header")
+			return nil, errors.New("checkAuth, Invalid or no auth header")
+		}
+		if err := state.checkPasswordAttemptLimit(w, r); err != nil {
 			return nil, err
 		}
 		state.Mutex.Lock()
@@ -1095,6 +1112,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
 		}
+	}
+	if err := state.checkPasswordAttemptLimit(w, r); err != nil {
+		return
 	}
 	username = state.reprocessUsername(username)
 	valid, err := checkUserPassword(username, password, state.Config,
