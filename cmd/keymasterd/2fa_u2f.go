@@ -306,6 +306,9 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
+		if !u2fReg.Enabled {
+			continue
+		}
 		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
