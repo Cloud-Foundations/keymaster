@@ -1,8 +1,9 @@
 package main
 
 import (
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
+	//"crypto/x509"
 	"encoding/binary"
 	"github.com/duo-labs/webauthn/webauthn"
 	"time"
@@ -56,11 +57,19 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 				        // The Authenticator information for a given certificate
 				        Authenticator Authenticator
 		*/
-		pubKeyBytes, err := x509.MarshalPKIXPublicKey(&u2fAuthData.Registration.PubKey)
-		if err != nil {
+		/*
+			pubKeyBytes, err := x509.MarshalPKIXPublicKey(&u2fAuthData.Registration.PubKey)
+			if err != nil {
+				logger.Printf("failure mmarshaling err=%s", err)
+				continue
+			}
+		*/
+		pubKeyBytes := elliptic.Marshal(u2fAuthData.Registration.PubKey.Curve, u2fAuthData.Registration.PubKey.X, u2fAuthData.Registration.PubKey.Y)
+		/*if err != nil {
 			logger.Printf("failure mmarshaling err=%s", err)
 			continue
 		}
+		*/
 		credential := webauthn.Credential{
 			AttestationType: "fido-u2f",
 			ID:              u2fAuthData.Registration.KeyHandle,
@@ -68,7 +77,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 			Authenticator: webauthn.Authenticator{
 				// The AAGUID of the authenticator. An AAGUID is defined as an array containing the globally unique
 				// identifier of the authenticator model being sought.
-				AAGUID:    u2fAuthData.Registration.KeyHandle,
+				AAGUID:    []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 				SignCount: u2fAuthData.Counter,
 			},
 		}

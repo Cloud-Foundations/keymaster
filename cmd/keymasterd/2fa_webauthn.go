@@ -398,6 +398,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 			w.Write([]byte("success"))
 			return
 		}
+		logger.Debugf(1, "Error veryfing err=%s", authErr)
 	}
 
 	// in an actual implementation we should perform additional
