@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/duo-labs/webauthn/webauthn"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 
 // from: https://github.com/duo-labs/webauthn.io/blob/3f03b482d21476f6b9fb82b2bf1458ff61a61d41/server/response.go#L15
@@ -217,10 +219,8 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	}
 
 	////
-
+	// TODO: there is an extension to ensure it is an actual secirity key... need to add this to the call.
 	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
-	/*
-	 */
 
 	// generate PublicKeyCredentialRequestOptions, session data
 	options, sessionData, err := state.webAuthn.BeginLogin(profile, webauthn.WithAssertionExtensions(extensions))
@@ -313,16 +313,6 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	/*
-	   // load the session data
-	        sessionData, err := sessionStore.GetWebauthnSession("authentication", r)
-	        if err != nil {
-	                log.Println(err)
-	                jsonResponse(w, err.Error(), http.StatusBadRequest)
-	                return
-	        }
-	*/
-
 	state.Mutex.Lock()
 	localAuth, ok := state.localAuthData[authData.Username]
 	state.Mutex.Unlock()
@@ -351,65 +341,87 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-	logger.Debugf(1, "webuthn parsedResonse: %+v", parsedResponse)
-	logger.Debugf(1, "webauthn parsedResponse.ParsedPublicKeyCredential: %+v", parsedResponse.ParsedPublicKeyCredential)
-	logger.Debugf(1, "webauthn parsedResponse.Response: %+v", parsedResponse.Response)
 
-	//var err error
-	var signResp u2f.SignResponse
-	signResp.KeyHandle = parsedResponse.ParsedPublicKeyCredential.ParsedCredential.ID
-	signResp.SignatureData = base64.RawURLEncoding.EncodeToString(parsedResponse.Response.Signature)
-	signResp.ClientData = base64.RawURLEncoding.EncodeToString(parsedResponse.Raw.AssertionResponse.AuthenticatorResponse.ClientDataJSON)
-
-	logger.Debugf(1, "signResponse: %+v", signResp)
-
-	for i, u2fReg := range profile.U2fAuthData {
-		if !u2fReg.Enabled {
+	userCredentials := profile.WebAuthnCredentials()
+	var loginCredential webauthn.Credential
+	var credentialFound bool
+	var credentialIndex int64
+	for _, cred := range userCredentials {
+		if cred.AttestationType != "fido-u2f" {
 			continue
 		}
-		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
-		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
-		if authErr == nil {
-			//metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
-
-			logger.Debugf(0, "newCounter: %d", newCounter)
-			//counter = newCounter
-			u2fReg.Counter = newCounter
-			//profile.U2fAuthData[i].Counter = newCounter
-			u2fReg.Counter = newCounter
-			profile.U2fAuthData[i] = u2fReg
-			//profile.U2fAuthChallenge = nil
-			delete(state.localAuthData, authData.Username)
-
-			//eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
-			//_, isXHR := r.Header["X-Requested-With"]
-			//if isXHR {
-			//	eventNotifier.PublishWebLoginEvent(authData.Username)
-			//}
-			_, err = state.updateAuthCookieAuthlevel(w, r,
-				authData.AuthType|AuthTypeU2F)
-			if err != nil {
-				logger.Printf("Auth Cookie NOT found ? %s", err)
-				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
-				return
+		if bytes.Equal(cred.ID, parsedResponse.RawID) {
+			loginCredential = cred
+			credentialFound = true
+			for i, u2fReg := range profile.U2fAuthData {
+				if !u2fReg.Enabled {
+					continue
+				}
+				if bytes.Equal(u2fReg.Registration.KeyHandle, parsedResponse.RawID) {
+					credentialIndex = i
+				}
 			}
 
-			// TODO: update local cookie state
-			w.Write([]byte("success"))
-			return
+			break
 		}
-		logger.Debugf(1, "Error veryfing err=%s", authErr)
+		credentialFound = false
 	}
 
-	// in an actual implementation we should perform additional
-	// checks on the returned 'credential'
-	_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
-	if err != nil {
-		logger.Printf("webauthnAuthFinish: auth failure")
-		logger.Println(err)
-		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
-		return
+	verifiedAuth := 0
+	if !credentialFound {
+		// DO STD webaautn verification
+		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
+		if err != nil {
+			logger.Printf("webauthnAuthFinish: auth failure")
+			logger.Println(err)
+			webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		verifiedAuth = AuthTypeFIDO2
+		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
+		//return
+	} else {
+		session := *localAuth.WebAuthnChallenge
+		shouldVerifyUser := session.UserVerification == protocol.VerificationRequired
+
+		rpID := state.webAuthn.Config.RPID
+		rpOrigin := state.webAuthn.Config.RPOrigin
+		appID := u2fAppID
+
+		// Handle steps 4 through 16
+		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigin, appID, shouldVerifyUser, loginCredential.PublicKey)
+		if validError != nil {
+			logger.Printf("failed to verify webauthn parsedResponse")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
+			return
+		}
+
+		//loginCredential.Authenticator.UpdateCounter(parsedResponse.Response.AuthenticatorData.Counter)
+		u2fReg, ok := profile.U2fAuthData[credentialIndex]
+		if ok {
+			u2fReg.Counter = parsedResponse.Response.AuthenticatorData.Counter
+			profile.U2fAuthData[credentialIndex] = u2fReg
+			go state.SaveUserProfile(assumedUser, profile)
+		}
+
+		verifiedAuth = AuthTypeU2F
+		logger.Printf("success (LOCAL)")
 	}
+	/*
+		// Handle step 17
+		//loginCredential.Authenticator.UpdateCounter(parsedResponse.Response.AuthenticatorData.Counter)
+
+		// in an actual implementation we should perform additional
+		// checks on the returned 'credential'
+		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
+		if err != nil {
+			logger.Printf("webauthnAuthFinish: auth failure")
+			logger.Println(err)
+			webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	*/
 	logger.Printf("webauthnAuthFinish: auth success")
 
 	//metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
@@ -422,15 +434,15 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	delete(state.localAuthData, authData.Username)
 	state.Mutex.Unlock()
 
-	/*
-		eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
-		_, isXHR := r.Header["X-Requested-With"]
-		if isXHR {
-			eventNotifier.PublishWebLoginEvent(authData.Username)
-		}
-	*/
+	//TODO: distinguish here u2f vs webauthn
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
+	_, isXHR := r.Header["X-Requested-With"]
+	if isXHR {
+		eventNotifier.PublishWebLoginEvent(authData.Username)
+	}
+
 	_, err = state.updateAuthCookieAuthlevel(w, r,
-		authData.AuthType|AuthTypeFIDO2)
+		authData.AuthType|verifiedAuth)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")

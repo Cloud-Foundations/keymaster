@@ -57,19 +57,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 				        // The Authenticator information for a given certificate
 				        Authenticator Authenticator
 		*/
-		/*
-			pubKeyBytes, err := x509.MarshalPKIXPublicKey(&u2fAuthData.Registration.PubKey)
-			if err != nil {
-				logger.Printf("failure mmarshaling err=%s", err)
-				continue
-			}
-		*/
 		pubKeyBytes := elliptic.Marshal(u2fAuthData.Registration.PubKey.Curve, u2fAuthData.Registration.PubKey.X, u2fAuthData.Registration.PubKey.Y)
-		/*if err != nil {
-			logger.Printf("failure mmarshaling err=%s", err)
-			continue
-		}
-		*/
 		credential := webauthn.Credential{
 			AttestationType: "fido-u2f",
 			ID:              u2fAuthData.Registration.KeyHandle,
@@ -81,7 +69,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 				SignCount: u2fAuthData.Counter,
 			},
 		}
-		logger.Printf("WebAuthnCredentials: Added u2f Credential")
+		logger.Debugf(2, "WebAuthnCredentials: Added u2f Credential")
 		rvalue = append(rvalue, credential)
 
 	}
