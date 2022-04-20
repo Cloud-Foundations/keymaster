@@ -72,10 +72,10 @@ function checkError(resp) {
 
 
 
-function webAuthnAuthenticateUser() {
-  console.log("top of webAuthnAuthenticateUser")
+function webAuthnAuthenticateUser2() {
+  console.log("top of webAuthnAuthenticateUser");
   //var username = document.getElementById('username').textContent;
-  console.log("webAuthnAuthenticateUser after get user")
+  console.log("webAuthnAuthenticateUser after get user");
   $.get(
     '/webauthn/AuthBegin/',
     null,
@@ -119,11 +119,15 @@ function webAuthnAuthenticateUser() {
         'json')
     })
     .then((success) => {
+      console.log("foo");
+      alert("successfully logged in !");
+
       //alert("successfully logged in " + username + "!")
+      //console.log("webAuthnAuthenticateUser before getting destination");
       var destination = document.getElementById("login_destination_input").getAttribute("value");
-      console.log("destination="+destination)
+      //console.log("webAuthnAuthenticateUser after getting destination");
       window.location.href = destination;
-      return
+      //return
     })
     .catch((error) => {
       console.log(error)
@@ -135,5 +139,5 @@ function webAuthnAuthenticateUser() {
 document.addEventListener('DOMContentLoaded', function () {
 	  //document.getElementById('auth_button').addEventListener('click', sign);
 	  //sign();
-	  webAuthnAuthenticateUser()
+	  webAuthnAuthenticateUser2()
 });

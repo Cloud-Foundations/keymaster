@@ -255,6 +255,7 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Unlock()
 
 	webauthnJsonResponse(w, options, http.StatusOK)
+	logger.Debugf(3, "end of webauthnAuthBegin")
 }
 
 //
@@ -347,7 +348,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		credentialFound = false
 	}
 
-	verifiedAuth := 0
+	verifiedAuth := authData.AuthType
 	if !credentialFound {
 		// DO STD webaautn verification
 		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
