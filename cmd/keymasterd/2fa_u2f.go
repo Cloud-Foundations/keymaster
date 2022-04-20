@@ -42,10 +42,6 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	/*
-
-		/*
-	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
@@ -309,7 +305,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		if !u2fReg.Enabled {
 			continue
 		}
-		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
 			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)

@@ -107,6 +107,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		return
 	}
 
+	// TODO: better pattern matching
 	// /u2f/RegisterRequest/<assumed user>
 	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
 	pieces := strings.Split(r.URL.Path, "/")
@@ -213,9 +214,7 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 
 	}
 	if fromCache {
-		logger.Printf("DB is being cached and requesting authentication, proceeding with cached values")
-		//http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
-		//return
+		logger.Debugf(1, "DB is being cached and requesting authentication, proceeding with cached values")
 	}
 
 	////
@@ -250,17 +249,7 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Lock()
 	state.localAuthData[authData.Username] = localAuth
 	state.Mutex.Unlock()
-	/*
-		// store session data as marshaled JSON
-		err = sessionStore.SaveWebauthnSession("authentication", sessionData, r, w)
-		if err != nil {
-			log.Println(err)
-			jsonResponse(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 
-		jsonResponse(w, options, http.StatusOK)
-	*/
 	webauthnJsonResponse(w, options, http.StatusOK)
 }
 
@@ -321,20 +310,6 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	/*
-	       // in an actual implementation we should perform additional
-	       // checks on the returned 'credential'
-	   	_, err = webAuthn.FinishLogin(user, sessionData, r)
-	   	if err != nil {
-	   		log.Println(err)
-	   		jsonResponse(w, err.Error(), http.StatusBadRequest)
-	   		return
-	   	}
-
-	   	// handle successful login
-	   	jsonResponse(w, "Login Success", http.StatusOK)
-	*/
-
 	parsedResponse, err := protocol.ParseCredentialRequestResponse(r)
 	if err != nil {
 		logger.Printf("Error parsing Response")
@@ -372,16 +347,18 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		// DO STD webaautn verification
 		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
 		if err != nil {
-			logger.Printf("webauthnAuthFinish: auth failure")
-			logger.Println(err)
+			logger.Printf("webauthnAuthFinish: auth failure err=%s", err)
 			webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		// TODO also update the profile with latest counter
 		verifiedAuth = AuthTypeFIDO2
-		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
-		//return
 	} else {
+		// NOTE: somehow the extensions for grabbing the appID are failing
+		// So we "unroll" the important pieces of webAuthn.ValidateLogin here, with
+		// explicit changes for our appID
+		// Notice that if we where strict we would iterate over all the alloowed values.
 		session := *localAuth.WebAuthnChallenge
 		shouldVerifyUser := session.UserVerification == protocol.VerificationRequired
 
@@ -406,30 +383,12 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		}
 
 		verifiedAuth = AuthTypeU2F
-		logger.Printf("success (LOCAL)")
+		logger.Debugf(3, "success (LOCAL)")
 	}
-	/*
-		// Handle step 17
-		//loginCredential.Authenticator.UpdateCounter(parsedResponse.Response.AuthenticatorData.Counter)
+	logger.Debugf(1, "webauthnAuthFinish: auth success")
 
-		// in an actual implementation we should perform additional
-		// checks on the returned 'credential'
-		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
-		if err != nil {
-			logger.Printf("webauthnAuthFinish: auth failure")
-			logger.Println(err)
-			webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	*/
-	logger.Printf("webauthnAuthFinish: auth success")
-
+	// TODO: disinguish better between the two protocols or just use one
 	//metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
-	/*
-	   logger.Debugf(0, "newCounter: %d", newCounter)
-	   u2fReg.Counter = newCounter
-	   profile.U2fAuthData[i] = u2fReg
-	*/
 	state.Mutex.Lock()
 	delete(state.localAuthData, authData.Username)
 	state.Mutex.Unlock()
@@ -448,7 +407,5 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
 		return
 	}
-
 	webauthnJsonResponse(w, "Login Success", http.StatusOK)
-
 }
