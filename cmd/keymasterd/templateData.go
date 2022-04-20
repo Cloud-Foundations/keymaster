@@ -306,6 +306,7 @@ type profilePageTemplateData struct {
 	ShowTOTP             bool
 	ReadOnlyMsg          string
 	UsersLink            bool
+	ShowExperimental     bool
 	RegisteredU2FToken   []registeredU2FTokenDisplayInfo
 	RegisteredTOTPDevice []registeredTOTPTDeviceDisplayInfo
 }
@@ -363,10 +364,12 @@ const profileHTML = `
       <li><a id="auth_button" href="#">Authenticate</a>
       <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
       </li>
+      {{if .ShowExperimental}}
       <li><a id="webauthn_auth_button" href="#">WebAutn Authenticate</a>
       </li>
       <li><a id="webauthn_register_button" href="#">WebAutn Register</a>
       </li>
+      {{end}}
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}

@@ -182,31 +182,35 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 
 	// /u2f/RegisterRequest/<assumed user>
 	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
-	pieces := strings.Split(r.URL.Path, "/")
+	/*
+		pieces := strings.Split(r.URL.Path, "/")
 
-	var assumedUser string
-	if len(pieces) >= 4 {
-		assumedUser = pieces[3]
-	} else {
-		http.Error(w, "error", http.StatusBadRequest)
-		return
-	}
+		var assumedUser string
+		if len(pieces) >= 4 {
+			assumedUser = pieces[3]
+		} else {
+			http.Error(w, "error", http.StatusBadRequest)
+			return
+		}
+	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
-	// Check that they can change other users
-	if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
-		authData.Username != assumedUser {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	/*
+		// Check that they can change other users
+		if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
+			authData.Username != assumedUser {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+	*/
 
-	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -261,33 +265,34 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+	/*
+		// /u2f/RegisterRequest/<assumed user>
+		// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
+		pieces := strings.Split(r.URL.Path, "/")
 
-	// /u2f/RegisterRequest/<assumed user>
-	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
-	pieces := strings.Split(r.URL.Path, "/")
-
-	var assumedUser string
-	if len(pieces) >= 4 {
-		assumedUser = pieces[3]
-	} else {
-		http.Error(w, "error", http.StatusBadRequest)
-		return
-	}
+		var assumedUser string
+		if len(pieces) >= 4 {
+			assumedUser = pieces[3]
+		} else {
+			http.Error(w, "error", http.StatusBadRequest)
+			return
+		}
+	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-
-	// Check that they can change other users
-	if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
-		authData.Username != assumedUser {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
+	/*
+		// Check that they can change other users
+		if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
+			authData.Username != assumedUser {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+	*/
 	profile, ok, _, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
@@ -379,7 +384,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		if ok {
 			u2fReg.Counter = parsedResponse.Response.AuthenticatorData.Counter
 			profile.U2fAuthData[credentialIndex] = u2fReg
-			go state.SaveUserProfile(assumedUser, profile)
+			go state.SaveUserProfile(authData.Username, profile)
 		}
 
 		verifiedAuth = AuthTypeU2F
@@ -401,7 +406,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	}
 
 	_, err = state.updateAuthCookieAuthlevel(w, r,
-		authData.AuthType|verifiedAuth)
+		authData.AuthType|verifiedAuth|AuthTypeU2F)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")

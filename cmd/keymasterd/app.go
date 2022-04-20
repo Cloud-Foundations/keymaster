@@ -1437,6 +1437,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources:            JSSources,
 		ReadOnlyMsg:          readOnlyMsg,
 		UsersLink:            state.IsAdminUser(authData.Username),
+		ShowExperimental:     state.IsAdminUser(authData.Username),
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,

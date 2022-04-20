@@ -1,3 +1,16 @@
+// Base64 to ArrayBuffer
+function bufferDecode(value) {
+    return Uint8Array.from(atob(value), c => c.charCodeAt(0));
+}
+
+// ArrayBuffer to URLBase64
+function bufferEncode(value) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");;
+}
+
 function serverError(data) {
     console.log(data);
     alert('Server error code ' + data.status + ': ' + data.responseText);
@@ -57,7 +70,70 @@ function checkError(resp) {
     }).fail(serverError);
   }
 
+
+
+function webAuthnAuthenticateUser() {
+  console.log("top of webAuthnAuthenticateUser")
+  //var username = document.getElementById('username').textContent;
+  console.log("webAuthnAuthenticateUser after get user")
+  $.get(
+    '/webauthn/AuthBegin/',
+    null,
+    function (data) {
+      return data
+    },
+    'json')
+    .then((credentialRequestOptions) => {
+      credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
+      credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
+        listItem.id = bufferDecode(listItem.id)
+      });
+
+      return navigator.credentials.get({
+        publicKey: credentialRequestOptions.publicKey
+      })
+    })
+    .then((assertion) => {
+      let authData = assertion.response.authenticatorData;
+      let clientDataJSON = assertion.response.clientDataJSON;
+      let rawId = assertion.rawId;
+      let sig = assertion.response.signature;
+      let userHandle = assertion.response.userHandle;
+
+      $.post(
+        '/webauthn/AuthFinish/',
+        JSON.stringify({
+          id: assertion.id,
+          rawId: bufferEncode(rawId),
+          type: assertion.type,
+          response: {
+            authenticatorData: bufferEncode(authData),
+            clientDataJSON: bufferEncode(clientDataJSON),
+            signature: bufferEncode(sig),
+            userHandle: bufferEncode(userHandle),
+          },
+        }),
+        function (data) {
+          return data
+        },
+        'json')
+    })
+    .then((success) => {
+      //alert("successfully logged in " + username + "!")
+      var destination = document.getElementById("login_destination_input").getAttribute("value");
+      console.log("destination="+destination)
+      window.location.href = destination;
+      return
+    })
+    .catch((error) => {
+      console.log(error)
+      alert("failed to authenticate ")
+    });
+}
+
+
 document.addEventListener('DOMContentLoaded', function () {
 	  //document.getElementById('auth_button').addEventListener('click', sign);
-	  sign();
+	  //sign();
+	  webAuthnAuthenticateUser()
 });
