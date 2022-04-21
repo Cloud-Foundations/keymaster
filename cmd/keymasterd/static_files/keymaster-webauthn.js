@@ -113,12 +113,14 @@ function webAuthnAuthenticateUser() {
           },
         }),
         function (data) {
+	  console.log("Authnenticated: " + data);
+          alert("successfully authenticated " + username + "!");
           return data
         },
         'json')
     })
     .then((success) => {
-      alert("successfully logged in " + username + "!")
+      console.log("button pressed")
       return
     })
     .catch((error) => {

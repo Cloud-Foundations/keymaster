@@ -26,6 +26,7 @@ func webauthnJsonResponse(w http.ResponseWriter, d interface{}, c int) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(c)
+	logger.Debugf(3, "webauth json response=%s", dj)
 	fmt.Fprintf(w, "%s", dj)
 }
 

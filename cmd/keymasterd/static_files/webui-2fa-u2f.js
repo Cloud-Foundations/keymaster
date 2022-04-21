@@ -73,9 +73,6 @@ function checkError(resp) {
 
 
 function webAuthnAuthenticateUser2() {
-  console.log("top of webAuthnAuthenticateUser");
-  //var username = document.getElementById('username').textContent;
-  console.log("webAuthnAuthenticateUser after get user");
   $.get(
     '/webauthn/AuthBegin/',
     null,
@@ -94,12 +91,12 @@ function webAuthnAuthenticateUser2() {
       })
     })
     .then((assertion) => {
+
       let authData = assertion.response.authenticatorData;
       let clientDataJSON = assertion.response.clientDataJSON;
       let rawId = assertion.rawId;
       let sig = assertion.response.signature;
       let userHandle = assertion.response.userHandle;
-
       $.post(
         '/webauthn/AuthFinish/',
         JSON.stringify({
@@ -114,20 +111,16 @@ function webAuthnAuthenticateUser2() {
           },
         }),
         function (data) {
-          return data
+	  console.log("on post with some data " + data)
+	  var destination = document.getElementById("login_destination_input").getAttribute("value");
+          window.location.href = destination;
+          return data;
         },
         'json')
     })
     .then((success) => {
-      console.log("foo");
-      alert("successfully logged in !");
-
-      //alert("successfully logged in " + username + "!")
-      //console.log("webAuthnAuthenticateUser before getting destination");
-      var destination = document.getElementById("login_destination_input").getAttribute("value");
-      //console.log("webAuthnAuthenticateUser after getting destination");
-      window.location.href = destination;
-      //return
+      console.log("successfully pressed button");
+      hideAllU2FElements();
     })
     .catch((error) => {
       console.log(error)
@@ -137,7 +130,5 @@ function webAuthnAuthenticateUser2() {
 
 
 document.addEventListener('DOMContentLoaded', function () {
-	  //document.getElementById('auth_button').addEventListener('click', sign);
-	  //sign();
 	  webAuthnAuthenticateUser2()
 });
