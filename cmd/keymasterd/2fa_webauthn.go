@@ -155,6 +155,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	logger.Debugf(2, "new credential=%+v\n", *credential)
 
 	err = profile.AddWebAuthnCredential(*credential)
 	if err != nil {
@@ -181,19 +182,6 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// /u2f/RegisterRequest/<assumed user>
-	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
-	/*
-		pieces := strings.Split(r.URL.Path, "/")
-
-		var assumedUser string
-		if len(pieces) >= 4 {
-			assumedUser = pieces[3]
-		} else {
-			http.Error(w, "error", http.StatusBadRequest)
-			return
-		}
-	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
@@ -201,15 +189,6 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-
-	/*
-		// Check that they can change other users
-		if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
-			authData.Username != assumedUser {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-	*/
 
 	profile, _, fromCache, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
@@ -267,19 +246,6 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	/*
-		// /u2f/RegisterRequest/<assumed user>
-		// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
-		pieces := strings.Split(r.URL.Path, "/")
-
-		var assumedUser string
-		if len(pieces) >= 4 {
-			assumedUser = pieces[3]
-		} else {
-			http.Error(w, "error", http.StatusBadRequest)
-			return
-		}
-	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
@@ -287,14 +253,6 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-	/*
-		// Check that they can change other users
-		if !state.IsAdminUserAndU2F(authData.Username, authData.AuthType) &&
-			authData.Username != assumedUser {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-	*/
 	profile, ok, _, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
@@ -302,8 +260,6 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		return
 
 	}
-
-	/////////
 	if !ok {
 		http.Error(w, "No regstered data", http.StatusBadRequest)
 		return
