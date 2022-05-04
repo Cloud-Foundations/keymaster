@@ -446,6 +446,15 @@ func getClientType(r *http.Request) string {
 	}
 }
 
+// getOriginOrReferrer will return the value of the "Origin" header, or if
+// empty, the Referrer (misspelled as "Referer" in the HTML standards).
+func getOriginOrReferrer(r *http.Request) string {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin
+	}
+	return r.Referer()
+}
+
 // getUser will return the "user" value from the request form. If the username
 // contains invalid characters, the empty string is returned.
 func getUserFromRequest(r *http.Request) string {
@@ -792,7 +801,7 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (*authInfo, error) {
 	// Check csrf
 	if r.Method != "GET" {
-		referer := r.Referer()
+		referer := getOriginOrReferrer(r)
 		if len(referer) > 0 && len(r.Host) > 0 {
 			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
