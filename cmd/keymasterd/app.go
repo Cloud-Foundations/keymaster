@@ -495,7 +495,7 @@ func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
 	if !state.passwordAttemptGlobalLimiter.Allow() {
 		state.writeFailureResponse(w, r, http.StatusTooManyRequests,
 			"Too many password attempts")
-		return errors.New("too many password attempts")
+		return errors.New("too many password attempts, host: " + r.RemoteAddr)
 	}
 	return nil
 }
@@ -1123,6 +1123,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 		}
 	}
 	if err := state.checkPasswordAttemptLimit(w, r); err != nil {
+		state.logger.Debugf(1, "%v", err)
 		return
 	}
 	username = state.reprocessUsername(username)
