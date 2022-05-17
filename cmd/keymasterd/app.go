@@ -229,6 +229,13 @@ var (
 		},
 		[]string{"client_type", "type", "result"},
 	)
+	passwordRateLimitExceededCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_password_rate_limit_exceeded_counter",
+			Help: "keymaster_password_rate_limit_exceeded_counter",
+		},
+		[]string{"username"},
+	)
 
 	externalServiceDurationTotal = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -491,11 +498,13 @@ func ensureHTMLSafeLoginDestination(loginDestination string) string {
 // been reached. If the limit has been reached, an error response is written to
 // w and an error message is returned.
 func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
-	r *http.Request) error {
+	r *http.Request, username string) error {
 	if !state.passwordAttemptGlobalLimiter.Allow() {
 		state.writeFailureResponse(w, r, http.StatusTooManyRequests,
 			"Too many password attempts")
-		return errors.New("too many password attempts")
+		passwordRateLimitExceededCounter.WithLabelValues(username).Inc()
+		return fmt.Errorf("too many password attempts, host: %s user: %s",
+			r.RemoteAddr, username)
 	}
 	return nil
 }
@@ -876,7 +885,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			//toLoginOrBasicAuth(w, r)
 			return nil, errors.New("checkAuth, Invalid or no auth header")
 		}
-		if err := state.checkPasswordAttemptLimit(w, r); err != nil {
+		if err := state.checkPasswordAttemptLimit(w, r, user); err != nil {
 			return nil, err
 		}
 		state.Mutex.Lock()
@@ -1122,7 +1131,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			return
 		}
 	}
-	if err := state.checkPasswordAttemptLimit(w, r); err != nil {
+	if err := state.checkPasswordAttemptLimit(w, r, username); err != nil {
+		state.logger.Debugf(1, "%v", err)
 		return
 	}
 	username = state.reprocessUsername(username)
@@ -1651,6 +1661,7 @@ func Usage() {
 func init() {
 	prometheus.MustRegister(certGenCounter)
 	prometheus.MustRegister(authOperationCounter)
+	prometheus.MustRegister(passwordRateLimitExceededCounter)
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
 	tricorder.RegisterMetric(
