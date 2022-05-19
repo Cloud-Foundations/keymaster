@@ -547,7 +547,8 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	r *http.Request, statusCode int,
 	defaultUsername, loginDestination, errorMessage string) {
-	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
+	if state.Config.Oauth2.Enabled &&
+		(state.Config.Oauth2.ForceRedirect || state.passwordChecker == nil) {
 		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
 		return
 	}

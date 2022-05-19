@@ -133,14 +133,15 @@ type UserInfoSouces struct {
 }
 
 type Oauth2Config struct {
-	Config       *oauth2.Config
-	Enabled      bool   `yaml:"enabled"`
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	TokenUrl     string `yaml:"token_url"`
-	AuthUrl      string `yaml:"auth_url"`
-	UserinfoUrl  string `yaml:"userinfo_url"`
-	Scopes       string `yaml:"scopes"`
+	Config        *oauth2.Config
+	Enabled       bool   `yaml:"enabled"`
+	ForceRedirect bool   `yaml:"force_redirect"`
+	ClientID      string `yaml:"client_id"`
+	ClientSecret  string `yaml:"client_secret"`
+	TokenUrl      string `yaml:"token_url"`
+	AuthUrl       string `yaml:"auth_url"`
+	UserinfoUrl   string `yaml:"userinfo_url"`
+	Scopes        string `yaml:"scopes"`
 	//Todo add allowed orgs...
 }
 
