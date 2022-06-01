@@ -27,8 +27,9 @@ func (u *userProfile) WebAuthnDisplayName() string {
 	return u.DisplayName
 }
 
+// From chrome: apparently this needs to be a secure url
 func (u *userProfile) WebAuthnIcon() string {
-	return "Not implemented"
+	return ""
 }
 func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 	var rvalue []webauthn.Credential

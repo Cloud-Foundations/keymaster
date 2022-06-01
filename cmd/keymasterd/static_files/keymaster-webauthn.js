@@ -34,7 +34,8 @@ function webAuthnRegisterUser() {
 		  console.log(credentialCreationOptions);
 		  credentialCreationOptions.publicKey.challenge = bufferDecode(credentialCreationOptions.publicKey.challenge);
                   credentialCreationOptions.publicKey.user.id = bufferDecode(credentialCreationOptions.publicKey.user.id);
-
+                  credentialCreationOptions.publicKey.authenticatorSelection.userVerification="discouraged";
+                  console.log(credentialCreationOptions);
                   return navigator.credentials.create({
                        publicKey: credentialCreationOptions.publicKey
                   })
@@ -66,6 +67,10 @@ function webAuthnRegisterUser() {
           .then((success) => {
                   alert("successfully registered " + username + "!")
                   return
+          })
+          .catch((error) => {
+          console.log(error)
+          alert("failed to register " + username)
           });
 }
 
@@ -86,6 +91,7 @@ function webAuthnAuthenticateUser() {
       credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
         listItem.id = bufferDecode(listItem.id)
       });
+      //credentialRequestOptions.publicKey.authenticatorSelection.userVerification="discouraged";
 
       return navigator.credentials.get({
         publicKey: credentialRequestOptions.publicKey

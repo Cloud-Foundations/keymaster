@@ -73,6 +73,7 @@ function checkError(resp) {
 
 
 function webAuthnAuthenticateUser2() {
+  console.log("top of webAuthnAuthenticateUser2");
   $.get(
     '/webauthn/AuthBegin/',
     null,
@@ -120,7 +121,7 @@ function webAuthnAuthenticateUser2() {
     })
     .then((success) => {
       console.log("successfully pressed button");
-      hideAllU2FElements();
+      //hideAllU2FElements();
     })
     .catch((error) => {
       console.log(error)
@@ -130,5 +131,5 @@ function webAuthnAuthenticateUser2() {
 
 
 document.addEventListener('DOMContentLoaded', function () {
-	  webAuthnAuthenticateUser2()
+	  webAuthnAuthenticateUser2();
 });

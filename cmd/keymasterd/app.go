@@ -428,6 +428,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
+	logger.Debugf(3, "browser doest NOT support u2f")
 	return false
 }
 
@@ -997,11 +998,18 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
-	if len(registrations) < 1 {
-		return false, nil
+	for _, u2fRegistration := range profile.U2fAuthData {
+		if u2fRegistration.Enabled {
+			return true, nil
+		}
+
 	}
-	return true, nil
+	for _, webauthnRegustration := range profile.WebauthnData {
+		if webauthnRegustration.Enabled {
+			return true, nil
+		}
+	}
+	return false, nil
 
 }
 
