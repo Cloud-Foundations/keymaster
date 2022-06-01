@@ -94,6 +94,7 @@ func doGenericPushCheck(client *http.Client,
 	baseURL string,
 	pushType string,
 	userAgentString string,
+	codeIsDone chan bool,
 	logger log.DebugLogger,
 	errorReturnDuration time.Duration) error {
 
@@ -118,7 +119,15 @@ func doGenericPushCheck(client *http.Client,
 			logger.Printf("") //To do a CR
 			return nil
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case codeSuccess := <-codeIsDone:
+			if codeSuccess {
+				return nil
+			}
+			continue
+		case <-time.After(2 * time.Second):
+			logger.Debugf(1, "doGenericPushCheck: timeout on checkGenericPollStatus loop")
+		}
 	}
 
 	err = errors.New("Vip Push Checked timeout out")
@@ -203,14 +212,19 @@ func doGenericTokenPushAuthenticate(
 
 	timeout := time.Duration(time.Duration(vipCheckTimeoutSecs) * time.Second)
 	ch := make(chan error, 1)
+	doneCh := make(chan bool, 1)
 	go func() {
 		err := genericAuthenticateWithToken(client, baseURL, pushType, userAgentString, logger)
+		if err == nil {
+			doneCh <- true
+		}
 		ch <- err
 	}()
 	go func() {
 		err := doGenericPushCheck(client, baseURL,
 			pushType,
 			userAgentString,
+			doneCh,
 			logger, timeout)
 		ch <- err
 
