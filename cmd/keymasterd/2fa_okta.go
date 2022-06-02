@@ -101,6 +101,7 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating OKTA push")
 		return
 	}
+	logger.Debugf(2, "oktaPushStartHandler: after validating push response=%+v", pushResponse)
 	switch pushResponse {
 	case okta.PushResponseWaiting:
 		w.WriteHeader(http.StatusOK)

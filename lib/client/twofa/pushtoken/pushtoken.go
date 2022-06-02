@@ -2,6 +2,7 @@ package pushtoken
 
 import (
 	"bufio"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,11 @@ import (
 )
 
 const vipCheckTimeoutSecs = 180
+
+func debugLogCert(messageSuffix string, cert *x509.Certificate, logger log.DebugLogger) {
+	logger.Debugf(2, "%s.issuer=%+v", messageSuffix, cert.Issuer)
+	logger.Debugf(2, "%s.subject=%+v", messageSuffix, cert.Subject)
+}
 
 func startGenericPush(client *http.Client,
 	baseURL string,
@@ -42,6 +48,14 @@ func startGenericPush(client *http.Client,
 		return err
 	}
 	defer pushStartResp.Body.Close()
+
+	if pushStartResp.TLS != nil {
+		debugLogCert("startGenericPush peeerCerts[0]", pushStartResp.TLS.PeerCertificates[0], logger)
+		if pushStartResp.TLS.VerifiedChains != nil {
+			debugLogCert("startGenericPush verifiedcerts[0]", pushStartResp.TLS.VerifiedChains[0][0], logger)
+		}
+	}
+
 	// since we dont care about content we just consume it all.
 	io.Copy(ioutil.Discard, pushStartResp.Body)
 	if pushStartResp.StatusCode != 200 {
