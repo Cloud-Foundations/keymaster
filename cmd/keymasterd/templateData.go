@@ -51,6 +51,7 @@ type loginPageTemplateData struct {
 	SessionExpires        int64
 	DefaultUsername       string
 	JSSources             []string
+	ShowBasicAuth         bool
 	ShowOauth2            bool
 	LoginDestinationInput template.HTML
 	ErrorMessage          string
@@ -85,6 +86,7 @@ const loginFormText = `
     </form>
 	</p>
     {{end}}
+    {{if .ShowBasicAuth}}
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             {{if .DefaultUsername}}
@@ -97,6 +99,7 @@ const loginFormText = `
 	    {{.LoginDestinationInput}}
             <p><input type="submit" value="Submit" /></p>
         </form>
+    {{end}}
 	{{template "login_form_footer" .}}
 	</div>
     {{template "footer" . }}
