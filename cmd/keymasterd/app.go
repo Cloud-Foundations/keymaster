@@ -547,10 +547,10 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	r *http.Request, statusCode int,
 	defaultUsername, loginDestination, errorMessage string) {
+	showBasicAuth := true
 	if state.Config.Oauth2.Enabled &&
 		(state.Config.Oauth2.ForceRedirect || state.passwordChecker == nil) {
-		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
-		return
+		showBasicAuth = false
 	}
 	w.WriteHeader(statusCode)
 
@@ -558,6 +558,7 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	displayData := loginPageTemplateData{
 		Title:                 "Keymaster Login",
 		DefaultUsername:       defaultUsername,
+		ShowBasicAuth:         showBasicAuth,
 		ShowOauth2:            state.Config.Oauth2.Enabled,
 		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
 		ErrorMessage:          errorMessage,
