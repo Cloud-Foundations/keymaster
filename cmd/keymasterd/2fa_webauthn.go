@@ -239,17 +239,8 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	////
 	// TODO: there is an extension to ensure it is an actual secirity key... need to add this to the call.
 	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
-	/*
-		allowList := make([]protocol.CredentialDescriptor, 1)
-		allowList[0] = protocol.CredentialDescriptor{
-			CredentialID: credentialToAllowID,
-			Type:         protocol.CredentialType("public-key"),
-		}
-	*/
-	// generate PublicKeyCredentialRequestOptions, session data
 	options, sessionData, err := state.webAuthn.BeginLogin(profile,
 		webauthn.WithAssertionExtensions(extensions))
-	//webauthn.wat.WithAllowedCredentials(allowList))
 	if err != nil {
 		logger.Printf("webauthnAuthBegin: %s", err)
 		webauthnJsonResponse(w, err.Error(), http.StatusInternalServerError)

@@ -146,7 +146,9 @@ type userProfile struct {
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
 
-	WebauthnData        map[int64]*webauthAuthData
+	// We will be using this later... but we cannot land this yet
+	// because we dont want to polute our address space
+	//WebauthnData        map[int64]*webauthAuthData
 	WebauthnID          uint64 // maybe more specific?
 	DisplayName         string
 	Username            string
@@ -985,8 +987,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
-		//w.WriteHeader(200)
-		//fmt.Fprintf(w, "OK\n")
 	}
 }
 
@@ -1003,11 +1003,6 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 			return true, nil
 		}
 
-	}
-	for _, webauthnRegustration := range profile.WebauthnData {
-		if webauthnRegustration.Enabled {
-			return true, nil
-		}
 	}
 	return false, nil
 
@@ -1406,15 +1401,17 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 	// TODO: make some difference
 	// also add the webauthn devices...
-	for i, tokenInfo := range profile.WebauthnData {
-		deviceData := registeredU2FTokenDisplayInfo{
-			DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
-			Enabled:    tokenInfo.Enabled,
-			Name:       tokenInfo.Name, //Display name?
-			Index:      i,
+	/*
+		for i, tokenInfo := range profile.WebauthnData {
+			deviceData := registeredU2FTokenDisplayInfo{
+				DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
+				Enabled:    tokenInfo.Enabled,
+				Name:       tokenInfo.Name, //Display name?
+				Index:      i,
+			}
+			u2fdevices = append(u2fdevices, deviceData)
 		}
-		u2fdevices = append(u2fdevices, deviceData)
-	}
+	*/
 
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
@@ -1533,9 +1530,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
-	_, ok2 := profile.WebauthnData[tokenIndex]
-	if !ok && !ok2 {
-		//if tokenIndex >= len(profile.U2fAuthData) {
+	if !ok {
 		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
@@ -1553,27 +1548,19 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		}
 		if ok {
 			profile.U2fAuthData[tokenIndex].Name = tokenName
-		} else {
-			profile.WebauthnData[tokenIndex].Name = tokenName
 		}
 
 	case "Disable":
 		if ok {
 			profile.U2fAuthData[tokenIndex].Enabled = false
-		} else {
-			profile.WebauthnData[tokenIndex].Enabled = false
 		}
 	case "Enable":
 		if ok {
 			profile.U2fAuthData[tokenIndex].Enabled = true
-		} else {
-			profile.WebauthnData[tokenIndex].Enabled = true
 		}
 	case "Delete":
 		if ok {
 			delete(profile.U2fAuthData, tokenIndex)
-		} else {
-			delete(profile.WebauthnData, tokenIndex)
 		}
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")

@@ -131,7 +131,7 @@ function webAuthnAuthenticateUser() {
     })
     .catch((error) => {
       console.log(error)
-      alert("failed to register " + username)
+      alert("failed to authenticate " + username)
     });
 }
 

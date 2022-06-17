@@ -67,17 +67,19 @@ func (u *userProfile) getRegistrationArray() (regArray []u2f.Registration) {
 		}
 		regArray = append(regArray, *data.Registration)
 	}
-	for _, webauth := range u.WebauthnData {
-		if !webauth.Enabled {
-			continue
+	/*
+		for _, webauth := range u.WebauthnData {
+			if !webauth.Enabled {
+				continue
+			}
+			u2fData, err := webauthnRegistrationToU2fRegistration(*webauth)
+			if err != nil {
+				logger.Debugf(3, " getRegistrationArray could not transform webauth err:%s", err)
+				continue
+			}
+			regArray = append(regArray, *u2fData.Registration)
 		}
-		u2fData, err := webauthnRegistrationToU2fRegistration(*webauth)
-		if err != nil {
-			logger.Debugf(3, " getRegistrationArray could not transform webauth err:%s", err)
-			continue
-		}
-		regArray = append(regArray, *u2fData.Registration)
-	}
+	*/
 	return regArray
 }
 
@@ -405,87 +407,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	// test1: transform webahtn registration into u2f one
-	// var rvalue []webauthn.Credential
-	for _, webauthnData := range profile.WebauthnData {
-
-		if !webauthnData.Enabled {
-			continue
-		}
-		/*
-			/*
-			   // Registration represents a single enrolment or pairing between an
-			   // application and a token. This data will typically be stored in a database.
-			   type Registration struct {
-			           // Raw serialized registration data as received from the token.
-			           Raw []byte
-
-			           KeyHandle []byte
-			           PubKey    ecdsa.PublicKey
-
-			           // AttestationCert can be nil for Authenticate requests.
-			           AttestationCert *x509.Certificate
-			   }
-			x, y := elliptic.Unmarshal(elliptic.P256(), webauthnData.Credential.PublicKey)
-			if x == nil || y == nil {
-				logger.Debugf(0, "cannot decode")
-				continue
-			}
-
-			registration := u2f.Registration{
-				KeyHandle: webauthnData.Credential.ID,
-			}
-		*/
-		u2fReg, err := webauthnRegistrationToU2fRegistration(*webauthnData)
-		if err != nil {
-			logger.Debugf(2, "cannot transform, err:%s", err)
-			continue
-		}
-		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
-		if authErr == nil {
-			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
-
-			logger.Debugf(0, "newCounter: %d", newCounter)
-			/*
-				u2fReg.Counter = newCounter
-				u2fReg.Counter = newCounter
-				profile.U2fAuthData[i] = u2fReg
-				delete(state.localAuthData, authData.Username)
-			*/
-			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
-			_, isXHR := r.Header["X-Requested-With"]
-			if isXHR {
-				eventNotifier.PublishWebLoginEvent(authData.Username)
-			}
-			_, err = state.updateAuthCookieAuthlevel(w, r,
-				authData.AuthType|AuthTypeU2F)
-			if err != nil {
-				logger.Printf("Auth Cookie NOT found ? %s", err)
-				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
-				return
-			}
-
-			// TODO: update local cookie state
-			w.Write([]byte("success"))
-			return
-		}
-
-		//rvalue = append(rvalue, authData.Credential)
-	}
-	/*
-		webauthnParsedResponse := protocol.ParsedPublicKeyCredential{
-			ID: []byte("helo"),
-		}
-		logger.Debugf("pard")
-	*/
-	/*
-			for _, authData := range profile.WebauthnData {
-		                if !authData.Enabled {
-		                        continue
-		                }
-
-			}
-	*/
 
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
