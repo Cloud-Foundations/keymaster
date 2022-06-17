@@ -361,12 +361,12 @@ const profileHTML = `
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
       </li>
       {{end}}
-      <li><a id="auth_button" href="#">Authenticate</a>
+      <li><a id="auth_button" href="#">Authenticate Legacy</a>
       <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
       </li>
-      {{if .ShowExperimental}}
-      <li><a id="webauthn_auth_button" href="#">WebAutn Authenticate</a>
+      <li><a id="webauthn_auth_button" href="#">Authenticate</a>
       </li>
+      {{if .ShowExperimental}}
       <li><a id="webauthn_register_button" href="#">WebAutn Register</a>
       </li>
       {{end}}
