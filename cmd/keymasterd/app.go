@@ -1399,19 +1399,6 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Index:      i}
 		u2fdevices = append(u2fdevices, deviceData)
 	}
-	// TODO: make some difference
-	// also add the webauthn devices...
-	/*
-		for i, tokenInfo := range profile.WebauthnData {
-			deviceData := registeredU2FTokenDisplayInfo{
-				DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
-				Enabled:    tokenInfo.Enabled,
-				Name:       tokenInfo.Name, //Display name?
-				Index:      i,
-			}
-			u2fdevices = append(u2fdevices, deviceData)
-		}
-	*/
 
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
@@ -1463,7 +1450,6 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	//w.Write([]byte(indexHTML))
 }
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
@@ -1546,22 +1532,14 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
-		if ok {
-			profile.U2fAuthData[tokenIndex].Name = tokenName
-		}
+		profile.U2fAuthData[tokenIndex].Name = tokenName
 
 	case "Disable":
-		if ok {
-			profile.U2fAuthData[tokenIndex].Enabled = false
-		}
+		profile.U2fAuthData[tokenIndex].Enabled = false
 	case "Enable":
-		if ok {
-			profile.U2fAuthData[tokenIndex].Enabled = true
-		}
+		profile.U2fAuthData[tokenIndex].Enabled = true
 	case "Delete":
-		if ok {
-			delete(profile.U2fAuthData, tokenIndex)
-		}
+		delete(profile.U2fAuthData, tokenIndex)
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return
