@@ -1,11 +1,8 @@
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -14,52 +11,9 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"github.com/tstranex/u2f"
-	//"github.com/duo-labs/webauthn/protocol"
-	"github.com/duo-labs/webauthn/protocol/webauthncose"
 )
 
 ////////////////////////////
-
-func webauthnRegistrationToU2fRegistration(reg webauthAuthData) (*u2fAuthData, error) {
-	x, y := elliptic.Unmarshal(elliptic.P256(), reg.Credential.PublicKey)
-	if x == nil || y == nil {
-		logger.Debugf(0, "cannot decode not native p256 curve")
-		cosePubkey, err := webauthncose.ParsePublicKey(reg.Credential.PublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("not a webcose pub key either")
-		}
-		logger.Debugf(0, "it is a cosePubkey of type %T ", cosePubkey)
-
-		coseECKey, ok := cosePubkey.(webauthncose.EC2PublicKeyData)
-		if !ok {
-			return nil, fmt.Errorf("not an Cose EC2PublicKeyData")
-		}
-		if webauthncose.COSEAlgorithmIdentifier(coseECKey.Algorithm) != webauthncose.AlgES256 {
-			return nil, fmt.Errorf("not a P256 curve")
-		}
-		x = big.NewInt(0).SetBytes(coseECKey.XCoord)
-		y = big.NewInt(0).SetBytes(coseECKey.YCoord)
-
-		logger.Debugf(2, "webauthnRegistrationToU2fRegistration: cose p256 curve found")
-		//return nil, fmt.Errorf("not a P256 curve")
-	}
-
-	registration := u2f.Registration{
-		KeyHandle: reg.Credential.ID,
-		PubKey: ecdsa.PublicKey{
-			Curve: elliptic.P256(),
-			X:     x,
-			Y:     y,
-		},
-	}
-	authData := u2fAuthData{
-		Registration: &registration,
-		Counter:      reg.Credential.Authenticator.SignCount,
-	}
-
-	return &authData, nil
-}
-
 func (u *userProfile) getRegistrationArray() (regArray []u2f.Registration) {
 	for _, data := range u.U2fAuthData {
 		if !data.Enabled {
@@ -67,32 +21,8 @@ func (u *userProfile) getRegistrationArray() (regArray []u2f.Registration) {
 		}
 		regArray = append(regArray, *data.Registration)
 	}
-	/*
-		for _, webauth := range u.WebauthnData {
-			if !webauth.Enabled {
-				continue
-			}
-			u2fData, err := webauthnRegistrationToU2fRegistration(*webauth)
-			if err != nil {
-				logger.Debugf(3, " getRegistrationArray could not transform webauth err:%s", err)
-				continue
-			}
-			regArray = append(regArray, *u2fData.Registration)
-		}
-	*/
 	return regArray
 }
-
-/*
-func getRegistrationArray(U2fAuthData map[int64]*u2fAuthData) (regArray []u2f.Registration) {
-	for _, data := range U2fAuthData {
-		if data.Enabled {
-			regArray = append(regArray, *data.Registration)
-		}
-	}
-	return regArray
-}
-*/
 
 const u2fRegustisterRequestPath = "/u2f/RegisterRequest/"
 
