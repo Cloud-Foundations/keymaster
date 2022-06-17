@@ -18,25 +18,6 @@ import (
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 
-/*
-+func u2fAuthDataToWebauthnCred(authData u2fAuthData) (*webauthn.Credential, error) {
-+       pubKeyBytes := elliptic.Marshal(authData.Registration.PubKey.Curve, authData.Registration.PubKey.X, authData.Registration.PubKey.Y)
-+       credential := webauthn.Credential{
-+               AttestationType: "fido-u2f",
-+               ID:              u2fAuthData.Registration.KeyHandle,
-+               PublicKey:       pubKeyBytes,
-+               Authenticator: webauthn.Authenticator{
-+                       // The AAGUID of the authenticator. An AAGUID is defined as an array containing the globally unique
-+                       // identifier of the authenticator model being sought.
-+                       AAGUID:    []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-+                       SignCount: authData.Counter,
-+               },
-+       }
-+       return &credential, nil
-+}
-
-*/
-
 // from: https://github.com/duo-labs/webauthn.io/blob/3f03b482d21476f6b9fb82b2bf1458ff61a61d41/server/response.go#L15
 func webauthnJsonResponse(w http.ResponseWriter, d interface{}, c int) {
 	dj, err := json.Marshal(d)
@@ -101,24 +82,8 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	profile.FixupCredential(assumedUser, assumedUser)
 	logger.Debugf(2, "webauthnBeginRegistration profile=%+v", profile)
 
-	/*
-		authSelect := protocol.AuthenticatorSelection{
-			AuthenticatorAttachment: protocol.AuthenticatorAttachment("platform"),
-			RequireResidentKey:      protocol.ResidentKeyUnrequired(),
-			// We use unrequired https://chromium.googlesource.com/chromium/src/+/master/content/browser/webauth/uv_preferred.md
-			UserVerification: protocol.VerificationDiscouraged,
-		}
-	*/
-
-	// Updating the ConveyencePreference options.
-	// See the struct declarations for values
-	//conveyencePref := protocol.ConveyancePreference(protocol.PreferNoAttestation)
-
 	logger.Debugf(2, "webauthnBeginRegistration: About to begin BeginRegistration")
-	//options, sessionData, err := state.webAuthn.BeginRegistration(profile)
 	options, sessionData, err := state.webAuthn.BeginRegistration(profile)
-	//webauthn.WithAuthenticatorSelection(authSelect))
-	//webauthn.WithConveyancePreference(conveyencePref))
 	if err != nil {
 		state.logger.Printf("webauthnBeginRegistration: begin login failed %s", err)
 		// TODO: we should not be sending ALL the errors to clients
