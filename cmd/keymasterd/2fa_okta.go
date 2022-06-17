@@ -95,6 +95,17 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
 		return
 	}
+	userResponse, err := oktaAuth.GetValidUserResponse(authData.Username)
+	if err != nil {
+		logger.Debugf(2, "oktaPushStartHandler: ")
+	}
+	if len(userResponse.Embedded.Factor) < 1 {
+		logger.Printf("oktaPushStartHandler: user %s does not have valid authenticators", authData.Username)
+		logger.Debugf(2, "oktaPushStartHandler: usedata for broken user%s is :%s", authData.Username, userResponse)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "No valid MFA authenticators available")
+		return
+	}
+
 	pushResponse, err := oktaAuth.ValidateUserPush(authData.Username)
 	if err != nil {
 		logger.Println(err)

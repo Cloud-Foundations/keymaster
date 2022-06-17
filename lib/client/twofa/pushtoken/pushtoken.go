@@ -201,7 +201,7 @@ func genericAuthenticateWithToken(
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		logger.Printf("got error from login call %s", loginResp.Status)
-		return err
+		return fmt.Errorf("Failed to authenticate with token")
 	}
 
 	loginJSONResponse := proto.LoginResponse{}
