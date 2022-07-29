@@ -213,7 +213,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 
 	/////////
 	if !ok {
-		http.Error(w, "No regstered data", http.StatusBadRequest)
+		http.Error(w, "No registered data", http.StatusBadRequest)
 		return
 	}
 	registrations := getRegistrationArray(profile.U2fAuthData)
