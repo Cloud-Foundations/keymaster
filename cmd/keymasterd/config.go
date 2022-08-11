@@ -37,6 +37,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -422,6 +423,15 @@ func loadVerifyConfigFile(configFilename string,
 		u2fAppID = u2fAppID + runtimeState.Config.Base.HttpAddress
 	}
 	u2fTrustedFacets = append(u2fTrustedFacets, u2fAppID)
+	runtimeState.webAuthn, err = webauthn.New(&webauthn.Config{
+		RPDisplayName: "Keymaster Server",        // Display Name for your site
+		RPID:          runtimeState.HostIdentity, // Generally the domain name for your site
+		RPOrigin:      u2fAppID,                  // The origin URL for WebAuthn requests
+		// RPIcon: "https://duo.com/logo.png", // Optional icon URL for your site
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
 		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm

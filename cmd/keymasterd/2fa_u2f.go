@@ -14,11 +14,12 @@ import (
 )
 
 ////////////////////////////
-func getRegistrationArray(U2fAuthData map[int64]*u2fAuthData) (regArray []u2f.Registration) {
-	for _, data := range U2fAuthData {
-		if data.Enabled {
-			regArray = append(regArray, *data.Registration)
+func (u *userProfile) getRegistrationArray() (regArray []u2f.Registration) {
+	for _, data := range u.U2fAuthData {
+		if !data.Enabled {
+			continue
 		}
+		regArray = append(regArray, *data.Registration)
 	}
 	return regArray
 }
@@ -42,10 +43,6 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	/*
-
-		/*
-	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
@@ -81,7 +78,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	profile.RegistrationChallenge = c
-	registrations := getRegistrationArray(profile.U2fAuthData)
+	registrations := profile.getRegistrationArray()
 	req := u2f.NewWebRegisterRequest(c, registrations)
 
 	logger.Printf("registerRequest: %+v", req)
@@ -216,7 +213,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 		http.Error(w, "No registered data", http.StatusBadRequest)
 		return
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
+	registrations := profile.getRegistrationArray()
 	if len(registrations) < 1 {
 		http.Error(w, "registration missing", http.StatusBadRequest)
 		return
@@ -286,7 +283,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "No regstered data", http.StatusBadRequest)
 		return
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
+	registrations := profile.getRegistrationArray()
 	if len(registrations) < 1 {
 		http.Error(w, "registration missing", http.StatusBadRequest)
 		return
@@ -306,7 +303,9 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
-		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
+		if !u2fReg.Enabled {
+			continue
+		}
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
 			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
@@ -338,6 +337,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)

@@ -52,6 +52,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -69,6 +70,7 @@ const (
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
+	AuthTypeFIDO2
 )
 
 const (
@@ -116,6 +118,13 @@ type u2fAuthData struct {
 	Registration *u2f.Registration
 }
 
+type webauthAuthData struct {
+	Enabled    bool
+	CreatedAt  time.Time
+	Name       string
+	Credential webauthn.Credential
+}
+
 type totpAuthData struct {
 	Enabled         bool
 	CreatedAt       time.Time
@@ -138,11 +147,20 @@ type userProfile struct {
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
+
+	// We will be using this later... but we cannot land this yet
+	// because we dont want to polute our address space
+	//WebauthnData        map[int64]*webauthAuthData
+	WebauthnID          uint64 // maybe more specific?
+	DisplayName         string
+	Username            string
+	WebauthnSessionData *webauthn.SessionData
 }
 
 type localUserData struct {
-	U2fAuthChallenge *u2f.Challenge
-	ExpiresAt        time.Time
+	U2fAuthChallenge  *u2f.Challenge
+	WebAuthnChallenge *webauthn.SessionData
+	ExpiresAt         time.Time
 }
 
 type pendingAuth2Request struct {
@@ -196,6 +214,7 @@ type RuntimeState struct {
 	emailManager                 configuredemail.EmailManager
 	textTemplates                *texttemplate.Template
 
+	webAuthn                *webauthn.WebAuthn
 	totpLocalRateLimit      map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex sync.Mutex
 	logger                  log.DebugLogger
@@ -1015,8 +1034,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
-		//w.WriteHeader(200)
-		//fmt.Fprintf(w, "OK\n")
 	}
 }
 
@@ -1028,11 +1045,13 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
-	if len(registrations) < 1 {
-		return false, nil
+	for _, u2fRegistration := range profile.U2fAuthData {
+		if u2fRegistration.Enabled {
+			return true, nil
+		}
+
 	}
-	return true, nil
+	return false, nil
 
 }
 
@@ -1423,7 +1442,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js", "/static/keymaster-webauthn.js")
 	}
 
 	// TODO: move deviceinfo mapping/sorting to its own function
@@ -1436,6 +1455,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Index:      i}
 		u2fdevices = append(u2fdevices, deviceData)
 	}
+
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
@@ -1465,6 +1485,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources:            JSSources,
 		ReadOnlyMsg:          readOnlyMsg,
 		UsersLink:            state.IsAdminUser(authData.Username),
+		ShowExperimental:     state.IsAdminUser(authData.Username),
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
@@ -1485,7 +1506,6 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	//w.Write([]byte(indexHTML))
 }
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
@@ -1553,8 +1573,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
 	if !ok {
-		//if tokenIndex >= len(profile.U2fAuthData) {
-		logger.Printf("bad index number")
+		logger.Debugf(1, "bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
@@ -1570,6 +1589,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 			return
 		}
 		profile.U2fAuthData[tokenIndex].Name = tokenName
+
 	case "Disable":
 		profile.U2fAuthData[tokenIndex].Enabled = false
 	case "Enable":
@@ -1779,6 +1799,11 @@ func main() {
 		runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
+	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
+	serviceMux.HandleFunc(webAuthnAuthBeginPath, runtimeState.webauthnAuthLogin)
+	serviceMux.HandleFunc(webAuthnAuthFinishPath, runtimeState.webauthnAuthFinish)
+
 	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath,
 		runtimeState.u2fTokenManagerHandler)
