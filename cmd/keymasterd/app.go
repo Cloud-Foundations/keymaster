@@ -430,7 +430,6 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
-	logger.Debugf(3, "browser doest NOT support u2f")
 	return false
 }
 
@@ -1517,7 +1516,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
 	if !ok {
-		logger.Printf("bad index number")
+		logger.Debugf(1, "bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
