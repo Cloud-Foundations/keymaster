@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -10,16 +13,63 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
+	"github.com/duo-labs/webauthn/protocol/webauthncose"
 	"github.com/tstranex/u2f"
 )
 
-////////////////////////////
+func webauthnRegistrationToU2fRegistration(reg webauthAuthData) (*u2fAuthData, error) {
+	x, y := elliptic.Unmarshal(elliptic.P256(), reg.Credential.PublicKey)
+	if x == nil || y == nil {
+		logger.Debugf(0, "cannot decode not native p256 curve")
+		cosePubkey, err := webauthncose.ParsePublicKey(reg.Credential.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("not a webcose pub key either")
+		}
+		logger.Debugf(0, "it is a cosePubkey of type %T ", cosePubkey)
+
+		coseECKey, ok := cosePubkey.(webauthncose.EC2PublicKeyData)
+		if !ok {
+			return nil, fmt.Errorf("not an Cose EC2PublicKeyData")
+		}
+		if webauthncose.COSEAlgorithmIdentifier(coseECKey.Algorithm) != webauthncose.AlgES256 {
+			return nil, fmt.Errorf("not a P256 curve")
+		}
+		x = big.NewInt(0).SetBytes(coseECKey.XCoord)
+		y = big.NewInt(0).SetBytes(coseECKey.YCoord)
+		logger.Debugf(2, "webauthnRegistrationToU2fRegistration: cose p256 curve found")
+	}
+	registration := u2f.Registration{
+		KeyHandle: reg.Credential.ID,
+		PubKey: ecdsa.PublicKey{
+			Curve: elliptic.P256(),
+			X:     x,
+			Y:     y,
+		},
+	}
+	authData := u2fAuthData{
+		Registration: &registration,
+		Counter:      reg.Credential.Authenticator.SignCount,
+	}
+	return &authData, nil
+}
+
 func (u *userProfile) getRegistrationArray() (regArray []u2f.Registration) {
 	for _, data := range u.U2fAuthData {
 		if !data.Enabled {
 			continue
 		}
 		regArray = append(regArray, *data.Registration)
+	}
+	for _, webauth := range u.WebauthnData {
+		if !webauth.Enabled {
+			continue
+		}
+		u2fData, err := webauthnRegistrationToU2fRegistration(*webauth)
+		if err != nil {
+			logger.Debugf(3, " getRegistrationArray could not transform webauth err:%s", err)
+			continue
+		}
+		regArray = append(regArray, *u2fData.Registration)
 	}
 	return regArray
 }
@@ -337,7 +387,37 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-
+	// test1: transform webahtn registration into u2f one
+	for _, webauthnData := range profile.WebauthnData {
+		if !webauthnData.Enabled {
+			continue
+		}
+		u2fReg, err := webauthnRegistrationToU2fRegistration(*webauthnData)
+		if err != nil {
+			logger.Debugf(2, "cannot transform, err:%s", err)
+			continue
+		}
+		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
+		if authErr == nil {
+			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
+			logger.Debugf(0, "newCounter: %d", newCounter)
+			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
+			_, isXHR := r.Header["X-Requested-With"]
+			if isXHR {
+				eventNotifier.PublishWebLoginEvent(authData.Username)
+			}
+			_, err = state.updateAuthCookieAuthlevel(w, r,
+				authData.AuthType|AuthTypeU2F)
+			if err != nil {
+				logger.Printf("Auth Cookie NOT found ? %s", err)
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
+				return
+			}
+			// TODO: update local cookie state
+			w.Write([]byte("success"))
+			return
+		}
+	}
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)

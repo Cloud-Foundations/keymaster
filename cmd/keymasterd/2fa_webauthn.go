@@ -81,7 +81,6 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 
 	profile.FixupCredential(assumedUser, assumedUser)
 	logger.Debugf(2, "webauthnBeginRegistration profile=%+v", profile)
-
 	logger.Debugf(2, "webauthnBeginRegistration: About to begin BeginRegistration")
 	options, sessionData, err := state.webAuthn.BeginRegistration(profile)
 	if err != nil {
@@ -201,7 +200,6 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 		logger.Debugf(1, "DB is being cached and requesting authentication, proceeding with cached values")
 	}
 
-	////
 	// TODO: there is an extension to ensure it is an actual secirity key... need to add this to the call.
 	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
 	options, sessionData, err := state.webAuthn.BeginLogin(profile,
