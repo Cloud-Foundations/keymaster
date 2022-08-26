@@ -3,11 +3,10 @@ package main
 import (
 	"crypto/elliptic"
 	"crypto/rand"
-	"fmt"
-	//"crypto/x509"
 	"encoding/binary"
+	"time"
+
 	"github.com/duo-labs/webauthn/webauthn"
-	//"time"
 )
 
 // This is the implementation of duo-labs' webauthn User interface
@@ -32,9 +31,15 @@ func (u *userProfile) WebAuthnIcon() string {
 	return ""
 }
 
-// This function is needed to create a unified view of all webauh credentials
+// This function is needed to create a unified view of all webauthn credentials
 func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 	var rvalue []webauthn.Credential
+	for _, authData := range u.WebauthnData {
+		if !authData.Enabled {
+			continue
+		}
+		rvalue = append(rvalue, authData.Credential)
+	}
 	for _, u2fAuthData := range u.U2fAuthData {
 		logger.Debugf(3, "WebAuthnCredentials: inside u.U2fAuthData")
 		if !u2fAuthData.Enabled {
@@ -88,21 +93,19 @@ func (u *userProfile) FixupCredential(username string, displayname string) {
 	if u.Username == "" {
 		u.Username = displayname
 	}
-	// TODO on pure webauthn we will need to create structs here
+	if u.WebauthnData == nil {
+		u.WebauthnData = make(map[int64]*webauthAuthData)
+	}
 }
 
 /// next are not actually from there... but make it simpler
-
 func (u *userProfile) AddWebAuthnCredential(cred webauthn.Credential) error {
-	return fmt.Errorf("not implemented")
-	/*
-		index := time.Now().Unix()
-		authData := webauthAuthData{
-			CreatedAt:  time.Now(),
-			Enabled:    true,
-			Credential: cred,
-		}
-		u.WebauthnData[index] = &authData
-		return nil
-	*/
+	index := time.Now().Unix()
+	authData := webauthAuthData{
+		CreatedAt:  time.Now(),
+		Enabled:    true,
+		Credential: cred,
+	}
+	u.WebauthnData[index] = &authData
+	return nil
 }
