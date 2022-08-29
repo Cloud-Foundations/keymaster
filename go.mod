@@ -6,7 +6,7 @@ replace github.com/go-fsnotify/fsnotify v0.0.0-20180321022601-755488143dae => gi
 
 require (
 	github.com/Cloud-Foundations/Dominator v0.0.0-20210524064856-a7256858e533
-	github.com/Cloud-Foundations/golib v0.0.15
+	github.com/Cloud-Foundations/golib v0.1.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168
 	github.com/aws/aws-sdk-go v1.43.0

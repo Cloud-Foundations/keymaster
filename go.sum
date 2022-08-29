@@ -63,8 +63,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/Cloud-Foundations/Dominator v0.0.0-20210524064856-a7256858e533 h1:veii0eD6qn1t72/YaRnjiBpmY3FYfRlITwftrC+kj6I=
 github.com/Cloud-Foundations/Dominator v0.0.0-20210524064856-a7256858e533/go.mod h1:VhR1+wVJdox8BkA6OJWg4T2W41+WiEobprffKKK2Qsw=
-github.com/Cloud-Foundations/golib v0.0.15 h1:N3xp75mF/BrRfozbvShCNerPWne+bwR/wGLp1AMIhFQ=
-github.com/Cloud-Foundations/golib v0.0.15/go.mod h1:/lhM18PCkYqEgWKg2VHKzgS6i3lt+RX8onSmoootbQc=
+github.com/Cloud-Foundations/golib v0.1.0 h1:q8j0PcstNsOFC/4CUgDvNh6rASHcS30buBlYVdGr1kc=
+github.com/Cloud-Foundations/golib v0.1.0/go.mod h1:/lhM18PCkYqEgWKg2VHKzgS6i3lt+RX8onSmoootbQc=
 github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92 h1:EGeQTdSJAOMZiJZN/e+pWletf228/KEZqRWs2p3/l88=
 github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92/go.mod h1:/CR255D7rw/CQr61exJfyW94EXs8dX/w0fLws1cMSwY=
 github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168 h1:MKB8ovKEveTxJOQuO8x2O4XccNOZmJVaRD6sd8CPtvw=
