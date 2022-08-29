@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,6 +37,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
+	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/howeyc/gopass"
@@ -640,6 +642,21 @@ func loadVerifyConfigFile(configFilename string,
 
 	// DB initialization
 	if err := initDB(&runtimeState); err != nil {
+		return nil, err
+	}
+
+	failureWriter := func(w http.ResponseWriter, r *http.Request,
+		errorString string, code int) {
+		runtimeState.writeFailureResponse(w, r, code, errorString)
+	}
+	runtimeState.awsCertIssuer, err = aws_identity_cert.New(
+		aws_identity_cert.Params{
+			CertificateGenerator: runtimeState.generateRoleCert,
+			AccountIdValidator:   runtimeState.checkAwsAccountAllowed,
+			FailureWriter:        failureWriter,
+			Logger:               logger,
+		})
+	if err != nil {
 		return nil, err
 	}
 
