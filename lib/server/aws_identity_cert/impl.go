@@ -6,6 +6,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"html"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -26,7 +27,7 @@ func defaultFailureWriter(w http.ResponseWriter, r *http.Request,
 
 func getCallerIdentity(header http.Header,
 	presignCallerClient presignc.Caller) (arn.ARN, error) {
-	claimedArn := header.Get("claimed-arn")
+	claimedArn := html.EscapeString(header.Get("claimed-arn"))
 	presignedMethod := header.Get("presigned-method")
 	presignedUrl := header.Get("presigned-url")
 	if claimedArn == "" || presignedUrl == "" || presignedMethod == "" {
@@ -147,7 +148,8 @@ func (i *Issuer) requestHandler(w http.ResponseWriter,
 		return nil
 	}
 	if block.Type != "PUBLIC KEY" {
-		i.params.Logger.Printf("unsupported PEM type: %s\n", block.Type)
+		i.params.Logger.Printf("unsupported PEM type: %s\n",
+			html.EscapeString(block.Type))
 		i.params.FailureWriter(w, r, "unsupported PEM type",
 			http.StatusBadRequest)
 		return nil
