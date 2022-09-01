@@ -11,47 +11,22 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/keymaster/lib/paths"
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/presignauth/presigner"
 
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/Cloud-Foundations/keymaster/lib/paths"
 )
 
 const rsaKeySize = 2048
-
-func parseArn(arnString string) (*arn.ARN, error) {
-	parsedArn, err := arn.Parse(arnString)
-	if err != nil {
-		return nil, err
-	}
-	switch parsedArn.Service {
-	case "iam", "sts":
-	default:
-		return nil, fmt.Errorf("unsupported service: %s", parsedArn.Service)
-	}
-	splitResource := strings.Split(parsedArn.Resource, "/")
-	if len(splitResource) < 2 || splitResource[0] != "assumed-role" {
-		return nil, fmt.Errorf("invalid resource: %s", parsedArn.Resource)
-	}
-	// Normalise to the actual role ARN, rather than an ARN showing how the
-	// credentials were obtained. This mirrors the way AWS policy documents are
-	// written.
-	parsedArn.Region = ""
-	parsedArn.Service = "iam"
-	parsedArn.Resource = "role/" + splitResource[1]
-	return &parsedArn, nil
-}
 
 func newManager(p Params) (*Manager, error) {
 	certPEM, certTLS, err := p.getRoleCertificateTLS()
 	if err != nil {
 		return nil, err
 	}
-	p.Logger.Printf("got AWS Role certificate for: %s\n", p.roleArn)
+	p.Logger.Printf("got AWS Role certificate for: %s\n",
+		p.presigner.GetCallerARN())
 	manager := &Manager{
 		params:  p,
 		certPEM: certPEM,
@@ -111,7 +86,7 @@ func (m *Manager) refreshOnce() {
 		}
 		m.mutex.Unlock()
 		m.params.Logger.Printf("refreshed AWS Role certificate for: %s\n",
-			m.params.roleArn)
+			m.params.presigner.GetCallerARN())
 	}
 }
 
@@ -128,8 +103,7 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	if err := p.setupVerify(); err != nil {
 		return nil, err
 	}
-	presignedReq, err := p.stsPresignClient.PresignGetCallerIdentity(p.Context,
-		&sts.GetCallerIdentityInput{})
+	presignedReq, err := p.presigner.PresignGetCallerIdentity(p.Context)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +115,7 @@ func (p *Params) getRoleCertificate() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("claimed-arn", p.roleArn)
+	req.Header.Add("claimed-arn", p.presigner.GetCallerARN().String())
 	req.Header.Add("presigned-method", presignedReq.Method)
 	req.Header.Add("presigned-url", presignedReq.URL)
 	resp, err := p.HttpClient.Do(req)
@@ -215,26 +189,15 @@ func (p *Params) setupVerify() error {
 		Bytes: p.derPubKey,
 		Type:  "PUBLIC KEY",
 	})
-	awsConfig, err := config.LoadDefaultConfig(p.Context,
-		config.WithEC2IMDSRegion())
+	p.presigner, err = presigner.New(presigner.Params{
+		AwsConfig:        p.AwsConfig,
+		Logger:           p.Logger,
+		StsClient:        p.StsClient,
+		StsPresignClient: p.StsPresignClient,
+	})
 	if err != nil {
 		return err
 	}
-	p.awsConfig = awsConfig
-	p.stsClient = sts.NewFromConfig(awsConfig)
-	p.stsPresignClient = sts.NewPresignClient(p.stsClient)
-	idOutput, err := p.stsClient.GetCallerIdentity(p.Context,
-		&sts.GetCallerIdentityInput{})
-	if err != nil {
-		return err
-	}
-	p.Logger.Debugf(0, "Account: %s, ARN: %s, UserId: %s\n",
-		*idOutput.Account, *idOutput.Arn, *idOutput.UserId)
-	parsedArn, err := parseArn(*idOutput.Arn)
-	if err != nil {
-		return err
-	}
-	p.roleArn = parsedArn.String()
 	p.isSetup = true
 	return nil
 }

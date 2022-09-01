@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/presignauth/presigner"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -51,16 +52,16 @@ type Params struct {
 	KeymasterServer string
 	Logger          log.DebugLogger
 	// Optional parameters.
+	AwsConfig        *aws.Config
 	Context          context.Context
 	HttpClient       *http.Client
 	Signer           crypto.Signer
-	awsConfig        aws.Config
+	StsClient        *sts.Client
+	StsPresignClient *sts.PresignClient
 	derPubKey        []byte
 	isSetup          bool
 	pemPubKey        []byte
-	roleArn          string
-	stsClient        *sts.Client
-	stsPresignClient *sts.PresignClient
+	presigner        presigner.Presigner
 }
 
 type Manager struct {

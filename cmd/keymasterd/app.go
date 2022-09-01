@@ -46,6 +46,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
+	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"github.com/Cloud-Foundations/tricorder/go/healthserver"
@@ -211,11 +212,11 @@ type RuntimeState struct {
 	isAdminCache                 *admincache.Cache
 	emailManager                 configuredemail.EmailManager
 	textTemplates                *texttemplate.Template
-
-	webAuthn                *webauthn.WebAuthn
-	totpLocalRateLimit      map[string]totpRateLimitInfo
-	totpLocalTateLimitMutex sync.Mutex
-	logger                  log.DebugLogger
+	awsCertIssuer                *aws_identity_cert.Issuer
+	webAuthn                     *webauthn.WebAuthn
+	totpLocalRateLimit           map[string]totpRateLimitInfo
+	totpLocalTateLimitMutex      sync.Mutex
+	logger                       log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
