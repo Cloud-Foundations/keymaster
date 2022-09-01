@@ -309,7 +309,7 @@ type profilePageTemplateData struct {
 	ShowTOTP             bool
 	ReadOnlyMsg          string
 	UsersLink            bool
-	ShowExperimental     bool
+	ShowLegacyRegister   bool
 	RegisteredU2FToken   []registeredU2FTokenDisplayInfo
 	RegisteredTOTPDevice []registeredTOTPTDeviceDisplayInfo
 }
@@ -359,17 +359,16 @@ const profileHTML = `
     <ul>
        {{if .ShowU2F}}
        {{if not .ReadOnlyMsg}}
+       {{if .ShowLegacyRegister}}
       <li>
-         <a id="register_button" href="#">Register token</a>
+         <a id="register_button" href="#">Register token (Legacy)</a>
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
       </li>
       {{end}}
-      <li><a id="auth_button" href="#">Authenticate Legacy</a>
-      <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
+      {{end}}
+      <li><a id="webauthn_auth_button" href="#">Authenticate</a>
       </li>
-      <li><a id="webauthn_auth_button" href="#">WebAuthn Authenticate</a>
-      </li>
-      <li><a id="webauthn_register_button" href="#">WebAuthn Register</a>
+      <li><a id="webauthn_register_button" href="#">Register U2F device</a>
       </li>
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
