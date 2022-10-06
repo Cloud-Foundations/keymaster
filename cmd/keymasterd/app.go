@@ -1676,8 +1676,14 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 		//landing page
 		if err := r.ParseForm(); err != nil {
 			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError,
-				"Error parsing form")
+			errCode := http.StatusInternalServerError
+			errMessage := "Error parsing form"
+			if strings.Contains(err.Error(), "invalid") {
+				errCode = http.StatusBadRequest
+				errMessage = "invalid query"
+			}
+			state.writeFailureResponse(w, r, errCode,
+				errMessage)
 			return
 		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
