@@ -38,6 +38,7 @@ install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/s
 install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
 install -p -m 0644 cmd/keymasterd/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/u2f-api.js
 install -p -m 0644 cmd/keymasterd/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-u2f.js
+install -p -m 0644 cmd/keymasterd/static_files/keymaster-webauthn.js %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-webauthn.js
 install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-u2f.js
 install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-okta-push.js %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-okta-push.js
 install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-symc-vip.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-symc-vip.js
