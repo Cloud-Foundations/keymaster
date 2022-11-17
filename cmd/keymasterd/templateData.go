@@ -314,7 +314,6 @@ type profilePageTemplateData struct {
 	RegisteredTOTPDevice []registeredTOTPTDeviceDisplayInfo
 }
 
-//{{ .Date | formatAsDate}} {{ printf "%-20s" .Description }} {{.AmountInCents | formatAsDollars -}}
 const profileHTML = `
 {{define "userProfilePage"}}
 <!DOCTYPE html>
