@@ -314,7 +314,7 @@ type profilePageTemplateData struct {
 	RegisteredTOTPDevice []registeredTOTPTDeviceDisplayInfo
 }
 
-//{{ .Date | formatAsDate}} {{ printf "%-20s" .Description }} {{.AmountInCents | formatAsDollars -}}
+// {{ .Date | formatAsDate}} {{ printf "%-20s" .Description }} {{.AmountInCents | formatAsDollars -}}
 const profileHTML = `
 {{define "userProfilePage"}}
 <!DOCTYPE html>
@@ -364,6 +364,9 @@ const profileHTML = `
          <a id="register_button" href="#">Register token (Legacy)</a>
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
       </li>
+      <li><a id="auth_button" href="#">Authenticate Legacy</a>
+          <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
+      </li>      
       {{end}}
       {{end}}
       <li><a id="webauthn_auth_button" href="#">Authenticate</a>
