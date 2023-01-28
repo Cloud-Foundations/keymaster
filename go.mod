@@ -14,7 +14,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.17.1
 	github.com/cloudflare/cfssl v1.6.3
 	github.com/cviecco/argon2 v0.0.0-20171122181119-1dc43e2eaa99
-	github.com/duo-labs/webauthn v0.0.0-20220815211337-00c9fb5711f5
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
@@ -26,10 +25,10 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/tstranex/u2f v1.0.0
 	github.com/vjeantet/ldapserver v1.0.1
-	golang.org/x/crypto v0.1.0
-	golang.org/x/net v0.2.0
+	golang.org/x/crypto v0.4.0
+	golang.org/x/net v0.3.0
 	golang.org/x/oauth2 v0.1.0
-	golang.org/x/term v0.2.0
+	golang.org/x/term v0.3.0
 	gopkg.in/ldap.v2 v2.5.1
 	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -47,6 +46,8 @@ require (
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.3.1 // indirect
 	github.com/go-git/go-git/v5 v5.4.2 // indirect
+	github.com/go-webauthn/revoke v0.1.6 // indirect
+	github.com/google/go-tpm v0.3.3 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
@@ -72,7 +73,8 @@ require (
 	github.com/dchest/blake2b v1.0.0 // indirect
 	github.com/flynn/hid v0.0.0-20190502022136-f1b9b6cc019a // indirect
 	github.com/fxamacker/cbor/v2 v2.4.0 // indirect
-	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
+	github.com/go-webauthn/webauthn v0.6.0
+	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.4 // indirect
 	github.com/google/uuid v1.3.0 // indirect
@@ -85,7 +87,7 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/mod v0.6.0 // indirect
-	golang.org/x/sys v0.2.0 // indirect
+	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/time v0.2.0
 	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
