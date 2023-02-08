@@ -278,6 +278,32 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
 		t.Fatal("invalid cert content, bad username")
 	}
+	// test with non nil custom extensions:
+	extensionTest1 := map[string]string{"hello": "world"}
+	_, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration, extensionTest1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for key, value := range cert.Permissions.Extensions {
+		if key == "hello" {
+			found = true
+			if value != "world" {
+				t.Fatal("extension value is invalid")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("custom extension not found")
+	}
+	// invalid extension blank name.. should NOT fail
+	invalidExtensionTest := map[string]string{"": "world"}
+	_, _, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration, invalidExtensionTest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {

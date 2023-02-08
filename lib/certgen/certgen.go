@@ -70,6 +70,10 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 	}
 	if customExtensions != nil {
 		for key, value := range customExtensions {
+			//safeguard for invalid definition
+			if key == "" {
+				continue
+			}
 			extensions[key] = value
 		}
 	}
