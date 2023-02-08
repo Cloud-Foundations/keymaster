@@ -1,5 +1,5 @@
 /*
-  Package certgen id set of utilities used to generate ssh certificates
+Package certgen id set of utilities used to generate ssh certificates
 */
 package certgen
 
@@ -45,7 +45,7 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (certString string, cert ssh.Certificate, err error) {
+func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration, customExtensions map[string]string) (certString string, cert ssh.Certificate, err error) {
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
 		return "", cert, err
@@ -60,7 +60,19 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 		return "", cert, err
 	}
 	serial := (currentEpoch << 32) | nBig.Uint64()
-
+	// Here we add standard extensions
+	extensions := map[string]string{
+		"permit-X11-forwarding":   "",
+		"permit-agent-forwarding": "",
+		"permit-port-forwarding":  "",
+		"permit-pty":              "",
+		"permit-user-rc":          "",
+	}
+	if customExtensions != nil {
+		for key, value := range customExtensions {
+			extensions[key] = value
+		}
+	}
 	// The values of the permissions are taken from the default values used
 	// by ssh-keygen
 	cert = ssh.Certificate{
@@ -72,12 +84,8 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 		ValidAfter:      currentEpoch,
 		ValidBefore:     expireEpoch,
 		Serial:          serial,
-		Permissions: ssh.Permissions{Extensions: map[string]string{
-			"permit-X11-forwarding":   "",
-			"permit-agent-forwarding": "",
-			"permit-port-forwarding":  "",
-			"permit-pty":              "",
-			"permit-user-rc":          ""}}}
+		Permissions:     ssh.Permissions{Extensions: extensions},
+	}
 
 	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
@@ -96,10 +104,10 @@ func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, h
 	if err != nil {
 		return "", cert, err
 	}
-	return GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
+	return GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration, nil)
 }
 
-/// X509 section
+// / X509 section
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
@@ -159,7 +167,7 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 	}
 }
 
-//copied from https://golang.org/src/crypto/tls/generate_cert.go
+// copied from https://golang.org/src/crypto/tls/generate_cert.go
 func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
