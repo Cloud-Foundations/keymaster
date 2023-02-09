@@ -111,7 +111,7 @@ func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, h
 	return GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration, nil)
 }
 
-// / X509 section
+// X509 section
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
