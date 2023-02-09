@@ -52,7 +52,7 @@ const invalidSSHFileBadKeyData = `ssh-rsa AAAAB3NzaC1kc3dddMAAACBALd5BLQoXxeJHHM
 
 const testDuration = time.Duration(120 * time.Second)
 
-// / X509section (this is from certgen TODO: make public)
+// X509section (this is from certgen TODO: make public)
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {

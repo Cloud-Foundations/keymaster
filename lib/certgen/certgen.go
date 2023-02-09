@@ -1,5 +1,5 @@
 /*
-Package certgen id set of utilities used to generate ssh certificates
+Package certgen contains a set of utilities used to generate ssh certificates.
 */
 package certgen
 
