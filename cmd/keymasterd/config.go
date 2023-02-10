@@ -54,6 +54,15 @@ type autoUnseal struct {
 	AwsSecretKey string `yaml:"aws_secret_key"`
 }
 
+type sshExtension struct {
+	Key   string `yaml:"key"`
+	Value string `yaml:"value"`
+}
+
+type sshCertConfig struct {
+	Extensions []sshExtension `yaml:"extensions"`
+}
+
 type baseConfig struct {
 	HttpAddress                     string `yaml:"http_address"`
 	AdminAddress                    string `yaml:"admin_address"`
@@ -87,6 +96,7 @@ type baseConfig struct {
 	WebauthTokenForCliLifetime      time.Duration `yaml:"webauth_token_for_cli_lifetime"`
 	PasswordAttemptGlobalBurstLimit uint          `yaml:"password_attempt_global_burst_limit"`
 	PasswordAttemptGlobalRateLimit  rate.Limit    `yaml:"password_attempt_global_rate_limit"`
+	SSHCertConfig                   sshCertConfig `yaml:"ssh_cert_config"`
 }
 
 type awsCertsConfig struct {
