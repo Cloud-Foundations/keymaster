@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -206,6 +207,24 @@ func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
 	return userSSH, nil, nil
 }
 
+func (state *RuntimeState) expandSSHExtensions(username string) (map[string]string, error) {
+	mapper := func(placeholderName string) string {
+		switch placeholderName {
+		case "USERNAME":
+			return username
+		}
+		return ""
+	}
+	userExtensions := make(map[string]string)
+	for _, extension := range state.Config.Base.SSHCertConfig.Extensions {
+		key := os.Expand(extension.Key, mapper)
+		value := os.Expand(extension.Value, mapper)
+		userExtensions[key] = value
+	}
+
+	return userExtensions, nil
+}
+
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	duration time.Duration) {
@@ -257,8 +276,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		logger.Printf("Signer failed to load")
 		return
 	}
-
-	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
+	extensions, err := state.expandSSHExtensions(targetUser)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Extensions Failed to expand")
+		return
+	}
+	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration, extensions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("signUserPubkey Err")
