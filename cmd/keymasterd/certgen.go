@@ -360,6 +360,14 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 	return nil, nil
 }
 
+func (state *RuntimeState) getServiceMethods(username string) (
+	[]string, error) {
+	if state.gitDB == nil {
+		return nil, nil
+	}
+	return state.gitDB.GetUserServiceMethods(username)
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
@@ -384,6 +392,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	organizations := []string{"keymaster"}
 	if kubernetesHack {
 		organizations = userGroups
+	}
+	serviceMethods, err := state.getServiceMethods(targetUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
 	}
 	var cert string
 	if r.Method != "POST" {
@@ -434,7 +448,8 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		return
 	}
 	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-		keySigner, state.KerberosRealm, duration, groups, organizations)
+		keySigner, state.KerberosRealm, duration, groups, organizations,
+		serviceMethods)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("Cannot Generate x509cert: %s\n", err)
