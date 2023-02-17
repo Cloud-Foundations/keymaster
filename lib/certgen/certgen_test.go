@@ -482,7 +482,7 @@ func TestGenUserX509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
 	groups := []string{"group0", "group1"}
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, groups, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, groups, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +518,7 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +557,7 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil, nil)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
