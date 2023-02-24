@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/Cloud-Foundations/Dominator v0.3.1
-	github.com/Cloud-Foundations/golib v0.4.0
+	github.com/Cloud-Foundations/golib v0.5.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168
 	github.com/aws/aws-sdk-go v1.44.199

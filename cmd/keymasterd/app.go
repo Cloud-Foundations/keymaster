@@ -1233,7 +1233,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
 		}
 	}
-	// logger.Printf("current backends=%+v", certBackends)
+	state.logger.Debugf(1, "current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}

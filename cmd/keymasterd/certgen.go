@@ -360,6 +360,14 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 	return nil, nil
 }
 
+func (state *RuntimeState) getServiceMethods(username string) (
+	[]string, error) {
+	if state.gitDB == nil {
+		return nil, nil
+	}
+	return state.gitDB.GetUserServiceMethods(username)
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
@@ -373,7 +381,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		logger.Debugf(2, "Groups needed for cert")
 		userGroups, err = state.getUserGroups(targetUser)
 		if err != nil {
-			logger.Println(err)
+			logger.Printf("Cannot get user groups: %s\n", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
@@ -385,6 +393,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	if kubernetesHack {
 		organizations = userGroups
 	}
+	serviceMethods, err := state.getServiceMethods(targetUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 	var cert string
 	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
@@ -393,7 +407,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 
 	file, _, err := r.FormFile("pubkeyfile")
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("Cannot get public key from form: %s\n", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Missing public key file")
 		return
@@ -413,12 +427,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Cannot parse public key")
-		logger.Printf("Cannot parse public key")
+		logger.Printf("Cannot parse public key: %s\n", err)
 		return
 	}
 	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("Cannot validate public key strength: %s\n", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -430,20 +444,21 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	caCert, err := x509.ParseCertificate(state.caCertDer)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot parse CA Der data")
+		logger.Printf("Cannot parse CA Der: %s\n data", err)
 		return
 	}
 	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-		keySigner, state.KerberosRealm, duration, groups, organizations)
+		keySigner, state.KerberosRealm, duration, groups, organizations,
+		serviceMethods, logger)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Generate x509cert")
+		logger.Printf("Cannot Generate x509cert: %s\n", err)
 		return
 	}
 	parsedCert, err := x509.ParseCertificate(derCert)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Parse Generated x509cert")
+		logger.Printf("Cannot Parse Generated x509cert: %s\n", err)
 		return
 	}
 

@@ -95,6 +95,8 @@ github.com/Cloud-Foundations/Dominator v0.3.1/go.mod h1:AWCsCpke0lOpHROUDe7sJG6I
 github.com/Cloud-Foundations/golib v0.1.0/go.mod h1:/lhM18PCkYqEgWKg2VHKzgS6i3lt+RX8onSmoootbQc=
 github.com/Cloud-Foundations/golib v0.4.0 h1:h7bhlLFiDYkhZ+7SC+jR78InivuZS5kLfaaEG3q5/vg=
 github.com/Cloud-Foundations/golib v0.4.0/go.mod h1:6ghSQh5/5MPE/4LWbPXC9CpQZMO5LeYtvG3r2K9abwI=
+github.com/Cloud-Foundations/golib v0.5.0 h1:ilTOUDWWWeZBgFZrzM20T7sxbaOG7k5KA7uhLfnMQng=
+github.com/Cloud-Foundations/golib v0.5.0/go.mod h1:6ghSQh5/5MPE/4LWbPXC9CpQZMO5LeYtvG3r2K9abwI=
 github.com/Cloud-Foundations/keymaster v1.11.0/go.mod h1:g7yTTiVocYXj1vuIxIX13Yhqd5S6N/YrM30Vfww0kmE=
 github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92 h1:EGeQTdSJAOMZiJZN/e+pWletf228/KEZqRWs2p3/l88=
 github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92/go.mod h1:/CR255D7rw/CQr61exJfyW94EXs8dX/w0fLws1cMSwY=
