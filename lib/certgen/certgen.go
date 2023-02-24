@@ -22,8 +22,37 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
+
+const (
+	extensionSoftLimit = 10 << 10 // 10 KiB
+	extensionHardLimit = 12 << 10 // 12 KiB
+)
+
+// addExtraExtension will add an extra extension to a certificate template
+// provided the size limit is not exceeded.
+func addExtraExtension(template *x509.Certificate, extension *pkix.Extension,
+	name string, logger log.DebugLogger) {
+	if extension == nil {
+		return
+	}
+	totalExtensionSize := len(extension.Value)
+	for _, existingExtension := range template.ExtraExtensions {
+		totalExtensionSize += len(existingExtension.Value)
+	}
+	if totalExtensionSize > extensionHardLimit {
+		logger.Printf("%s extension for %s too large (%d), ignoring\n",
+			name, template.Subject.CommonName, name, totalExtensionSize)
+		return
+	}
+	if totalExtensionSize > extensionSoftLimit {
+		logger.Printf("warning: %s extension for %s is large: %d\n",
+			name, template.Subject.CommonName, name, totalExtensionSize)
+	}
+	template.ExtraExtensions = append(template.ExtraExtensions, *extension)
+}
 
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration
 func GetUserPubKeyFromSSSD(username string) (string, error) {
@@ -371,7 +400,8 @@ func makeServiceMethodListExtension(serviceMethods []string) (
 func GenUserX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	kerberosRealm *string, duration time.Duration,
-	groups, organizations, serviceMethods []string) ([]byte, error) {
+	groups, organizations, serviceMethods []string,
+	logger log.DebugLogger) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
@@ -414,18 +444,10 @@ func GenUserX509Cert(userName string, userPub interface{},
 		BasicConstraintsValid: true,
 		IsCA:                  false,
 	}
-	if groupListExtension != nil {
-		template.ExtraExtensions = append(template.ExtraExtensions,
-			*groupListExtension)
-	}
-	if serviceMethodListExtension != nil {
-		template.ExtraExtensions = append(template.ExtraExtensions,
-			*serviceMethodListExtension)
-	}
-	if sanExtension != nil {
-		template.ExtraExtensions = append(template.ExtraExtensions,
-			*sanExtension)
-	}
+	addExtraExtension(&template, groupListExtension, "group list", logger)
+	addExtraExtension(&template, serviceMethodListExtension, "service methods",
+		logger)
+	addExtraExtension(&template, sanExtension, "Kerberos SAN", logger)
 
 	return x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 }

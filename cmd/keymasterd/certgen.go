@@ -449,7 +449,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	}
 	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
 		keySigner, state.KerberosRealm, duration, groups, organizations,
-		serviceMethods)
+		serviceMethods, logger)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("Cannot Generate x509cert: %s\n", err)
