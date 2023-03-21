@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	stdlog "log"
 	"net/http"
@@ -69,6 +71,19 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// now add Ed25519 key to set of public keys
+	_, ed25519Priv, err := ed25519.GenerateKey(rand.Reader)
+	state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, ed25519Priv.Public())
+	req2, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req2, state.idpOpenIDCJWKSHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: verify contents returned
+
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
