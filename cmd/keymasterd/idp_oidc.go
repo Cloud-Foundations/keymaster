@@ -81,7 +81,6 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	//var currentKeys jwsKeyList
 	var currentKeys jose.JSONWebKeySet
 	for _, key := range state.KeymasterPublicKeys {
 		kid, err := getKeyFingerprint(key)
