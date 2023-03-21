@@ -39,7 +39,6 @@ import (
 	"crypto/tls"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/awsutil/presignauth/presigner"
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -59,7 +58,6 @@ type Params struct {
 	Signer           crypto.Signer
 	StsClient        *sts.Client
 	StsPresignClient *sts.PresignClient
-	MaxSleepDuration time.Duration
 	derPubKey        []byte
 	isSetup          bool
 	pemPubKey        []byte

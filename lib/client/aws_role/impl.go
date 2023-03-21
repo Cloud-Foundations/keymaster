@@ -61,9 +61,6 @@ func (m *Manager) refreshOnce() {
 		refreshTime := m.certTLS.Leaf.NotBefore.Add(
 			m.certTLS.Leaf.NotAfter.Sub(m.certTLS.Leaf.NotBefore) * 3 / 4)
 		duration := time.Until(refreshTime)
-		if m.params.MaxSleepDuration > time.Second && duration > m.params.MaxSleepDuration {
-			duration = m.params.MaxSleepDuration
-		}
 		m.params.Logger.Debugf(1, "sleeping: %s before refresh\n",
 			(duration + time.Millisecond*50).Truncate(time.Millisecond*100))
 		time.Sleep(duration)
