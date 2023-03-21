@@ -19,7 +19,6 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	"github.com/mendsley/gojwk"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -77,28 +76,23 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	out.WriteTo(w)
 }
 
-type jwsKeyList struct {
-	Keys []*gojwk.Key `json:"keys"`
-}
-
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	var currentKeys jwsKeyList
+	//var currentKeys jwsKeyList
+	var currentKeys jose.JSONWebKeySet
 	for _, key := range state.KeymasterPublicKeys {
-		jwkKey, err := gojwk.PublicKey(key)
-		if err != nil {
-			log.Printf("error getting key idpOpenIDCJWKSHandler: %s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
-			return
-		}
-		jwkKey.Kid, err = getKeyFingerprint(key)
+		kid, err := getKeyFingerprint(key)
 		if err != nil {
 			log.Printf("error computing key fingerprint in  idpOpenIDCJWKSHandler: %s", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
 			return
+		}
+		jwkKey := jose.JSONWebKey{
+			Key:   key,
+			KeyID: kid,
 		}
 		currentKeys.Keys = append(currentKeys.Keys, jwkKey)
 	}
@@ -223,7 +217,6 @@ func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool,
 	return false, nil
 }
 
-//
 func (client *OpenIDConnectClientConfig) RequestedAudienceIsAllowed(audience string) bool {
 	return client.AllowClientChosenAudiences
 }
