@@ -82,6 +82,7 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// TODO: verify contents returned
 
 }
 
