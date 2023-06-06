@@ -575,8 +575,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	if r.Form.Get("grant_type") != "authorization_code" {
-		logger.Printf("invalid grant type")
-		logger.Debugf(1, "invalid grant type='%s'", r.Form.Get("grant_type"))
+		logger.Debugf(1, "invalid grant type='%s'", url.QueryEscape(r.Form.Get("grant_type")))
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid grant type")
 		return
 	}

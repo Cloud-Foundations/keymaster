@@ -115,7 +115,6 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authData.Username != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("Failed assume user by User %s", authData.Username)
 		logger.Debugf(1, "User %s asking for creds for %s",
 			authData.Username, targetUser)
 		return
