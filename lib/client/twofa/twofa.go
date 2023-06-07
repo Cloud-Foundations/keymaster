@@ -24,6 +24,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
+	"github.com/marshallbrekka/go-u2fhost"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -225,22 +226,34 @@ func authenticateUser(
 	}
 	// upgrade to u2f
 	successful2fa := false
+	useNewLib := true
 	if !skip2fa {
 		if allowU2F {
-			devices, err := u2fhid.Devices()
-			if err != nil {
-				logger.Fatal(err)
-				return err
-			}
-			if len(devices) > 0 {
-
-				err = u2f.DoU2FAuthenticate(
+			if useNewLib {
+				err = u2f.WithDevicesDoU2FAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
-
+					logger.Fatal(err)
 					return err
 				}
 				successful2fa = true
+
+			} else {
+				devices, err := u2fhid.Devices()
+				if err != nil {
+					logger.Fatal(err)
+					return err
+				}
+				if len(devices) > 0 {
+
+					err = u2f.DoU2FAuthenticate(
+						client, baseUrl, userAgentString, logger)
+					if err != nil {
+
+						return err
+					}
+					successful2fa = true
+				}
 			}
 		}
 

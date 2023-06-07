@@ -2,6 +2,8 @@ module github.com/Cloud-Foundations/keymaster
 
 go 1.17
 
+replace github.com/bearsh/hid v1.3.0 => github.com/bearsh/hid v1.5.0
+
 require (
 	github.com/Cloud-Foundations/Dominator v0.3.1
 	github.com/Cloud-Foundations/golib v0.5.0
@@ -19,6 +21,7 @@ require (
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
 	github.com/lib/pq v1.10.7
+	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/nirasan/go-oauth-pkce-code-verifier v0.0.0-20170819232839-0fbfe93532da
 	github.com/pquerna/otp v1.4.0
@@ -40,6 +43,7 @@ require (
 	github.com/acomagu/bufpipe v1.0.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.19.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.6 // indirect
+	github.com/bearsh/hid v1.3.0 // indirect
 	github.com/cloudflare/circl v1.3.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect

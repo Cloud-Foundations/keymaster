@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/marshallbrekka/go-u2fhost"
 )
 
 // CheckU2FDevices checks the U2F devices and terminates the application by
@@ -20,4 +21,13 @@ func DoU2FAuthenticate(
 	userAgentString string,
 	logger log.DebugLogger) error {
 	return doU2FAuthenticate(client, baseURL, userAgentString, logger)
+}
+
+func WithDevicesDoU2FAuthenticate(
+	devices []*u2fhost.HidDevice,
+	client *http.Client,
+	baseURL string,
+	userAgentString string,
+	logger log.DebugLogger) error {
+	return withDevicesDoU2FAuthenticate(devices, client, baseURL, userAgentString, logger)
 }
