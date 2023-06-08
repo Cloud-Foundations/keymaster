@@ -466,9 +466,52 @@ func withDevicesDoWebAuthnAuthenticate(
 		signature = base64.RawURLEncoding.EncodeToString(decodedSignature)
 	}
 	authenticatorData := deviceResponse.AuthenticatorData
-	decodedAuthenticatorData, err := base64.StdEncoding.DecodeString(deviceResponse.AuthenticatorData)
+	stringDecodedAuthenticatorData, err := base64.StdEncoding.DecodeString(deviceResponse.AuthenticatorData)
 	if err == nil {
-		authenticatorData = base64.RawURLEncoding.EncodeToString(decodedAuthenticatorData)
+		authenticatorData = base64.RawURLEncoding.EncodeToString(stringDecodedAuthenticatorData)
+	}
+	//
+	var clientData ClientData
+	clientDataBytes, err := base64.RawURLEncoding.DecodeString(deviceResponse.ClientData)
+	if err != nil {
+		logger.Fatal("Cant base64 decode ClientData")
+	}
+	err = json.Unmarshal(clientDataBytes, &clientData)
+	if err != nil {
+		logger.Fatal("unmarshall clientData")
+	}
+	logger.Debugf(2, "clientData =%+v", clientData)
+	if clientData.Typ == clientDataAuthenticationTypeValue {
+
+		// looks like U2F lets try that becauswe webauthn would not work anyway
+		webSignRequestBuf := &bytes.Buffer{}
+		err = json.NewEncoder(webSignRequestBuf).Encode(deviceResponse)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		url = baseURL + "/u2f/SignResponse"
+		webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
+		if err != nil {
+			logger.Printf("Failure to make http request")
+			return err
+		}
+		webSignRequest2.Header.Set("User-Agent", userAgentString)
+		signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
+		if err != nil {
+			logger.Printf("Failure to sign request req %s", err)
+			return err
+		}
+		defer signRequestResp2.Body.Close()
+		logger.Debugf(1, "signResponse request complete")
+		if signRequestResp2.StatusCode != 200 {
+			logger.Debugf(0, "got error from call %s, url='%s'\n",
+				signRequestResp2.Status, url)
+			return err
+		}
+		logger.Debugf(1, "signResponse success")
+		io.Copy(ioutil.Discard, signRequestResp2.Body)
+		return nil
+
 	}
 
 	webResponse := WebAuthnAuthenticationResponse{
@@ -492,13 +535,6 @@ func withDevicesDoWebAuthnAuthenticate(
 	if err != nil {
 		logger.Fatal(err)
 	}
-	/*
-		webSignRequestBuf := &bytes.Buffer{}
-		err = json.NewEncoder(webSignRequestBuf).Encode(webResponse)
-		if err != nil {
-			logger.Fatal(err)
-		}
-	*/
 	logger.Debugf(1, "responseBytes=%s", string(responseBytes))
 	webSignRequestBuf := bytes.NewReader(responseBytes)
 
@@ -517,11 +553,12 @@ func withDevicesDoWebAuthnAuthenticate(
 	defer signRequestResp2.Body.Close()
 	logger.Debugf(1, "signResponse request complete")
 	if signRequestResp2.StatusCode != 200 {
-		logger.Debugf(0, "got error from call %s, url='%s'\n",
+		logger.Debugf(1, "got error from call %s, url='%s'\n",
 			signRequestResp2.Status, url)
 		return err
 	}
 	logger.Debugf(1, "signResponse success")
+	logger.Debugf(3, "signResponse resp=%+v", signRequestResp2)
 	io.Copy(ioutil.Discard, signRequestResp2.Body)
 	return nil
 
