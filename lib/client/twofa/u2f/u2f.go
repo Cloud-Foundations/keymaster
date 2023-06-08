@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
-	//"github.com/duo-labs/webauthn/protocol"
+	"github.com/duo-labs/webauthn/protocol"
 	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/u2ftoken"
 	"github.com/marshallbrekka/go-u2fhost"
@@ -29,6 +29,28 @@ type ClientData struct {
 	Challenge          string      `json:"challenge"`
 	ChannelIdPublicKey interface{} `json:"cid_pubkey,omitempty"`
 	Origin             string      `json:"origin"`
+}
+
+/*
+"response\":{\"authenticatorData\":\"criNDU5iGlmhNuL84SvhejdiYpVWbtvIehKuVx9kVfcBAAAAJA\",\"clientDataJSON\":\"eyJjaGFsbGVuZ2UiOiJxODM0dUFjdms4Z1lYSVljWDZ6V0NWSElzWHlzZHAwTVAydThaaWMtOTM0Iiwib3JpZ2luIjoiaHR0cHM6Ly9rZXltYXN0ZXIuc2VjLmNsb3VkLXN1cHBvcnQucHVyZXN0b3JhZ2UuY29tIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9\",\"signature\":\"MEUCIGw6WwBd2UupDnf24Qr9eEdBiYlN5ZHv4RBQScZVXCrrAiEApmRUz-H6Rk0ervDWDeQaoKZ9oITVlw8QwbZDDAdFmng\",\"userHandle\":\"\"}
+*/
+
+type AuthenticatorResponse struct {
+	AuthenticatorData string `json:"authenticatorData"`
+	ClientDataJSON    string `json:"clientDataJSON"`
+	Signature         string `json:"signature"`
+	UserHandle        string `json:"userHandle"`
+}
+
+/*
+	type WebAuthnAuthenticationResponse struct {
+	        \"id\":\"bDtn39BgSSwOscXr3ruEGmegBVEd6yntysf8NiG2I2KDz7-CEiw9mIm1BvlQYfg9g1Rq38IpFwEj8Cxn_9uNlA\",\"rawId\":\"bDtn39BgSSwOscXr3ruEGmegBVEd6yntysf8NiG2I2KDz7-CEiw9mIm1BvlQYfg9g1Rq38IpFwEj8Cxn_9uNlA\",\"type\":\"public-key\",\"response\"
+*/
+type WebAuthnAuthenticationResponse struct {
+	Id       string                `json:"id"`
+	RawId    string                `json:"rawId"`
+	Type     string                `json:"type"`
+	Response AuthenticatorResponse `json:"response"`
 }
 
 func checkU2FDevices(logger log.Logger) {
@@ -316,12 +338,7 @@ func withDevicesDoU2FAuthenticate(
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
 	/*
-		decodedHandle, err := base64.RawURLEncoding.DecodeString(
-			webSignRequest.RegisteredKeys[0])
-		if err != nil {
-			logger.Fatal(err)
-		}
-	*/
+	 */
 	req := u2fhost.AuthenticateRequest{
 		Challenge: webSignRequest.Challenge,
 		AppId:     webSignRequest.AppID,                       // Provided by client or server
@@ -336,18 +353,6 @@ func withDevicesDoU2FAuthenticate(
 
 	// Now we write the output data:
 
-	// now we do the last request
-	//var signRequestResponse u2f.SignResponse
-	/*
-	          signRequestResponse.KeyHandle = base64.RawURLEncoding.EncodeToString(
-	           keyHandle)
-	   signRequestResponse.SignatureData = base64.RawURLEncoding.EncodeToString(
-	           rawBytes)
-	   signRequestResponse.ClientData = base64.RawURLEncoding.EncodeToString(
-	           tokenAuthenticationBuf.Bytes())
-	   //
-	*/
-	//signRequestResponse.KeyHandle
 	webSignRequestBuf := &bytes.Buffer{}
 	err = json.NewEncoder(webSignRequestBuf).Encode(deviceResponse)
 	if err != nil {
@@ -376,4 +381,149 @@ func withDevicesDoU2FAuthenticate(
 	io.Copy(ioutil.Discard, signRequestResp2.Body)
 	return nil
 
+}
+
+func withDevicesDoWebAuthnAuthenticate(
+	devices []*u2fhost.HidDevice,
+	client *http.Client,
+	baseURL string,
+	userAgentString string,
+	logger log.DebugLogger) error {
+
+	logger.Printf("top of withDevicesDoWebAutnfAuthenticate")
+	url := baseURL + "/webauthn/AuthBegin/" // TODO: this should be grabbed from the webauthn definition as a const
+	signRequest, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	signRequest.Header.Set("User-Agent", userAgentString)
+	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
+	if err != nil {
+		logger.Printf("Failure to sign request req %s", err)
+		return err
+	}
+	logger.Debugf(0, "Get url request did not failed %+v", signRequestResp)
+	// Dont defer the body response Close ... as we need to close it explicitly
+	// in the body of the function so that we can reuse the connection
+	if signRequestResp.StatusCode != 200 {
+		signRequestResp.Body.Close()
+		logger.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
+		err = errors.New("failed respose from sign request")
+		return err
+	}
+	var credentialAssertion protocol.CredentialAssertion
+	err = json.NewDecoder(signRequestResp.Body).Decode(&credentialAssertion)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	io.Copy(ioutil.Discard, signRequestResp.Body)
+	signRequestResp.Body.Close()
+
+	logger.Debugf(1, "credential Assertion=%+v", credentialAssertion)
+
+	appId := credentialAssertion.Response.RelyingPartyID
+
+	if credentialAssertion.Response.Extensions != nil {
+
+		appIdIface, ok := credentialAssertion.Response.Extensions["appid"]
+		if ok {
+			extensionAppId, ok := appIdIface.(string)
+			if ok {
+				appId = extensionAppId
+			}
+		}
+	}
+
+	//keyHandle := base64.RawURLEncoding.EncodeToString(credentialAssertion.Response.AllowedCredentials[0].CredentialID)
+
+	//
+	req := u2fhost.AuthenticateRequest{
+		Challenge: credentialAssertion.Response.Challenge.String(),
+		/*
+		   AppId:     webSignRequest.AppID,                       // Provided by client or server
+		   Facet:     webSignRequest.AppID,                       //TODO: FIX this is actually Provided by client, so extract from baseURL
+		   KeyHandle: webSignRequest.RegisteredKeys[0].KeyHandle, // TODO we should actually iterate over this?
+		*/
+		//AppId: appId,
+		Facet: appId,
+		AppId: credentialAssertion.Response.RelyingPartyID,
+		//Facet: credentialAssertion.Response.RelyingPartyID,
+
+		KeyHandle: base64.RawURLEncoding.EncodeToString(credentialAssertion.Response.AllowedCredentials[0].CredentialID),
+		WebAuthn:  true,
+	}
+
+	deviceResponse := authenticateHelper(&req, devices, logger)
+	if deviceResponse == nil {
+		logger.Fatal("nil response from device?")
+	}
+	logger.Debugf(1, "signResponse  authenticateHelper done")
+
+	signature := deviceResponse.SignatureData
+	decodedSignature, err := base64.StdEncoding.DecodeString(
+		deviceResponse.SignatureData)
+	if err == nil {
+		signature = base64.RawURLEncoding.EncodeToString(decodedSignature)
+	}
+	authenticatorData := deviceResponse.AuthenticatorData
+	decodedAuthenticatorData, err := base64.StdEncoding.DecodeString(deviceResponse.AuthenticatorData)
+	if err == nil {
+		authenticatorData = base64.RawURLEncoding.EncodeToString(decodedAuthenticatorData)
+	}
+
+	webResponse := WebAuthnAuthenticationResponse{
+		Id:    deviceResponse.KeyHandle,
+		RawId: deviceResponse.KeyHandle,
+		Type:  "public-key",
+		Response: AuthenticatorResponse{
+			AuthenticatorData: authenticatorData,
+			ClientDataJSON:    deviceResponse.ClientData,
+			Signature:         signature,
+		},
+	}
+	/*
+		authenticatorResponse := protocol.AuthenticatorAssertionResponse{
+			Signature: []byte(deviceResponse.SignatureData),
+		}
+	*/
+	// NEXT is broken
+	// Now we write the output data:
+	responseBytes, err := json.Marshal(webResponse)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	/*
+		webSignRequestBuf := &bytes.Buffer{}
+		err = json.NewEncoder(webSignRequestBuf).Encode(webResponse)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	*/
+	logger.Debugf(1, "responseBytes=%s", string(responseBytes))
+	webSignRequestBuf := bytes.NewReader(responseBytes)
+
+	url = baseURL + "/webauthn/AuthFinish/"
+	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
+	if err != nil {
+		logger.Printf("Failure to make http request")
+		return err
+	}
+	webSignRequest2.Header.Set("User-Agent", userAgentString)
+	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
+	if err != nil {
+		logger.Printf("Failure to sign request req %s", err)
+		return err
+	}
+	defer signRequestResp2.Body.Close()
+	logger.Debugf(1, "signResponse request complete")
+	if signRequestResp2.StatusCode != 200 {
+		logger.Debugf(0, "got error from call %s, url='%s'\n",
+			signRequestResp2.Status, url)
+		return err
+	}
+	logger.Debugf(1, "signResponse success")
+	io.Copy(ioutil.Discard, signRequestResp2.Body)
+	return nil
+
+	//return fmt.Errorf("not implemented")
 }

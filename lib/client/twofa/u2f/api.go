@@ -31,3 +31,12 @@ func WithDevicesDoU2FAuthenticate(
 	logger log.DebugLogger) error {
 	return withDevicesDoU2FAuthenticate(devices, client, baseURL, userAgentString, logger)
 }
+
+func WithDevicesDoWebAuthnAuthenticate(
+	devices []*u2fhost.HidDevice,
+	client *http.Client,
+	baseURL string,
+	userAgentString string,
+	logger log.DebugLogger) error {
+	return withDevicesDoWebAuthnAuthenticate(devices, client, baseURL, userAgentString, logger)
+}
