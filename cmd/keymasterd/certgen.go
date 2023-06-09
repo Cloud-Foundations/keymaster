@@ -115,7 +115,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authData.Username != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("User %s asking for creds for %s",
+		logger.Debugf(1, "User %s asking for creds for %s",
 			authData.Username, targetUser)
 		return
 	}
@@ -249,7 +249,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 
 	sshUserPublicKey, userErr, err := getValidSSHPublicKey(userPubKey)
 	if err != nil {
-		logger.Println(err)
+		logger.Debugf(1, "postAuthSSHCertHandler:  getValidSSHPublicKey err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
