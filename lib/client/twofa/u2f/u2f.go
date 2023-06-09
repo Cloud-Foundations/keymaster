@@ -253,12 +253,78 @@ func doU2FAuthenticate(
 	return nil
 }
 
-func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, logger log.DebugLogger) *u2fhost.AuthenticateResponse {
+func checkDeviceAuthSuccess(req *u2fhost.AuthenticateRequest, device u2fhost.Device, logger log.DebugLogger) (bool, error) {
+	timeout := time.After(time.Second * 5)
+
+	interval := time.NewTicker(time.Millisecond * 250)
+	defer interval.Stop()
+	for {
+		select {
+		case <-timeout:
+			fmt.Println("Failed to get authentication response after 5 seconds")
+			return false, nil
+		case <-interval.C:
+			_, err := device.Authenticate(req)
+			if err == nil {
+				logger.Debugf(1, "device.Authenticate retured non error %s", err)
+				return true, nil
+			}
+			logger.Debugf(2, "Checker before exit Got status response %s", err)
+			switch err.Error() {
+			case "Device is requesting test of use presence to fulfill the request.":
+				//device.Close()
+				//device.Open()
+				return true, nil
+			case "The provided key handle is not present on the device, or was created with a different application parameter.":
+				return false, nil
+
+			default:
+				logger.Debugf(1, "Got status response %s", err)
+			}
+		}
+	}
+}
+
+func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, keyHandles []string, logger log.DebugLogger) *u2fhost.AuthenticateResponse {
 	logger.Debugf(1, "Authenticating with request %+v", req)
 	openDevices := []u2fhost.Device{}
+	registeredDevices := make(map[string]u2fhost.Device)
 	for i, device := range devices {
 		err := device.Open()
 		if err == nil {
+
+			for _, handle := range keyHandles {
+				testReq := u2fhost.AuthenticateRequest{
+					CheckOnly: true,
+					KeyHandle: handle,
+					AppId:     req.AppId,
+					Facet:     req.Facet,
+					Challenge: req.Challenge,
+					WebAuthn:  req.WebAuthn,
+				}
+				/*
+					_, err = device.Authenticate(&testReq)
+					if err != nil {
+						logger.Debugf(2, "Error on check loop handle=%s, err=%s", handle, err)
+						if err.Error() != "Device is requesting test of use presence to fulfill the request." {
+							logger.Debugf(2, "skipping device")
+							continue
+						}
+					}
+				*/
+				found, err := checkDeviceAuthSuccess(&testReq, device, logger)
+				if err != nil {
+					logger.Debugf(2, "skipping device due to error err=%s", err)
+					continue
+				}
+				if !found {
+					logger.Debugf(2, "skipping device due to non error")
+					continue
+				}
+				registeredDevices[handle] = device
+				break
+			}
+
 			openDevices = append(openDevices, u2fhost.Device(devices[i]))
 			defer func(i int) {
 				devices[i].Close()
@@ -271,8 +337,14 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			}
 		}
 	}
+	//req.CheckOnly = false
+	logger.Debugf(1, "registeredDevices=%+v", registeredDevices)
+
 	if len(openDevices) == 0 {
 		logger.Fatalf("Failed to find any devices")
+	}
+	if len(registeredDevices) == 0 {
+		logger.Fatalf("No registered devices found")
 	}
 	prompted := false
 	timeout := time.After(time.Second * 25)
@@ -285,12 +357,21 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			fmt.Println("Failed to get authentication response after 25 seconds")
 			return nil
 		case <-interval.C:
-			for _, device := range openDevices {
-				response, err := device.Authenticate(req)
+			for handle, device := range registeredDevices {
+
+				handleReq := u2fhost.AuthenticateRequest{
+					KeyHandle: handle,
+					AppId:     req.AppId,
+					Facet:     req.Facet,
+					Challenge: req.Challenge,
+					WebAuthn:  req.WebAuthn,
+				}
+
+				response, err := device.Authenticate(&handleReq)
 				if err == nil {
 					logger.Debugf(1, "device.Authenticate retured non error %s", err)
 					return response
-				} else if _, ok := err.(u2fhost.TestOfUserPresenceRequiredError); ok && !prompted {
+				} else if err.Error() == "Device is requesting test of use presence to fulfill the request." && !prompted {
 					logger.Printf("\nTouch the flashing U2F device to authenticate...")
 					prompted = true
 				} else {
@@ -337,15 +418,19 @@ func withDevicesDoU2FAuthenticate(
 	}
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
-	/*
-	 */
+
+	var keyHandles []string
+	for _, registeredKey := range webSignRequest.RegisteredKeys {
+		keyHandles = append(keyHandles, registeredKey.KeyHandle)
+	}
+
 	req := u2fhost.AuthenticateRequest{
 		Challenge: webSignRequest.Challenge,
 		AppId:     webSignRequest.AppID,                       // Provided by client or server
 		Facet:     webSignRequest.AppID,                       //TODO: FIX this is actually Provided by client, so extract from baseURL
 		KeyHandle: webSignRequest.RegisteredKeys[0].KeyHandle, // TODO we should actually iterate over this?
 	}
-	deviceResponse := authenticateHelper(&req, devices, logger)
+	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
 	if deviceResponse == nil {
 		logger.Fatal("nil response from device?")
 	}
@@ -420,11 +505,8 @@ func withDevicesDoWebAuthnAuthenticate(
 	signRequestResp.Body.Close()
 
 	logger.Debugf(1, "credential Assertion=%+v", credentialAssertion)
-
 	appId := credentialAssertion.Response.RelyingPartyID
-
 	if credentialAssertion.Response.Extensions != nil {
-
 		appIdIface, ok := credentialAssertion.Response.Extensions["appid"]
 		if ok {
 			extensionAppId, ok := appIdIface.(string)
@@ -434,26 +516,24 @@ func withDevicesDoWebAuthnAuthenticate(
 		}
 	}
 
+	var keyHandles []string
+	for _, credential := range credentialAssertion.Response.AllowedCredentials {
+		keyHandles = append(keyHandles, base64.RawURLEncoding.EncodeToString(credential.CredentialID))
+	}
 	//keyHandle := base64.RawURLEncoding.EncodeToString(credentialAssertion.Response.AllowedCredentials[0].CredentialID)
 
 	//
 	req := u2fhost.AuthenticateRequest{
 		Challenge: credentialAssertion.Response.Challenge.String(),
-		/*
-		   AppId:     webSignRequest.AppID,                       // Provided by client or server
-		   Facet:     webSignRequest.AppID,                       //TODO: FIX this is actually Provided by client, so extract from baseURL
-		   KeyHandle: webSignRequest.RegisteredKeys[0].KeyHandle, // TODO we should actually iterate over this?
-		*/
+		Facet:     appId,                                       //TODO: FIX this is actually Provided by client, so or at least compere with base url host
+		AppId:     credentialAssertion.Response.RelyingPartyID, // Provided by Server
 		//AppId: appId,
-		Facet: appId,
-		AppId: credentialAssertion.Response.RelyingPartyID,
-		//Facet: credentialAssertion.Response.RelyingPartyID,
 
 		KeyHandle: base64.RawURLEncoding.EncodeToString(credentialAssertion.Response.AllowedCredentials[0].CredentialID),
 		WebAuthn:  true,
 	}
 
-	deviceResponse := authenticateHelper(&req, devices, logger)
+	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
 	if deviceResponse == nil {
 		logger.Fatal("nil response from device?")
 	}

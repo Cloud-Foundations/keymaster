@@ -231,7 +231,6 @@ func authenticateUser(
 		if allowU2F {
 			if useNewLib {
 				//err = u2f.WithDevicesDoU2FAuthenticate(u2fhost.Devices(),
-				//	client, baseUrl, userAgentString, logger)
 				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
