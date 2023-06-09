@@ -272,8 +272,6 @@ func checkDeviceAuthSuccess(req *u2fhost.AuthenticateRequest, device u2fhost.Dev
 			logger.Debugf(2, "Checker before exit Got status response %s", err)
 			switch err.Error() {
 			case "Device is requesting test of use presence to fulfill the request.":
-				//device.Close()
-				//device.Open()
 				return true, nil
 			case "The provided key handle is not present on the device, or was created with a different application parameter.":
 				return false, nil
@@ -302,22 +300,34 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 					Challenge: req.Challenge,
 					WebAuthn:  req.WebAuthn,
 				}
-				/*
-					_, err = device.Authenticate(&testReq)
-					if err != nil {
-						logger.Debugf(2, "Error on check loop handle=%s, err=%s", handle, err)
-						if err.Error() != "Device is requesting test of use presence to fulfill the request." {
-							logger.Debugf(2, "skipping device")
-							continue
-						}
-					}
-				*/
 				found, err := checkDeviceAuthSuccess(&testReq, device, logger)
 				if err != nil {
 					logger.Debugf(2, "skipping device due to error err=%s", err)
 					continue
 				}
 				if !found {
+					/*
+						// this kinds of works so keeping it here for future reference
+						if req.WebAuthn == true {
+							testReq2 := u2fhost.AuthenticateRequest{
+								CheckOnly: true,
+								KeyHandle: handle,
+								AppId:     req.Facet,
+								Facet:     req.Facet,
+								Challenge: req.Challenge,
+								WebAuthn:  false,
+							}
+
+							found2, err2 := checkDeviceAuthSuccess(&testReq2, device, logger)
+							logger.Debugf(2, "Fallback check for %s: %v, %s", handle, found2, err2)
+							if found2 == true && err2 == nil {
+								//useWebAuthn[handle] = false
+								//registeredDevices[handle] = device
+								break
+							}
+						}
+					*/
+
 					logger.Debugf(2, "skipping device due to non error")
 					continue
 				}

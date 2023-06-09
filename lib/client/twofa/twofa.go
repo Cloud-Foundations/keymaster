@@ -226,10 +226,9 @@ func authenticateUser(
 	}
 	// upgrade to u2f
 	successful2fa := false
-	useNewLib := true
 	if !skip2fa {
 		if allowU2F {
-			if useNewLib {
+			if os.Getenv("KEYMASTER_NOWEBAUTHN") == "" {
 				//err = u2f.WithDevicesDoU2FAuthenticate(u2fhost.Devices(),
 				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
