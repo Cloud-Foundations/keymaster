@@ -614,18 +614,13 @@ func withDevicesDoWebAuthnAuthenticate(
 			Signature:         signature,
 		},
 	}
-	/*
-		authenticatorResponse := protocol.AuthenticatorAssertionResponse{
-			Signature: []byte(deviceResponse.SignatureData),
-		}
-	*/
-	// NEXT is broken
+
 	// Now we write the output data:
 	responseBytes, err := json.Marshal(webResponse)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	logger.Debugf(1, "responseBytes=%s", string(responseBytes))
+	logger.Debugf(3, "responseBytes=%s", string(responseBytes))
 	webSignRequestBuf := bytes.NewReader(responseBytes)
 
 	url = baseURL + "/webauthn/AuthFinish/"
