@@ -10,7 +10,9 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -290,6 +292,10 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 	for i, device := range devices {
 		err := device.Open()
 		if err == nil {
+			openDevices = append(openDevices, u2fhost.Device(devices[i]))
+			defer func(i int) {
+				devices[i].Close()
+			}(i)
 			// For each opened device we test if the handle is present
 			// It should be enough for u2f AND webauthn, but is not
 			// so we ned to add some logic for registered u2f devices
@@ -342,11 +348,6 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 				registeredDevices[copyReq] = device
 				break
 			}
-
-			openDevices = append(openDevices, u2fhost.Device(devices[i]))
-			defer func(i int) {
-				devices[i].Close()
-			}(i)
 			version, err := device.Version()
 			if err != nil {
 				logger.Debugf(2, "Device version error: %s", err.Error())
@@ -391,6 +392,29 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 		}
 	}
 	return nil
+}
+
+// This ensures the hostname matches...at this moment we do NOT check port number
+// Port number should also be checked but leving that our for now.
+func verifyAppId(baseURLStr string, AppIdStr string) (bool, error) {
+	baseURL, err := url.Parse(baseURLStr)
+	if err != nil {
+		return false, err
+	}
+	baseURLHost, _, _ := strings.Cut(baseURL.Host, ":")
+	if AppIdStr == baseURL.Host || AppIdStr == baseURLHost {
+		return true, nil
+	}
+	// The base ID does not match... so we will now try to parse the appID
+	AppId, err := url.Parse(AppIdStr)
+	if err != nil {
+		return false, err
+	}
+	appIDHost, _, _ := strings.Cut(AppId.Host, ":")
+	if appIDHost == baseURLHost {
+		return true, nil
+	}
+	return false, nil
 }
 
 func withDevicesDoU2FAuthenticate(
@@ -523,6 +547,13 @@ func withDevicesDoWebAuthnAuthenticate(
 				appId = extensionAppId
 			}
 		}
+	}
+	validAppId, err := verifyAppId(baseURL, appId)
+	if err != nil {
+		return err
+	}
+	if !validAppId {
+		return fmt.Errorf("InvalidappId=%s for base=%s", appId, baseURL)
 	}
 
 	var keyHandles []string
