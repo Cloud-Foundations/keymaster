@@ -408,8 +408,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	if signRequestResp.StatusCode != 200 {
 		signRequestResp.Body.Close()
 		logger.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
-		err = errors.New("failed respose from sign request")
-		return err
+		return fmt.Errorf("Failed response from remote sign request endpoint remote status=%s", signRequestResp.Status)
 	}
 	var credentialAssertion protocol.CredentialAssertion
 	err = json.NewDecoder(signRequestResp.Body).Decode(&credentialAssertion)
