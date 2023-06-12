@@ -232,6 +232,7 @@ func authenticateUser(
 				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
+					logger.Printf("Error doing hid webathentication err=%s", err)
 					return err
 				}
 				successful2fa = true
@@ -239,7 +240,7 @@ func authenticateUser(
 			} else {
 				devices, err := u2fhid.Devices()
 				if err != nil {
-					logger.Fatal(err)
+					logger.Printf("could not open hid devices err=%s", err)
 					return err
 				}
 				if len(devices) > 0 {
