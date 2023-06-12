@@ -172,7 +172,6 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	webauthnJsonResponse(w, "Registration Success", http.StatusOK)
 }
 
-//
 const webAuthnAuthBeginPath = "/webauthn/AuthBegin/"
 
 func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +234,6 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	logger.Debugf(3, "end of webauthnAuthBegin")
 }
 
-//
 const webAuthnAuthFinishPath = "/webauthn/AuthFinish/"
 
 func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Request) {
@@ -272,8 +270,8 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 
 	parsedResponse, err := protocol.ParseCredentialRequestResponse(r)
 	if err != nil {
-		logger.Printf("Error parsing Response")
-		http.Error(w, "", http.StatusInternalServerError)
+		logger.Printf("Error parsing Response err =%s", err)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
