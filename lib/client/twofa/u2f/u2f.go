@@ -265,7 +265,7 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			}(i)
 			version, err := device.Version()
 			if err != nil {
-				logger.Debugf(1, "Device version error: %s", err.Error())
+				logger.Printf("Device version error: %s", err.Error())
 			} else {
 				logger.Debugf(1, "Device version: %s", version)
 			}
