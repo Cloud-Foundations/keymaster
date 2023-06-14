@@ -226,9 +226,23 @@ func authenticateUser(
 	}
 	// upgrade to u2f
 	successful2fa := false
+
+	// Linux support for the new library is not quite correct
+	// so for now we keep using the old library (pure u2f)
+	// for linux cli as default. Windows 10 and MacOS have been
+	// tested successfullt
+	// The env variable allows us to swap what library is used by
+	// default
+	useWebAuthh := true
+	if runtime.GOOS == "linux" {
+		useWebAuthh = false
+	}
+	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
+		useWebAuthh = useWebAuthh != useWebAuthh
+	}
 	if !skip2fa {
 		if allowU2F {
-			if os.Getenv("KEYMASTER_NOWEBAUTHN") == "" {
+			if useWebAuthh {
 				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
 				if err != nil {

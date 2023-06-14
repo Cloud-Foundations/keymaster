@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/bearsh/hid"
 	"github.com/duo-labs/webauthn/protocol"
 	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/u2ftoken"
@@ -55,7 +56,7 @@ type WebAuthnAuthenticationResponse struct {
 	Response AuthenticatorResponse `json:"response"`
 }
 
-func checkU2FDevices(logger log.Logger) {
+func checkU2FDevices(logger log.DebugLogger) {
 	// TODO: move this to initialization code, ans pass the device list to this function?
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
@@ -76,6 +77,23 @@ func checkU2FDevices(logger log.Logger) {
 			logger.Fatal(err)
 		}
 		defer dev.Close()
+	}
+
+	// New listing
+	hidDevices := hid.Enumerate(0x0, 0x0)
+	logger.Printf("hid device len=%d", len(hidDevices))
+	for i, device := range hidDevices {
+		logger.Debugf(1, "h2fHost hid device[%d]=%+v", i, device)
+	}
+
+	devices2 := u2fhost.Devices()
+	for _, d2 := range devices2 {
+		logger.Printf("%+v", d2)
+	}
+	if len(devices2) == 0 {
+		logger.Fatal("no U2F (u2fHost) tokens found")
+	} else {
+		logger.Printf("u2fHost %d devices found", len(devices2))
 	}
 
 }
