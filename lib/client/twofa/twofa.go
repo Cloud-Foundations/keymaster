@@ -230,7 +230,7 @@ func authenticateUser(
 	// Linux support for the new library is not quite correct
 	// so for now we keep using the old library (pure u2f)
 	// for linux cli as default. Windows 10 and MacOS have been
-	// tested successfullt
+	// tested successfully.
 	// The env variable allows us to swap what library is used by
 	// default
 	useWebAuthh := true
@@ -238,7 +238,7 @@ func authenticateUser(
 		useWebAuthh = false
 	}
 	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
-		useWebAuthh = useWebAuthh != useWebAuthh
+		useWebAuthh = !useWebAuthh
 	}
 	if !skip2fa {
 		if allowU2F {
