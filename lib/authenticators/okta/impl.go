@@ -231,7 +231,8 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return PushResponseRejected, fmt.Errorf("bad status: %s", resp.Status)
+			rvalue = PushResponseRejected
+			continue
 		}
 		decoder := json.NewDecoder(resp.Body)
 		var response OktaApiPushResponseType
