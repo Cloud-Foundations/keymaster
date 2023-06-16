@@ -2,8 +2,10 @@ package okta
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +64,10 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	path := strings.Split(req.URL.Path, "/")
+	log.Printf("Path=%+v", path)
+	factorId := path[4] // assumes path is  Path=[ api v1 authn factors someid verify]
+
 	// For now we do TOTP only verifyTOTPFactorDataType
 	var otpData OktaApiVerifyTOTPFactorDataType
 	decoder := json.NewDecoder(req.Body)
@@ -77,6 +83,17 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(invalidOTPStringFromDoc))
 		return
+	case "multi-otp":
+		switch factorId {
+		case "invalid":
+
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(invalidOTPStringFromDoc))
+			return
+		default:
+			writeStatus(w, "SUCCESS")
+			return
+		}
 	case "push-send-waiting":
 		response := OktaApiPushResponseType{
 			Status:       "MFA_CHALLENGE",
@@ -352,7 +369,41 @@ func TestMfaOTPSuccess(t *testing.T) {
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
 				OktaApiMFAFactorsType{
-					Id:         "someid",
+					Id:         "validId",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+			}},
+	}
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
+		response: response,
+	}
+	goodOTPUser := "goodOTPUser"
+	pa.recentAuth[goodOTPUser] = expiredUserCachedData
+	valid, err := pa.ValidateUserOTP(goodOTPUser, 123456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !valid {
+		t.Fatal("should have succeeded with good  user")
+	}
+}
+
+func TestMfaMutliOTPSuccess(t *testing.T) {
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := OktaApiPrimaryResponseType{
+		StateToken: "valid-otp",
+		Status:     "MFA_REQUIRED",
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
+					Id:         "invalid",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+				OktaApiMFAFactorsType{
+					Id:         "validId",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
 			}},
