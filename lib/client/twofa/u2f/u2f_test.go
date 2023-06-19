@@ -43,7 +43,7 @@ func TestVerifyAppId(t *testing.T) {
 				t.Fatal(err)
 			}
 			if valid {
-				t.Fatalf("Falied to INvalidate valid appId for base=%s, appid=%s", baseURL, appId)
+				t.Fatalf("Falied to Invalidate invalid appId for base=%s, appid=%s", baseURL, appId)
 			}
 		}
 	}
