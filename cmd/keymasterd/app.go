@@ -1119,7 +1119,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				"Error parsing form")
 			return
 		}
-		logger.Debugf(2, "req =%+v", r)
+		logger.Debugf(4, "req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
