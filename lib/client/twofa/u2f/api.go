@@ -10,7 +10,7 @@ import (
 
 // CheckU2FDevices checks the U2F devices and terminates the application by
 // calling Fatal on the passed logger if the U2F devices cannot be read.
-func CheckU2FDevices(logger log.Logger) {
+func CheckU2FDevices(logger log.DebugLogger) {
 	checkU2FDevices(logger)
 }
 
