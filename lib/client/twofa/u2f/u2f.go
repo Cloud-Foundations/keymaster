@@ -17,9 +17,9 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/bearsh/hid"
+	"github.com/duo-labs/webauthn/protocol"
 	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/u2ftoken"
-	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/marshallbrekka/go-u2fhost"
 	"github.com/tstranex/u2f"
 )
