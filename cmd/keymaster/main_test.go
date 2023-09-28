@@ -267,6 +267,7 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 		"someprefix",
 		"username",
 		privateKeyPath,
+		false,
 		testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
