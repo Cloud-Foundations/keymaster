@@ -72,10 +72,10 @@ func upsertCertIntoAgent(
 		Comment:          comment,
 		ConfirmBeforeUse: confirmBeforeUse,
 	}
-	return withAddedKeyUpserCertIntoAgent(keyToAdd, logger)
+	return withAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 }
 
-func withAddedKeyUpserCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
+func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
 	if certToAdd.Certificate == nil {
 		return fmt.Errorf("Needs a certificate to be added")
 	}

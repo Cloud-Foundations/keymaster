@@ -15,6 +15,6 @@ func UpsertCertIntoAgent(
 	return upsertCertIntoAgent(certText, privateKey, comment, lifeTimeSecs, false, logger)
 }
 
-func WithAddedKeyUpserCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
-	return withAddedKeyUpserCertIntoAgent(certToAdd, logger)
+func WithAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
+	return withAddedKeyUpsertCertIntoAgent(certToAdd, logger)
 }

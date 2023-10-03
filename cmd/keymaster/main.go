@@ -296,7 +296,7 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	}
 
 	//comment should be based on key type?
-	err = sshagent.WithAddedKeyUpserCertIntoAgent(keyToAdd, logger)
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -308,7 +308,7 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	keyToAdd.LifetimeSecs = 0
 	// confirmation is also broken on windows, but since it is an opt-in security
 	// feature we never change the user preference
-	err = sshagent.WithAddedKeyUpserCertIntoAgent(keyToAdd, logger)
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
