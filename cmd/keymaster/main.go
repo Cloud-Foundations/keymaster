@@ -17,6 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -271,9 +274,29 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	filePrefix string,
 	userName string,
 	privateKeyPath string,
+	confirmBeforeUse bool,
 	logger log.DebugLogger) (err error) {
+
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
+	if err != nil {
+		logger.Println(err)
+		return err
+	}
+	sshCert, ok := pubKey.(*ssh.Certificate)
+	if !ok {
+		return fmt.Errorf("It is not a certificate")
+	}
+	comment := filePrefix + "-" + userName
+	keyToAdd := agent.AddedKey{
+		PrivateKey:       signer,
+		Certificate:      sshCert,
+		Comment:          comment,
+		LifetimeSecs:     uint32((*twofa.Duration).Seconds()),
+		ConfirmBeforeUse: confirmBeforeUse,
+	}
+
 	//comment should be based on key type?
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -282,7 +305,10 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	// barfs on timeouts missing, so we rety without a timeout in case
 	// we are on windows OR we have an agent running on windows thar is forwarded
 	// to us.
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, 0, logger)
+	keyToAdd.LifetimeSecs = 0
+	// confirmation is also broken on windows, but since it is an opt-in security
+	// feature we never change the user preference
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -390,6 +416,7 @@ func setupCerts(
 	}
 	logger.Debugf(0, "certificates successfully generated")
 
+	confirmKeyUse := configContents.Base.AgentConfirmUse
 	// Time to write certs and keys
 	// old agents do not understand sha2 certs, so we inject Ed25519 first
 	// if present
@@ -399,6 +426,7 @@ func setupCerts(
 			FilePrefix+"-ed25519",
 			userName,
 			sshKeyPath+"-ed25519",
+			confirmKeyUse,
 			logger)
 		if err != nil {
 			return err
@@ -409,6 +437,7 @@ func setupCerts(
 		FilePrefix+"-rsa",
 		userName,
 		sshKeyPath+"-rsa",
+		confirmKeyUse,
 		logger)
 	if err != nil {
 		return err
@@ -502,6 +531,7 @@ func main() {
 		logger.Fatal(err)
 	}
 	config := loadConfigFile(client, logger)
+	logger.Debugf(3, "loaded Config=%+v", config)
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
 		userName = config.Base.Username
