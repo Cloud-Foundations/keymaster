@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
@@ -41,16 +42,18 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
+	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"github.com/Cloud-Foundations/tricorder/go/healthserver"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -67,14 +70,21 @@ const (
 	AuthTypeOkta2FA
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
+	AuthTypeWebauthForCLI
+	AuthTypeFIDO2
 )
 
-const AuthTypeAny = 0xFFFF
+const (
+	AuthTypeAny                   = 0xFFFF
+	maxCacheLifetime              = time.Hour
+	maxWebauthForCliTokenLifetime = time.Hour * 24 * 366
+)
 
 type authInfo struct {
-	ExpiresAt time.Time
-	Username  string
 	AuthType  int
+	ExpiresAt time.Time
+	IssuedAt  time.Time
+	Username  string
 }
 
 type authInfoJWT struct {
@@ -109,6 +119,13 @@ type u2fAuthData struct {
 	Registration *u2f.Registration
 }
 
+type webauthAuthData struct {
+	Enabled    bool
+	CreatedAt  time.Time
+	Name       string
+	Credential webauthn.Credential
+}
+
 type totpAuthData struct {
 	Enabled         bool
 	CreatedAt       time.Time
@@ -131,17 +148,25 @@ type userProfile struct {
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
+
+	WebauthnData        map[int64]*webauthAuthData
+	WebauthnID          uint64 // maybe more specific?
+	DisplayName         string
+	Username            string
+	WebauthnSessionData *webauthn.SessionData
 }
 
 type localUserData struct {
-	U2fAuthChallenge *u2f.Challenge
-	ExpiresAt        time.Time
+	U2fAuthChallenge  *u2f.Challenge
+	WebAuthnChallenge *webauthn.SessionData
+	ExpiresAt         time.Time
 }
 
 type pendingAuth2Request struct {
-	ExpiresAt time.Time
-	state     string
-	ctx       context.Context
+	ctx              context.Context
+	ExpiresAt        time.Time
+	loginDestination string
+	state            string
 }
 
 type pushPollTransaction struct {
@@ -158,38 +183,40 @@ type totpRateLimitInfo struct {
 }
 
 type RuntimeState struct {
-	Config               AppConfigFile
-	SSHCARawFileContent  []byte
-	Signer               crypto.Signer
-	Ed25519CAFileContent []byte
-	Ed25519Signer        crypto.Signer
-	ClientCAPool         *x509.CertPool
-	HostIdentity         string
-	KerberosRealm        *string
-	caCertDer            []byte
-	certManager          *certmanager.CertificateManager
-	vipPushCookie        map[string]pushPollTransaction
-	localAuthData        map[string]localUserData
-	SignerIsReady        chan bool
-	oktaUsernameFilterRE *regexp.Regexp
-	Mutex                sync.Mutex
-	gitDB                *gitdb.UserInfo
-	pendingOauth2        map[string]pendingAuth2Request
-	storageRWMutex       sync.RWMutex
-	db                   *sql.DB
-	dbType               string
-	cacheDB              *sql.DB
-	remoteDBQueryTimeout time.Duration
-	htmlTemplate         *htmltemplate.Template
-	passwordChecker      pwauth.PasswordAuthenticator
-	KeymasterPublicKeys  []crypto.PublicKey
-	isAdminCache         *admincache.Cache
-	emailManager         configuredemail.EmailManager
-	textTemplates        *texttemplate.Template
-
-	totpLocalRateLimit      map[string]totpRateLimitInfo
-	totpLocalTateLimitMutex sync.Mutex
-	logger                  log.DebugLogger
+	Config                       AppConfigFile
+	SSHCARawFileContent          []byte
+	Signer                       crypto.Signer
+	Ed25519CAFileContent         []byte
+	Ed25519Signer                crypto.Signer
+	ClientCAPool                 *x509.CertPool
+	HostIdentity                 string
+	KerberosRealm                *string
+	caCertDer                    []byte
+	certManager                  *certmanager.CertificateManager
+	vipPushCookie                map[string]pushPollTransaction
+	localAuthData                map[string]localUserData
+	SignerIsReady                chan bool
+	oktaUsernameFilterRE         *regexp.Regexp
+	passwordAttemptGlobalLimiter *rate.Limiter
+	Mutex                        sync.Mutex
+	gitDB                        *gitdb.UserInfo
+	pendingOauth2                map[string]pendingAuth2Request
+	storageRWMutex               sync.RWMutex
+	db                           *sql.DB
+	dbType                       string
+	cacheDB                      *sql.DB
+	remoteDBQueryTimeout         time.Duration
+	htmlTemplate                 *htmltemplate.Template
+	passwordChecker              pwauth.PasswordAuthenticator
+	KeymasterPublicKeys          []crypto.PublicKey
+	isAdminCache                 *admincache.Cache
+	emailManager                 configuredemail.EmailManager
+	textTemplates                *texttemplate.Template
+	awsCertIssuer                *aws_identity_cert.Issuer
+	webAuthn                     *webauthn.WebAuthn
+	totpLocalRateLimit           map[string]totpRateLimitInfo
+	totpLocalTateLimitMutex      sync.Mutex
+	logger                       log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -220,6 +247,13 @@ var (
 		},
 		[]string{"client_type", "type", "result"},
 	)
+	passwordRateLimitExceededCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_password_rate_limit_exceeded_counter",
+			Help: "keymaster_password_rate_limit_exceeded_counter",
+		},
+		[]string{"username"},
+	)
 
 	externalServiceDurationTotal = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -246,6 +280,16 @@ var (
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier *eventnotifier.EventNotifier
 )
+
+func cacheControlHandler(h http.Handler) http.Handler {
+	maxAgeSeconds := maxCacheLifetime / time.Second
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				maxAgeSeconds))
+		h.ServeHTTP(w, r)
+	})
+}
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
 	validStr := strconv.FormatBool(success)
@@ -376,20 +420,6 @@ func checkUserPassword(username string, password string, config AppConfigFile,
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-	if config.Base.HtpasswdFilename != "" {
-		logger.Debugf(3, "I have htpasswed filename")
-		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
-		if err != nil {
-			return false, err
-		}
-		valid, err := authutil.CheckHtpasswdUserPassword(username, password,
-			buffer)
-		if err != nil {
-			return false, err
-		}
-		metricLogAuthOperation(clientType, "password", valid)
-		return valid, nil
-	}
 	metricLogAuthOperation(clientType, "password", false)
 	return false, nil
 }
@@ -416,15 +446,10 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Presto/") {
 		return true
 	}
-	// Once FF support reaches main we can remove these silly checks.
-	if strings.Contains(r.UserAgent(), "Firefox/57") ||
-		strings.Contains(r.UserAgent(), "Firefox/58") ||
-		strings.Contains(r.UserAgent(), "Firefox/59") ||
-		strings.Contains(r.UserAgent(), "Firefox/6") ||
-		strings.Contains(r.UserAgent(), "Firefox/7") ||
-		strings.Contains(r.UserAgent(), "Firefox/8") {
+	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
+	logger.Debugf(3, "browser doest NOT support u2f")
 	return false
 }
 
@@ -447,10 +472,66 @@ func getClientType(r *http.Request) string {
 	}
 }
 
+// getOriginOrReferrer will return the value of the "Origin" header, or if
+// empty, the Referrer (misspelled as "Referer" in the HTML standards).
+func getOriginOrReferrer(r *http.Request) string {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin
+	}
+	return r.Referer()
+}
+
+// getUser will return the "user" value from the request form. If the username
+// contains invalid characters, the empty string is returned.
+func getUserFromRequest(r *http.Request) string {
+	user := r.Form.Get("user")
+	if user == "" {
+		return ""
+	}
+	if m, _ := regexp.MatchString("^[-.a-zA-Z0-9_+]+$", user); !m {
+		return ""
+	}
+	return user
+}
+
+func (ai *authInfo) expires() int64 {
+	if ai.ExpiresAt.IsZero() {
+		return 0
+	}
+	return ai.ExpiresAt.Unix()
+}
+
+func ensureHTMLSafeLoginDestination(loginDestination string) string {
+	if loginDestination == "" {
+		return profilePath
+	}
+	parsedLoginDestination, err := url.Parse(loginDestination)
+	if err != nil {
+		return profilePath
+	}
+	return parsedLoginDestination.String()
+
+}
+
+// checkPasswordAttemptLimit will check if the limit on password attempts has
+// been reached. If the limit has been reached, an error response is written to
+// w and an error message is returned.
+func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
+	r *http.Request, username string) error {
+	if !state.passwordAttemptGlobalLimiter.Allow() {
+		state.writeFailureResponse(w, r, http.StatusTooManyRequests,
+			"Too many password attempts")
+		passwordRateLimitExceededCounter.WithLabelValues(username).Inc()
+		return fmt.Errorf("too many password attempts, host: %s user: %s",
+			r.RemoteAddr, username)
+	}
+	return nil
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
-	JSSources := []string{"/static/jquery-3.5.1.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-3.6.4.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
@@ -461,15 +542,17 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	if state.Config.Okta.Enable2FA {
 		JSSources = append(JSSources, "/static/webui-2fa-okta-push.js")
 	}
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
 	displayData := secondFactorAuthTemplateData{
-		Title:            "Keymaster 2FA Auth",
-		JSSources:        JSSources,
-		ShowBootstrapOTP: showBootstrapOTP,
-		ShowVIP:          state.Config.SymantecVIP.Enabled,
-		ShowU2F:          showU2F,
-		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
-		ShowOktaOTP:      state.Config.Okta.Enable2FA,
-		LoginDestination: loginDestination}
+		Title:                 "Keymaster 2FA Auth",
+		JSSources:             JSSources,
+		ShowBootstrapOTP:      showBootstrapOTP,
+		ShowVIP:               state.Config.SymantecVIP.Enabled,
+		ShowU2F:               showU2F,
+		ShowTOTP:              state.Config.Base.EnableLocalTOTP,
+		ShowOktaOTP:           state.Config.Okta.Enable2FA,
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
 		displayData)
 	if err != nil {
@@ -480,22 +563,31 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	return nil
 }
 
-func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string, errorMessage string) error {
-	//footerText := state.getFooterText()
+func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
+	r *http.Request, statusCode int,
+	defaultUsername, loginDestination, errorMessage string) {
+	showBasicAuth := true
+	if state.Config.Oauth2.Enabled &&
+		(state.Config.Oauth2.ForceRedirect || state.passwordChecker == nil) {
+		showBasicAuth = false
+	}
+	w.WriteHeader(statusCode)
+
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
 	displayData := loginPageTemplateData{
-		Title:            "Keymaster Login",
-		ShowOauth2:       state.Config.Oauth2.Enabled,
-		HideStdLogin:     state.Config.Base.HideStandardLogin,
-		LoginDestination: loginDestination,
-		ErrorMessage:     errorMessage}
+		Title:                 "Keymaster Login",
+		DefaultUsername:       defaultUsername,
+		ShowBasicAuth:         showBasicAuth,
+		ShowOauth2:            state.Config.Oauth2.Enabled,
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
+		ErrorMessage:          errorMessage,
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
-		return err
+		return
 	}
-	return nil
 }
 
 func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
@@ -517,7 +609,6 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	}
-	w.WriteHeader(code)
 	switch code {
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
@@ -529,41 +620,54 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter,
 				}
 				authCookie = cookie
 			}
-			loginDestnation := profilePath
-			if r.URL.Path == idpOpenIDCAuthorizationPath {
-				loginDestnation = r.URL.String()
+			loginDestination := profilePath
+			switch r.URL.Path {
+			case idpOpenIDCAuthorizationPath, paths.ShowAuthToken,
+				paths.SendAuthDocument:
+				loginDestination = r.URL.String()
 			}
 			if r.Method == "POST" {
 				/// assume it has been parsed... otherwise why are we here?
 				if r.Form.Get("login_destination") != "" {
-					loginDestnation = getLoginDestination(r)
+					loginDestination = getLoginDestination(r)
 				}
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, loginDestnation, message)
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
-				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				logger.Debugf(3,
+					"write failure state, error from getinfo authInfoJWT")
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, loginDestnation, "")
+				state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+					loginDestination, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation, true, false)
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, loginDestnation, message)
+			if (info.AuthType & AuthTypeFederated) == AuthTypeFederated {
+				state.writeHTML2FAAuthPage(w, r, loginDestination, true, false)
+				return
+			}
+			state.writeHTMLLoginPage(w, r, code, getUserFromRequest(r),
+				loginDestination, message)
 			return
 		default:
+			w.WriteHeader(code)
 			w.Write([]byte(publicErrorText))
 		}
 	default:
+		w.WriteHeader(code)
 		w.Write([]byte(publicErrorText))
 	}
 }
@@ -594,15 +698,24 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	return false
 }
 
-func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
-	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel)
+func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
+	username string, authlevel int) (string, error) {
+	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
+		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
-
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+		time.Second)
+	authCookie := http.Cookie{
+		Name:    authCookieName,
+		Value:   cookieVal,
+		Expires: expiration,
+		Path:    "/", HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	}
 	//use handler with original request.
 	if w != nil {
 		http.SetCookie(w, &authCookie)
@@ -654,7 +767,7 @@ func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
 	return false, nil
 }
 
-func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, error) {
+func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, time.Time, error) {
 	for _, chain := range VerifiedChains {
 		if len(chain) < 2 {
 			continue
@@ -663,42 +776,42 @@ func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509
 		//keymaster certs as signed directly
 		certSignerPKFingerprint, err := getKeyFingerprint(chain[1].PublicKey)
 		if err != nil {
-			return "", err
+			return "", time.Time{}, err
 		}
 		for _, key := range state.KeymasterPublicKeys {
 			fp, err := getKeyFingerprint(key)
 			if err != nil {
-				return "", err
+				return "", time.Time{}, err
 			}
 			if certSignerPKFingerprint == fp {
-				return username, nil
+				return username, chain[0].NotBefore, nil
 			}
 		}
 
 	}
-	return "", nil
+	return "", time.Time{}, nil
 }
 
-func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, error, error) {
+func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, time.Time, error, error) {
 	clientName := VerifiedChains[0][0].Subject.CommonName
 	userCert := VerifiedChains[0][0]
 
 	validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
 	if err != nil {
 		logger.Printf("Error verifying up restricted cert: %s", err)
-		return "", nil, err
+		return "", time.Time{}, nil, err
 	}
 	if !validIP {
 		logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
-		return "", fmt.Errorf("Bad incoming ip addres"), nil
+		return "", time.Time{}, fmt.Errorf("Bad incoming ip addres"), nil
 	}
 	// Check if there are group restrictions on
 	ok, err := state.isAutomationUser(clientName)
 	if err != nil {
-		return "", nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
+		return "", time.Time{}, nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
 	}
 	if !ok {
-		return "", fmt.Errorf("Bad username  for ip restricted cert"), nil
+		return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
 	}
 
 	revoked, ok, err := revoke.VerifyCertificateError(userCert)
@@ -709,29 +822,28 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 	if revoked == true && ok {
 		logger.Printf("Cert is revoked")
 		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
-		return "", fmt.Errorf("revoked cert"), nil
+		return "", time.Time{}, fmt.Errorf("revoked cert"), nil
 	}
-	return clientName, nil, nil
+	return clientName, time.Now(), nil, nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
+func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (*authInfo, error) {
 	// Check csrf
 	if r.Method != "GET" {
-		referer := r.Referer()
+		referer := getOriginOrReferrer(r)
 		if len(referer) > 0 && len(r.Host) > 0 {
 			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
 			if err != nil {
-				return "", AuthTypeNone, err
+				return nil, err
 			}
 			state.logger.Debugf(3, "refHost =%s, host=%s",
 				refererURL.Host, r.Host)
 			if refererURL.Host != r.Host {
 				state.logger.Printf("CSRF detected.... rejecting with a 400")
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-				err := errors.New("CSRF detected... rejecting")
-				return "", AuthTypeNone, err
+				return nil, errors.New("CSRF detected... rejecting")
 			}
 		}
 	}
@@ -742,26 +854,34 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
 			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
-				tlsAuthUser, err :=
+				tlsAuthUser, notBefore, err :=
 					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 				if err == nil && tlsAuthUser != "" {
-					return tlsAuthUser, AuthTypeKeymasterX509, nil
+					return &authInfo{
+						AuthType: AuthTypeKeymasterX509,
+						IssuedAt: notBefore,
+						Username: tlsAuthUser,
+					}, nil
 				}
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
-				clientName, userErr, err :=
+				clientName, notBefore, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
 				if userErr != nil {
 					state.writeFailureResponse(w, r, http.StatusForbidden,
 						fmt.Sprintf("%s", userErr))
-					return "", AuthTypeNone, userErr
+					return nil, userErr
 				}
 				if err != nil {
 					state.writeFailureResponse(w, r,
 						http.StatusInternalServerError, "")
-					return "", AuthTypeNone, err
+					return nil, err
 				}
-				return clientName, AuthTypeIPCertificate, nil
+				return &authInfo{
+					AuthType: AuthTypeIPCertificate,
+					IssuedAt: notBefore,
+					Username: clientName,
+				}, nil
 			}
 		}
 	}
@@ -777,15 +897,17 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		if (AuthTypePassword & requiredAuthType) == 0 {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Insufficient Auth Level passwd")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
-			err := errors.New("check_Auth, Invalid or no auth header")
-			return "", AuthTypeNone, err
+			return nil, errors.New("checkAuth, Invalid or no auth header")
+		}
+		if err := state.checkPasswordAttemptLimit(w, r, user); err != nil {
+			return nil, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
@@ -795,15 +917,19 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
 		if !valid {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized,
 				"Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
-			return "", AuthTypeNone, err
+			return nil, err
 		}
-		return user, AuthTypePassword, nil
+		return &authInfo{
+			AuthType: AuthTypePassword,
+			IssuedAt: time.Now(),
+			Username: user,
+		}, nil
 	}
 	//Critical section
 	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
@@ -811,22 +937,22 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		//TODO check between internal and bad cookie error
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
-		return "", AuthTypeNone, err
+		return nil, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
-		return "", AuthTypeNone, err
+		return nil, err
 	}
 	if (info.AuthType & requiredAuthType) == 0 {
 		state.logger.Debugf(1, "info.AuthType: %v, requiredAuthType: %v\n",
 			info.AuthType, requiredAuthType)
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Insufficient Auth Level in critical cookie")
-		return "", info.AuthType, err
+		return nil, err
 	}
-	return info.Username, info.AuthType, nil
+	return &info, nil
 }
 
 func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
@@ -895,10 +1021,9 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	switch target {
 	case "loginForm":
-		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
 		setSecurityHeaders(w)
-		state.writeHTMLLoginPage(w, r, profilePath, "")
+		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -909,8 +1034,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
-		//w.WriteHeader(200)
-		//fmt.Fprintf(w, "OK\n")
 	}
 }
 
@@ -922,11 +1045,18 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
-	if len(registrations) < 1 {
-		return false, nil
+	for _, u2fRegistration := range profile.U2fAuthData {
+		if u2fRegistration.Enabled {
+			return true, nil
+		}
+
 	}
-	return true, nil
+	for _, webauthnRegustration := range profile.WebauthnData {
+		if webauthnRegustration.Enabled {
+			return true, nil
+		}
+	}
+	return false, nil
 
 }
 
@@ -934,7 +1064,7 @@ const authCookieName = "auth_cookie"
 const vipTransactionCookieName = "vip_push_cookie"
 const maxAgeSecondsVIPCookie = 120
 const randomStringEntropyBytes = 32
-const maxAgeSecondsAuthCookie = 57600
+const maxAgeSecondsAuthCookie = 16 * 3600
 
 func genRandomString() (string, error) {
 	size := randomStringEntropyBytes
@@ -951,7 +1081,7 @@ func genRandomString() (string, error) {
 // // is interpreted as: use whatever protocol you think is OK
 func getLoginDestination(r *http.Request) string {
 	loginDestination := profilePath
-	if r.Form.Get("login_destination") != "" {
+	if r.FormValue("login_destination") != "" {
 		inboundLoginDestination := r.Form.Get("login_destination")
 		if strings.HasPrefix(inboundLoginDestination, "/") &&
 			!strings.HasPrefix(inboundLoginDestination, "//") {
@@ -989,7 +1119,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				"Error parsing form")
 			return
 		}
-		logger.Debugf(2, "req =%+v", r)
+		logger.Debugf(4, "req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -1006,6 +1136,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				return
 			}
 			username = val[0]
+			// Since we are getting username from Form we need some minimal sanitization
+			// TODO: actually whitelist the username characters
+			escapedUsername := strings.Replace(username, "\n", "", -1)
+			escapedUsername = strings.Replace(escapedUsername, "\r", "", -1)
+			username = escapedUsername
 		}
 		//var password string
 		if val, ok := r.Form["password"]; ok {
@@ -1021,6 +1156,10 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
 		}
+	}
+	if err := state.checkPasswordAttemptLimit(w, r, username); err != nil {
+		state.logger.Debugf(1, "%v", err)
+		return
 	}
 	username = state.reprocessUsername(username)
 	valid, err := checkUserPassword(username, password, state.Config,
@@ -1094,7 +1233,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
 		}
 	}
-	// logger.Printf("current backends=%+v", certBackends)
+	state.logger.Debugf(1, "current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}
@@ -1154,15 +1293,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 	return
 }
 
-///
 const logoutPath = "/api/v0/logout"
 
-func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) logoutHandler(w http.ResponseWriter,
+	r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 	//TODO: check for CSRF (simple way: makeit post only)
-
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -1171,17 +1309,31 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 		}
 		authCookie = cookie
 	}
-
+	var loginUser string
 	if authCookie != nil {
+		info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
+		if err == nil {
+			loginUser = info.Username
+		}
 		expiration := time.Unix(0, 0)
-		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode}
+		updatedAuthCookie := http.Cookie{
+			Name:     authCookieName,
+			Value:    "",
+			Expires:  expiration,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		}
 		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-	http.Redirect(w, r, "/", 302)
+	if loginUser == "" {
+		http.Redirect(w, r, "/", 302)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/?user=%s", loginUser), 302)
+	}
 }
-
-///
 
 func (state *RuntimeState) _IsAdminUser(user string) (bool, error) {
 	for _, adminUser := range state.Config.Base.AdminUsers {
@@ -1261,20 +1413,20 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	readOnlyMsg := ""
 	if assumedUser == "" {
-		assumedUser = authUser
-	} else if !state.IsAdminUser(authUser) {
+		assumedUser = authData.Username
+	} else if !state.IsAdminUser(authData.Username) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
-	} else if (loginLevel & AuthTypeU2F) == 0 {
+	} else if (authData.AuthType & AuthTypeU2F) == 0 {
 		readOnlyMsg = "Admins must U2F authenticate to change the profile of others."
 	}
 
@@ -1289,11 +1441,13 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	if fromCache {
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
-
-	JSSources := []string{"/static/jquery-3.5.1.min.js"}
+	JSSources := []string{
+		"/static/jquery-3.6.4.min.js",
+		"/static/compiled/session.js",
+	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js", "/static/keymaster-webauthn.js")
 	}
 
 	// TODO: move deviceinfo mapping/sorting to its own function
@@ -1306,6 +1460,18 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Index:      i}
 		u2fdevices = append(u2fdevices, deviceData)
 	}
+	// TODO: make some difference
+	// also add the webauthn devices...
+	for i, tokenInfo := range profile.WebauthnData {
+		deviceData := registeredU2FTokenDisplayInfo{
+			DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
+			Enabled:    tokenInfo.Enabled,
+			Name:       tokenInfo.Name, //Display name?
+			Index:      i,
+		}
+		u2fdevices = append(u2fdevices, deviceData)
+	}
+
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
@@ -1328,12 +1494,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 	displayData := profilePageTemplateData{
 		Username:             assumedUser,
-		AuthUsername:         authUser,
+		AuthUsername:         authData.Username,
+		SessionExpires:       authData.expires(),
 		Title:                "Keymaster User Profile",
 		ShowU2F:              showU2F,
 		JSSources:            JSSources,
 		ReadOnlyMsg:          readOnlyMsg,
-		UsersLink:            state.IsAdminUser(authUser),
+		UsersLink:            state.IsAdminUser(authData.Username),
+		ShowLegacyRegister:   state.passwordChecker != nil,
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
@@ -1354,7 +1522,6 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	//w.Write([]byte(indexHTML))
 }
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
@@ -1369,13 +1536,13 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
@@ -1388,11 +1555,12 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	assumedUser := r.Form.Get("username")
 
 	// Have admin rights = Must be admin + authenticated with U2F
-	hasAdminRights := state.IsAdminUserAndU2F(authUser, loginLevel)
+	hasAdminRights := state.IsAdminUserAndU2F(authData.Username,
+		authData.AuthType)
 
 	// Check params
-	if !hasAdminRights && assumedUser != authUser {
-		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
+	if !hasAdminRights && assumedUser != authData.Username {
+		logger.Printf("bad username authUser=%s requested=%s", authData.Username, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
@@ -1420,8 +1588,8 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
-	if !ok {
-		//if tokenIndex >= len(profile.U2fAuthData) {
+	_, ok2 := profile.WebauthnData[tokenIndex]
+	if !ok && !ok2 {
 		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
@@ -1437,13 +1605,30 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
-		profile.U2fAuthData[tokenIndex].Name = tokenName
+		if ok {
+			profile.U2fAuthData[tokenIndex].Name = tokenName
+		} else {
+			profile.WebauthnData[tokenIndex].Name = tokenName
+		}
+
 	case "Disable":
-		profile.U2fAuthData[tokenIndex].Enabled = false
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = false
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = false
+		}
 	case "Enable":
-		profile.U2fAuthData[tokenIndex].Enabled = true
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = true
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = true
+		}
 	case "Delete":
-		delete(profile.U2fAuthData, tokenIndex)
+		if ok {
+			delete(profile.U2fAuthData, tokenIndex)
+		} else {
+			delete(profile.WebauthnData, tokenIndex)
+		}
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return
@@ -1460,7 +1645,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
+		http.Redirect(w, r, profileURI(authData.Username, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
@@ -1489,8 +1674,21 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
+		if err := r.ParseForm(); err != nil {
+			logger.Println(err)
+			errCode := http.StatusInternalServerError
+			errMessage := "Error parsing form"
+			if strings.Contains(err.Error(), "invalid") {
+				errCode = http.StatusBadRequest
+				errMessage = "invalid query"
+			}
+			state.writeFailureResponse(w, r, errCode,
+				errMessage)
+			return
+		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, profilePath, "")
+			state.writeHTMLLoginPage(w, r, 200, getUserFromRequest(r),
+				profilePath, "")
 			return
 		}
 
@@ -1524,6 +1722,7 @@ func Usage() {
 func init() {
 	prometheus.MustRegister(certGenCounter)
 	prometheus.MustRegister(authOperationCounter)
+	prometheus.MustRegister(passwordRateLimitExceededCounter)
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
 	tricorder.RegisterMetric(
@@ -1603,40 +1802,73 @@ func main() {
 	serviceMux.HandleFunc(addUserPath, runtimeState.addUserHandler)
 	serviceMux.HandleFunc(deleteUserPath, runtimeState.deleteUserHandler)
 	//TODO: should enable only if bootraptop is enabled
-	serviceMux.HandleFunc(generateBoostrapOTPPath, runtimeState.generateBootstrapOTP)
+	serviceMux.HandleFunc(generateBoostrapOTPPath,
+		runtimeState.generateBootstrapOTP)
 
-	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
-	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)
-	serviceMux.HandleFunc(idpOpenIDCAuthorizationPath, runtimeState.idpOpenIDCAuthorizationHandler)
-	serviceMux.HandleFunc(idpOpenIDCTokenPath, runtimeState.idpOpenIDCTokenHandler)
-	serviceMux.HandleFunc(idpOpenIDCUserinfoPath, runtimeState.idpOpenIDCUserinfoHandler)
+	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath,
+		runtimeState.idpOpenIDCDiscoveryHandler)
+	serviceMux.HandleFunc(idpOpenIDCJWKSPath,
+		runtimeState.idpOpenIDCJWKSHandler)
+	serviceMux.HandleFunc(idpOpenIDCAuthorizationPath,
+		runtimeState.idpOpenIDCAuthorizationHandler)
+	serviceMux.HandleFunc(idpOpenIDCTokenPath,
+		runtimeState.idpOpenIDCTokenHandler)
+	serviceMux.HandleFunc(idpOpenIDCUserinfoPath,
+		runtimeState.idpOpenIDCUserinfoHandler)
 
-	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
-	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
-	customWebResourcesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "customization_data", "web_resources")
+	staticFilesPath :=
+		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
+			"static_files")
+	serviceMux.Handle("/static/", cacheControlHandler(
+		http.StripPrefix("/static/",
+			http.FileServer(http.Dir(staticFilesPath)))))
+	serviceMux.Handle("/static/compiled/", cacheControlHandler(
+		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile()))))
+	customWebResourcesPath :=
+		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
+			"customization_data", "web_resources")
 	if _, err = os.Stat(customWebResourcesPath); err == nil {
-		serviceMux.Handle("/custom_static/", http.StripPrefix("/custom_static/", http.FileServer(http.Dir(customWebResourcesPath))))
+		serviceMux.Handle("/custom_static/", cacheControlHandler(
+			http.StripPrefix("/custom_static/",
+				http.FileServer(http.Dir(customWebResourcesPath)))))
 	}
-	serviceMux.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
-	serviceMux.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
+	serviceMux.HandleFunc(u2fRegustisterRequestPath,
+		runtimeState.u2fRegisterRequest)
+	serviceMux.HandleFunc(u2fRegisterRequesponsePath,
+		runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
+	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
+	serviceMux.HandleFunc(webAuthnAuthBeginPath, runtimeState.webauthnAuthLogin)
+	serviceMux.HandleFunc(webAuthnAuthFinishPath, runtimeState.webauthnAuthFinish)
+
 	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
-	serviceMux.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
-	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
+	serviceMux.HandleFunc(u2fTokenManagementPath,
+		runtimeState.u2fTokenManagerHandler)
+	serviceMux.HandleFunc(oauth2LoginBeginPath,
+		runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
-	serviceMux.HandleFunc(clientConfHandlerPath, runtimeState.serveClientConfHandler)
+	serviceMux.HandleFunc(clientConfHandlerPath,
+		runtimeState.serveClientConfHandler)
 	serviceMux.HandleFunc(vipPushStartPath, runtimeState.vipPushStartHandler)
 	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
 	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
 	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
-	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
+	serviceMux.HandleFunc(totpTokenManagementPath,
+		runtimeState.totpTokenManagerHandler)
 	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
 	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
 	if runtimeState.Config.Okta.Domain != "" {
 		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
-		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
-		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
+		serviceMux.HandleFunc(oktaPushStartPath,
+			runtimeState.oktaPushStartHandler)
+		serviceMux.HandleFunc(oktaPollCheckPath,
+			runtimeState.oktaPollCheckHandler)
+	}
+	if runtimeState.checkAwsRolesEnabled() {
+		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
+			runtimeState.requestAwsRoleCertificateHandler)
 	}
 	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
 	//               The inline calls to getRequiredWebUIAuthLevel() should be
@@ -1644,6 +1876,14 @@ func main() {
 	//               bitfield test.
 	serviceMux.HandleFunc(bootstrapOtpAuthPath,
 		runtimeState.BootstrapOtpAuthHandler)
+	if runtimeState.Config.Base.WebauthTokenForCliLifetime > 0 {
+		serviceMux.HandleFunc(paths.SendAuthDocument,
+			runtimeState.SendAuthDocumentHandler)
+		serviceMux.HandleFunc(paths.ShowAuthToken,
+			runtimeState.ShowAuthTokenHandler)
+		serviceMux.HandleFunc(paths.VerifyAuthToken,
+			runtimeState.VerifyAuthTokenHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
@@ -1660,7 +1900,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
@@ -1676,7 +1915,7 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 	srpc.RegisterServerTlsConfig(
-		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool, MinVersion: tls.VersionTLS12},
 		true)
 	go func() {
 		err := adminSrv.ListenAndServeTLS("", "")
@@ -1728,7 +1967,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	serviceSrv := &http.Server{

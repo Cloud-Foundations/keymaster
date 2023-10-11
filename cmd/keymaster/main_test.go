@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -240,6 +241,14 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This test needs a running agent... and remote windows
+	// builders do NOT have this... thus we need to abort this test
+	// until we have a way to NOT timeout on missing agent in
+	// windows
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	/////////Now actually do the work
 	oldSSHSock, ok := os.LookupEnv("SSH_AUTH_SOCK")
 	if ok {
@@ -258,6 +267,7 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 		"someprefix",
 		"username",
 		privateKeyPath,
+		false,
 		testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)

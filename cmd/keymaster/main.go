@@ -1,9 +1,6 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -20,20 +17,27 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
 	"github.com/Cloud-Foundations/golib/pkg/log"
+	"github.com/Cloud-Foundations/keymaster/lib/client/aws_role"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
 	libnet "github.com/Cloud-Foundations/keymaster/lib/client/net"
 	"github.com/Cloud-Foundations/keymaster/lib/client/sshagent"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
+	"github.com/Cloud-Foundations/keymaster/lib/client/webauth"
 )
 
-const DefaultSSHKeysLocation = "/.ssh/"
-const DefaultTLSKeysLocation = "/.ssl/"
-const DefaultTMPKeysLocation = "/.keymaster/"
+const (
+	DefaultSSHKeysLocation = "/.ssh/"
+	DefaultTLSKeysLocation = "/.ssl/"
+	keymasterSubdir        = ".keymaster"
+)
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
@@ -47,14 +51,22 @@ var (
 )
 
 var (
-	configFilename   = flag.String("config", filepath.Join(getUserHomeDir(), ".keymaster", "client_config.yml"), "The filename of the configuration")
-	rootCAFilename   = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
-	configHost       = flag.String("configHost", "", "Get a bootstrap config from this host")
-	cliUsername      = flag.String("username", "", "username for keymaster")
-	checkDevices     = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
-	cliFilePrefix    = flag.String("fileprefix", "", "Prefix for the output files")
+	configFilename = flag.String("config",
+		filepath.Join(getUserHomeDir(), keymasterSubdir, "client_config.yml"),
+		"The filename of the configuration")
+	rootCAFilename = flag.String("rootCAFilename", "",
+		"(optional) name for using non OS root CA to verify TLS connections")
+	configHost = flag.String("configHost", "",
+		"Get a bootstrap config from this host")
+	cliUsername  = flag.String("username", "", "username for keymaster")
+	checkDevices = flag.Bool("checkDevices", false,
+		"CheckU2F devices in your system")
+	cliFilePrefix = flag.String("fileprefix", "",
+		"Prefix for the output files")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
+	webauthBrowser = flag.String("webauthBrowser", "",
+		"Browser command to use for webauth")
 
 	FilePrefix = "keymaster"
 )
@@ -189,15 +201,102 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 
 const rsaKeySize = 2048
 
+func generateAwsRoleCert(homeDir string,
+	configContents config.AppConfigFile,
+	client *http.Client,
+	logger log.DebugLogger) error {
+	signers := makeSigners()
+	// Initialise the client connection.
+	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
+	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	if err != nil {
+		return err
+	}
+	if err := makeDirs(homeDir); err != nil {
+		return err
+	}
+	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	if err := signers.Wait(); err != nil {
+		return err
+	}
+	manager, err := aws_role.NewManager(aws_role.Params{
+		KeymasterServer: targetURLs[0],
+		Logger:          logger,
+		HttpClient:      client,
+		Signer:          signers.X509Rsa,
+	})
+	if err != nil {
+		return err
+	}
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(
+		tlsKeyPath+".key",
+		pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: encodedx509Signer}),
+		0600)
+	if err != nil {
+		return err
+	}
+	x509CertPath := tlsKeyPath + ".cert"
+	certPEM, _, err := manager.GetRoleCertificate()
+	if err != nil {
+		return err
+	}
+	if err := ioutil.WriteFile(x509CertPath, certPEM, 0644); err != nil {
+		return errors.New("Could not write ssh cert")
+	}
+	for {
+		logger.Println("starting loop waiting for certificate refreshes")
+		manager.WaitForRefresh()
+		certPEM, _, err := manager.GetRoleCertificate()
+		if err != nil {
+			return err
+		}
+		tempPath := x509CertPath + "~"
+		err = ioutil.WriteFile(tempPath, certPEM, 0644)
+		if err != nil {
+			return errors.New("Could not write ssh cert")
+		}
+		defer os.Remove(tempPath)
+		return os.Rename(tempPath, x509CertPath)
+
+	}
+	return nil
+}
+
 // Beware, this function has inverted path.... at the beggining
 func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	signer interface{},
 	filePrefix string,
 	userName string,
 	privateKeyPath string,
+	confirmBeforeUse bool,
 	logger log.DebugLogger) (err error) {
+
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
+	if err != nil {
+		logger.Println(err)
+		return err
+	}
+	sshCert, ok := pubKey.(*ssh.Certificate)
+	if !ok {
+		return fmt.Errorf("It is not a certificate")
+	}
+	comment := filePrefix + "-" + userName
+	keyToAdd := agent.AddedKey{
+		PrivateKey:       signer,
+		Certificate:      sshCert,
+		Comment:          comment,
+		LifetimeSecs:     uint32((*twofa.Duration).Seconds()),
+		ConfirmBeforeUse: confirmBeforeUse,
+	}
+
 	//comment should be based on key type?
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -206,7 +305,10 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	// barfs on timeouts missing, so we rety without a timeout in case
 	// we are on windows OR we have an agent running on windows thar is forwarded
 	// to us.
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, 0, logger)
+	keyToAdd.LifetimeSecs = 0
+	// confirmation is also broken on windows, but since it is an opt-in security
+	// feature we never change the user preference
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -227,104 +329,121 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
+func makeDirs(homeDir string) error {
+	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
+	sshConfigPath, _ := filepath.Split(sshKeyPath)
+	if err := os.MkdirAll(sshConfigPath, 0700); err != nil {
+		return err
+	}
+	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
+	if err := os.MkdirAll(tlsConfigPath, 0700); err != nil {
+		return err
+	}
+	return nil
+}
+
 func setupCerts(
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
+	signers := makeSigners()
 	//initialize the client connection
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
 	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
-
-	// create dirs
+	if err := makeDirs(homeDir); err != nil {
+		return err
+	}
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
-	sshConfigPath, _ := filepath.Split(sshKeyPath)
-	err = os.MkdirAll(sshConfigPath, 0700)
-	if err != nil {
-		return err
-	}
 	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
-	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
-	err = os.MkdirAll(tlsConfigPath, 0700)
-	if err != nil {
-		return err
+	var baseUrl string
+	_webauthBrowser := configContents.Base.WebauthBrowser
+	if *webauthBrowser != "" {
+		_webauthBrowser = *webauthBrowser
 	}
-	// Setup Signers
-	x509Signer, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
-	if err != nil {
-		return err
-	}
-	sshRsaSigner, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
-	if err != nil {
-		return err
-	}
-	_, sshEd25519Signer, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-	// Get user creds
-	password, err := util.GetUserCreds(userName)
-	if err != nil {
-		return err
-	}
+	if _webauthBrowser != "" {
+		// Authenticate using web browser.
+		baseUrl, err = webauth.Authenticate(userName, _webauthBrowser,
+			filepath.Join(homeDir, keymasterSubdir, FilePrefix+".webtoken"),
+			targetURLs, client, userAgentString, logger)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Authenticate using password and possible 2nd factor.
+		password, err := util.GetUserCreds(userName)
+		if err != nil {
+			return err
+		}
+		baseUrl, err = twofa.AuthenticateToTargetUrls(userName, password,
+			targetURLs, false, client,
+			userAgentString, logger)
+		if err != nil {
+			return err
 
-	baseUrl, err := twofa.AuthenticateToTargetUrls(userName, password,
-		targetURLs, false, client,
+		}
+	}
+	if err := signers.Wait(); err != nil {
+		return err
+	}
+	x509Cert, err := twofa.DoCertRequest(signers.X509Rsa, client, userName,
+		baseUrl, "x509", configContents.Base.AddGroups, userAgentString, logger)
+	if err != nil {
+		return err
+	}
+	kubernetesCert, err := twofa.DoCertRequest(signers.X509Rsa, client,
+		userName, baseUrl, "x509-kubernetes", configContents.Base.AddGroups,
 		userAgentString, logger)
-	if err != nil {
-		return err
-
-	}
-	x509Cert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509",
-		configContents.Base.AddGroups, userAgentString, logger)
-	if err != nil {
-		return err
-	}
-	kubernetesCert, err := twofa.DoCertRequest(x509Signer, client, userName, baseUrl, "x509-kubernetes",
-		configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		logger.Debugf(0, "kubernetes cert not available")
 	}
-	sshRsaCert, err := twofa.DoCertRequest(sshRsaSigner, client, userName, baseUrl, "ssh",
-		configContents.Base.AddGroups, userAgentString, logger)
+	sshRsaCert, err := twofa.DoCertRequest(signers.SshRsa, client, userName,
+		baseUrl, "ssh", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
 	}
-	sshEd25519Cert, err := twofa.DoCertRequest(sshEd25519Signer, client, userName, baseUrl, "ssh",
-		configContents.Base.AddGroups, userAgentString, logger)
+	sshEd25519Cert, err := twofa.DoCertRequest(signers.SshEd25519, client,
+		userName, baseUrl, "ssh", configContents.Base.AddGroups,
+		userAgentString, logger)
 	if err != nil {
 		logger.Debugf(1, "Ed25519 cert not available")
 		sshEd25519Cert = nil
 	}
 	logger.Debugf(0, "certificates successfully generated")
 
+	confirmKeyUse := configContents.Base.AgentConfirmUse
 	// Time to write certs and keys
-	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		sshRsaSigner,
-		FilePrefix+"-rsa",
-		userName,
-		sshKeyPath+"-rsa",
-		logger)
-	if err != nil {
-		return err
-	}
+	// old agents do not understand sha2 certs, so we inject Ed25519 first
+	// if present
 	if sshEd25519Cert != nil {
 		err = insertSSHCertIntoAgentORWriteToFilesystem(sshEd25519Cert,
-			sshEd25519Signer,
+			signers.SshEd25519,
 			FilePrefix+"-ed25519",
 			userName,
 			sshKeyPath+"-ed25519",
+			confirmKeyUse,
 			logger)
 		if err != nil {
 			return err
 		}
 	}
+	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
+		signers.SshRsa,
+		FilePrefix+"-rsa",
+		userName,
+		sshKeyPath+"-rsa",
+		confirmKeyUse,
+		logger)
+	if err != nil {
+		return err
+	}
 	// Now x509
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(x509Signer)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
 	if err != nil {
 		return err
 	}
@@ -385,8 +504,8 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 }
 
 func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	fmt.Fprintf(os.Stderr, "Usage: %s [flags...] [aws-role-cert]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Version: %s\n", Version)
 	flag.PrintDefaults()
 }
 
@@ -402,19 +521,17 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)
 		return
 	}
 	computeUserAgent()
-
 	userName, homeDir, err := getUserNameAndHomeDir(logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	config := loadConfigFile(client, logger)
-
+	logger.Debugf(3, "loaded Config=%+v", config)
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
 		userName = config.Base.Username
@@ -423,15 +540,17 @@ func main() {
 	if *cliUsername != "" {
 		userName = *cliUsername
 	}
-
 	if len(config.Base.FilePrefix) > 0 {
 		FilePrefix = config.Base.FilePrefix
 	}
 	if *cliFilePrefix != "" {
 		FilePrefix = *cliFilePrefix
 	}
-
-	err = setupCerts(userName, homeDir, config, client, logger)
+	if flag.Arg(0) == "aws-role-cert" {
+		err = generateAwsRoleCert(homeDir, config, client, logger)
+	} else {
+		err = setupCerts(userName, homeDir, config, client, logger)
+	}
 	if err != nil {
 		logger.Fatal(err)
 	}

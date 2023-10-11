@@ -17,10 +17,13 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/time/rate"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -167,7 +170,11 @@ func setupPasswdFile() (f *os.File, err error) {
 
 func setupValidRuntimeStateSigner(t *testing.T) (
 	*RuntimeState, *os.File, error) {
-	state := RuntimeState{logger: testlogger.New(t)}
+	logger := testlogger.New(t)
+	state := RuntimeState{
+		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
+		logger:                       logger,
+	}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -187,7 +194,10 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 	if err != nil {
 		return nil, nil, err
 	}
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	return &state, passwdFile, nil
@@ -205,7 +215,8 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +255,8 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +294,8 @@ func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +333,8 @@ func TestFailFullSigningX509GroupsBadLDAPNoGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +371,8 @@ func TestFailCertgenDurationTooLong(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler,
+		http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +450,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	// THis tests needs to be rewritten to have and expired token... need to figure out
 	// the best way to do this.
 	/*
-		state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
+		state.authCookie[cookieVal] = authInfo{IssuedAt: time.Now(), Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
 		_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 		if err != nil {
 			t.Fatal(err)
@@ -569,7 +584,10 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
 	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)
@@ -623,7 +641,10 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+	state.passwordChecker, err = htpassword.New(passwdFile.Name(), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
 	err = initDB(state)
 	if err != nil {
 		t.Fatal(err)

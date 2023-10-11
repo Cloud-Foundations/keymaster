@@ -125,7 +125,7 @@ func getLDAPConnection(u url.URL, timeoutSecs uint, rootCAs *x509.CertPool) (*ld
 	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
 	start := time.Now()
 	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostnamePort,
-		&tls.Config{ServerName: server, RootCAs: rootCAs})
+		&tls.Config{ServerName: server, RootCAs: rootCAs, MinVersion: tls.VersionTLS12})
 	if err != nil {
 		errorTime := time.Since(start).Seconds() * 1000
 		log.Printf("connction failure for:%s (%s)(time(ms)=%v)", server, err.Error(), errorTime)

@@ -19,7 +19,6 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	"github.com/mendsley/gojwk"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -77,28 +76,22 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	out.WriteTo(w)
 }
 
-type jwsKeyList struct {
-	Keys []*gojwk.Key `json:"keys"`
-}
-
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	var currentKeys jwsKeyList
+	var currentKeys jose.JSONWebKeySet
 	for _, key := range state.KeymasterPublicKeys {
-		jwkKey, err := gojwk.PublicKey(key)
-		if err != nil {
-			log.Printf("error getting key idpOpenIDCJWKSHandler: %s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
-			return
-		}
-		jwkKey.Kid, err = getKeyFingerprint(key)
+		kid, err := getKeyFingerprint(key)
 		if err != nil {
 			log.Printf("error computing key fingerprint in  idpOpenIDCJWKSHandler: %s", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
 			return
+		}
+		jwkKey := jose.JSONWebKey{
+			Key:   key,
+			KeyID: kid,
 		}
 		currentKeys.Keys = append(currentKeys.Keys, jwkKey)
 	}
@@ -122,20 +115,33 @@ type keymasterdIDPCodeProtectedData struct {
 }
 
 type keymasterdCodeToken struct {
-	Issuer           string `json:"iss"` //keymasterd
-	Subject          string `json:"sub"` //clientID
-	IssuedAt         int64  `json:"iat"`
-	Expiration       int64  `json:"exp"`
-	Username         string `json:"username"`
-	AuthLevel        int64  `json:"auth_level"`
-	AuthExpiration   int64  `json:"auth_exp"`
-	Nonce            string `json:"nonce,omitEmpty"`
-	RedirectURI      string `json:"redirect_uri"`
-	Scope            string `json:"scope"`
-	Type             string `json:"type"`
-	JWTId            string `json:"jti,omitEmpty"`
-	ProtectedDataKey string `json:"protected_data_key,omitempty"`
-	ProtectedData    string `json:"protected_data,omitempty"`
+	Issuer           string   `json:"iss"` //keymasterd
+	Subject          string   `json:"sub"` //clientID
+	IssuedAt         int64    `json:"iat"`
+	Expiration       int64    `json:"exp"`
+	Audience         []string `json:"aud"`
+	Username         string   `json:"username"`
+	AuthLevel        int64    `json:"auth_level"`
+	AuthExpiration   int64    `json:"auth_exp"`
+	Nonce            string   `json:"nonce,omitEmpty"`
+	RedirectURI      string   `json:"redirect_uri"`
+	AccessAudience   []string `json:"access_audience,omitempty"`
+	Scope            string   `json:"scope"`
+	Type             string   `json:"type"`
+	JWTId            string   `json:"jti,omitEmpty"`
+	ProtectedDataKey string   `json:"protected_data_key,omitempty"`
+	ProtectedData    string   `json:"protected_data,omitempty"`
+}
+
+var ErrorIDPClientNotFound = errors.New("Client id not found")
+
+func (state *RuntimeState) idpOpenIDCGetClientConfig(client_id string) (*OpenIDConnectClientConfig, error) {
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID == client_id {
+			return &client, nil
+		}
+	}
+	return nil, ErrorIDPClientNotFound
 }
 
 // https://tools.ietf.org/id/draft-ietf-oauth-security-topics-10.html states
@@ -145,60 +151,85 @@ type keymasterdCodeToken struct {
 // 1. redirect_urls scheme MUST be https (to prevent code snooping).
 // 2. redirect_urls MUST not include a query  (to prevent stealing of code with faulty clients (open redirect))
 // 3. redirect_url path MUST NOT contain ".." to prevent path traversal attacks
-func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != client_id {
-			continue
-		}
-		if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
-			return false, nil
-		}
-		matchedRE := false
-		for _, re := range client.AllowedRedirectURLRE {
-			matched, err := regexp.MatchString(re, redirect_url)
-			if err != nil {
-				return false, err
-			}
-			if matched {
-				matchedRE = true
-				break
-			}
-		}
-		parsedURL, err := url.Parse(redirect_url)
+func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, *url.URL, error) {
+	if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
+		return false, nil, nil
+	}
+	matchedRE := false
+	for _, re := range client.AllowedRedirectURLRE {
+		matched, err := regexp.MatchString(re, redirectUrl)
 		if err != nil {
-			logger.Debugf(1, "user passed unparsable url as string err = %s", err)
-			return false, nil
+			return false, nil, err
 		}
-		if parsedURL.Scheme != "https" {
-			return false, nil
-		}
-		if len(parsedURL.RawQuery) > 0 {
-			return false, nil
-		}
-		if strings.Contains(parsedURL.Path, "..") {
-			return false, nil
-		}
-		// if no domains, the matchedRE answer is authoritative
-		if len(client.AllowedRedirectDomains) < 1 {
-			return matchedRE, nil
-		}
-		if len(client.AllowedRedirectURLRE) < 1 {
+		if matched {
 			matchedRE = true
+			break
 		}
-		matchedDomain := false
-		for _, domain := range client.AllowedRedirectDomains {
-			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
-			if matched {
-				matchedDomain = true
-				break
-			}
+	}
+	parsedURL, err := url.Parse(redirectUrl)
+	if err != nil {
+		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+		return false, nil, nil
+	}
+	if parsedURL.Scheme != "https" {
+		return false, nil, nil
+	}
+	if len(parsedURL.RawQuery) > 0 {
+		return false, nil, nil
+	}
+	if strings.Contains(parsedURL.Path, "..") {
+		return false, nil, nil
+	}
+	// if no domains, the matchedRE answer is authoritative
+	if len(client.AllowedRedirectDomains) < 1 {
+		return matchedRE, parsedURL, nil
+	}
+	if len(client.AllowedRedirectURLRE) < 1 {
+		matchedRE = true
+	}
+	matchedDomain := false
+	for _, domain := range client.AllowedRedirectDomains {
+		matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+		if matched {
+			matchedDomain = true
+			break
 		}
-		return matchedDomain && matchedRE, nil
+	}
+	return matchedDomain && matchedRE, parsedURL, nil
+}
+
+func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool, error) {
+	parsedURL, err := url.Parse(origin)
+	if err != nil {
+		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
+		return false, nil
+	}
+	if parsedURL.Scheme != "https" {
+		return false, nil
+	}
+	for _, domain := range client.AllowedRedirectDomains {
+		matched := strings.HasSuffix(parsedURL.Hostname(), domain)
+		if matched {
+			return true, nil
+		}
 	}
 	return false, nil
 }
 
-func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId string) (bool, error) {
+func (client *OpenIDConnectClientConfig) RequestedAudienceIsAllowed(audience string) bool {
+	return client.AllowClientChosenAudiences
+}
+
+// This is weak we should be doing hashes
+func (client *OpenIDConnectClientConfig) ValidClientSecret(clientSecret string) bool {
+	return clientSecret == client.ClientSecret
+}
+
+func (client *OpenIDConnectClientConfig) ClientCanDoPKCEAuth() (bool, error) {
+	return client.ClientSecret == "", nil
+}
+
+func (state *RuntimeState) idpOpenIDCGenericIsCorsOriginAllowed(origin string) (bool, error) {
 	parsedURL, err := url.Parse(origin)
 	if err != nil {
 		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
@@ -208,9 +239,6 @@ func (state *RuntimeState) idpOpenIDCIsCorsOriginAllowed(origin string, clientId
 		return false, nil
 	}
 	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if clientId != "" && client.ClientID != clientId {
-			continue
-		}
 		for _, domain := range client.AllowedRedirectDomains {
 			matched := strings.HasSuffix(parsedURL.Hostname(), domain)
 			if matched {
@@ -295,13 +323,13 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	// We are now at exploration stage... and will require pre-authed clients.
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	logger.Debugf(1, "AuthUser of idc auth: %s", authData.Username)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
@@ -309,6 +337,15 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	err = r.ParseForm()
 	if err != nil {
+		if err.Error() == "invalid semicolon separator in query" {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid URL, contains semicolons")
+			return
+		}
+		if strings.Contains(err.Error(), "invalid") {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid URL")
+			return
+		}
+		logger.Printf("idpOpenIDCAuthorizationHandler Error parsing From err: %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -322,7 +359,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	clientID := r.Form.Get("client_id")
 	if clientID == "" {
-		logger.Debugf(1, "empty client_id abourting")
+		logger.Debugf(1, "empty client_id aborting")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Empty cleint_id for Auth Handler")
 		return
 	}
@@ -334,21 +371,31 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 	}
 	if !validScope {
-
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid scope value for Auth Handler")
 		return
 	}
 
-	requestRedirectURLString := r.Form.Get("redirect_uri")
+	oidcClient, err := state.idpOpenIDCGetClientConfig(clientID)
+	if err != nil {
+		if err == ErrorIDPClientNotFound {
+			logger.Debugf(1, "Client Not Found clientID=%s", clientID)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "ClientID uknown")
+			return
+		}
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 
-	ok, err := state.idpOpenIDCClientCanRedirect(clientID, requestRedirectURLString)
+	requestRedirectURLString := r.Form.Get("redirect_uri")
+	ok, parsedRedirectURL, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
 	if err != nil {
 		logger.Printf("%v", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !ok {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid or clientID uknown")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid")
 		return
 	}
 
@@ -395,6 +442,28 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 
 	}
+
+	//For the initial version we will only allow a single extra audience
+
+	var accessAudience []string
+	requestedAudience := r.Form.Get("audience")
+	if requestedAudience != "" {
+		if !oidcClient.RequestedAudienceIsAllowed(requestedAudience) {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid audience")
+			return
+		}
+		validAudience, err := oidcClient.CorsOriginAllowed(requestedAudience)
+		if err != nil {
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !validAudience {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid audience")
+			return
+		}
+		accessAudience = append(accessAudience, requestedAudience)
+	}
+
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -408,11 +477,12 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.Scope = scope
 	codeToken.AuthExpiration = time.Now().Unix() + maxAgeSecondsAuthCookie
 	codeToken.Expiration = time.Now().Unix() + idpOpenIDCMaxAuthProcessMaxDurationSeconds
-	codeToken.Username = authUser
+	codeToken.Username = authData.Username
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
 	codeToken.ProtectedData = protectedCipherText
 	codeToken.ProtectedDataKey = protectedCipherTextKeys
+	codeToken.AccessAudience = accessAudience
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
 	if len(codeToken.Nonce) < 6 && len(codeToken.Nonce) != 0 {
@@ -428,8 +498,8 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
 	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
-	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authUser, requestRedirectURLString)
-	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authUser)
+	logger.Debugf(0, "IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, parsedRedirectURL.Redacted())
+	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authData.Username)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
 }
@@ -444,38 +514,21 @@ type openIDConnectIDToken struct {
 	Nonce      string   `json:"nonce,omitempty"`
 }
 
-type accessToken struct {
+type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
 	IDToken     string `json:"id_token"`
 }
 
-type userInfoToken struct {
-	Username   string `json:"username"`
-	Scope      string `json:"scope"`
-	Expiration int64  `json:"exp"`
-	Type       string `json:"type"`
-}
-
-func (state *RuntimeState) idpOpenIDCValidClientSecret(clientId string, clientSecret string) bool {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != clientId {
-			continue
-		}
-		return clientSecret == client.ClientSecret
-	}
-	return false
-}
-
-func (state *RuntimeState) idpOpenIDCClientCanDoPKCEAuth(clientId string) (bool, error) {
-	for _, client := range state.Config.OpenIDConnectIDP.Client {
-		if client.ClientID != clientId {
-			continue
-		}
-		return client.ClientSecret == "", nil
-	}
-	return false, nil
+type bearerAccessToken struct {
+	Issuer     string   `json:"iss"`
+	Audience   []string `json:"aud,omitempty"`
+	Username   string   `json:"username"`
+	Scope      string   `json:"scope"`
+	Expiration int64    `json:"exp"`
+	IssuedAt   int64    `json:"iat"`
+	Type       string   `json:"type"`
 }
 
 func (state *RuntimeState) idpOpenIDCValidCodeVerifier(clientId string, codeVerifier string, codeToken keymasterdCodeToken) bool {
@@ -522,7 +575,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	if r.Form.Get("grant_type") != "authorization_code" {
-		logger.Printf("invalid grant type='%s'", r.Form.Get("grant_type"))
+		logger.Debugf(1, "invalid grant type='%s'", url.QueryEscape(r.Form.Get("grant_type")))
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid grant type")
 		return
 	}
@@ -604,9 +657,19 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 			pass = unescapedPass
 		}
 	}
+	oidcClient, err := state.idpOpenIDCGetClientConfig(clientID)
+	if err != nil {
+		if err == ErrorIDPClientNotFound {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "ClientID uknown")
+			return
+		}
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 	valid := false
 	if len(codeVerifier) > 0 {
-		canUserCodeVerifier, err := state.idpOpenIDCClientCanDoPKCEAuth(clientID)
+		canUserCodeVerifier, err := oidcClient.ClientCanDoPKCEAuth()
 		if err != nil {
 			logger.Printf("Error checking if client can do PKCE auth")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -620,7 +683,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		valid = state.idpOpenIDCValidCodeVerifier(clientID, codeVerifier, keymasterToken)
 	}
 	if !valid && len(pass) > 0 {
-		valid = state.idpOpenIDCValidClientSecret(clientID, pass)
+		valid = oidcClient.ValidClientSecret(pass)
 	}
 	if !valid {
 		logger.Debugf(0, "Error invalid client secret or code verifier")
@@ -628,7 +691,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	// if we have an origin it should be whitelisted
-	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(r.Header.Get("Origin"), clientID)
+	originIsValid, err := oidcClient.CorsOriginAllowed(r.Header.Get("Origin"))
 	if err != nil {
 		logger.Printf("Error checking Origin")
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -680,19 +743,28 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 	signedIdToken, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
 	if err != nil {
-		panic(err)
+		log.Printf("error signing idToken in idpOpenIDCTokenHandler,: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 	logger.Debugf(2, "raw=%s", signedIdToken)
-	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
-	userinfoToken.Expiration = idToken.Expiration
-	userinfoToken.Type = "bearer"
-	signedAccessToken, err := jwt.Signed(signer).Claims(userinfoToken).CompactSerialize()
+	accessToken := bearerAccessToken{Issuer: state.idpGetIssuer(),
+		Username: keymasterToken.Username, Scope: keymasterToken.Scope}
+	accessToken.Expiration = idToken.Expiration
+	accessToken.Type = "bearer"
+	accessToken.IssuedAt = time.Now().Unix()
+	if len(keymasterToken.AccessAudience) > 0 {
+		accessToken.Audience = append(keymasterToken.AccessAudience, state.idpGetIssuer()+idpOpenIDCUserinfoPath)
+	}
+	signedAccessToken, err := jwt.Signed(signer).Claims(accessToken).CompactSerialize()
 	if err != nil {
-		panic(err)
+		log.Printf("error signing accessToken in idpOpenIDCTokenHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	// The access token will be yet another jwt.
-	outToken := accessToken{
+	outToken := tokenResponse{
 		AccessToken: signedAccessToken,
 		TokenType:   "Bearer",
 		ExpiresIn:   int(idToken.Expiration - idToken.IssuedAt),
@@ -816,7 +888,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Options MUST contain origin")
 			return
 		}
-		originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+		originIsValid, err := state.idpOpenIDCGenericIsCorsOriginAllowed(origin)
 		if err != nil {
 			logger.Printf("Error checking Origin")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -851,7 +923,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	logger.Debugf(1, "access_token='%s'", accessToken)
 	if accessToken == "" {
-		logger.Printf("access_token='%s'", accessToken)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Missing access token")
 		return
@@ -864,7 +935,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 		return
 	}
 	logger.Debugf(1, "tok=%+v", tok)
-	parsedAccessToken := userInfoToken{}
+	parsedAccessToken := bearerAccessToken{}
 	if err := state.JWTClaims(tok, &parsedAccessToken); err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
@@ -874,12 +945,30 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	// Now we check for validity.
 	if parsedAccessToken.Expiration < time.Now().Unix() {
 		logger.Printf("expired token attempted to be used for bearer")
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Expired Token")
 		return
 	}
 	if parsedAccessToken.Type != "bearer" {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Wrong Token Type")
 		return
+	}
+	if parsedAccessToken.Issuer != state.idpGetIssuer() {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Token Issuer")
+		return
+	}
+	if len(parsedAccessToken.Audience) > 0 {
+		hasUserinfoAudience := false
+		userInfoURL := state.idpGetIssuer() + idpOpenIDCUserinfoPath
+		for _, audience := range parsedAccessToken.Audience {
+			if audience == userInfoURL {
+				hasUserinfoAudience = true
+				break
+			}
+		}
+		if !hasUserinfoAudience {
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Audience in token")
+			return
+		}
 	}
 	// Get email from LDAP if available.
 	defaultEmailDomain := state.HostIdentity
@@ -927,7 +1016,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
 
-	originIsValid, err := state.idpOpenIDCIsCorsOriginAllowed(origin, "")
+	originIsValid, err := state.idpOpenIDCGenericIsCorsOriginAllowed(origin)
 	if err != nil {
 		logger.Printf("Error checking Origin, allowing to continue without origin header")
 	}

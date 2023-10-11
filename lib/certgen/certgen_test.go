@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/Dominator/lib/x509util"
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -146,7 +147,7 @@ DhV+rrj+h1k9EaIv+VSQ98XGm97NK3PEkolWk5UngF3Qwt5qPDeGjpf4zyhej0lF
 KwIBAw==
 -----END PUBLIC KEY-----`
 
-//now other valid sshKeys : ssh-keygen -t ecdsa
+// now other valid sshKeys : ssh-keygen -t ecdsa
 const ecdsaPublicSSH = `ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBD+IdwZ/LsQhxE3soSMoCNOtqftjUgMoy7nqAukSL9MuULIbspoWRvF/bxDaaJf9dcz+mK/ILC5NXxNs36oYNOs= cviecco@cviecco--MacBookPro15`
 
 const ed25519PublicSSH = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDdNbfR67CJ0/iB5a5lQfZowi3VTrkDu7/rpMNKfHFPs cviecco@cviecco--MacBookPro15`
@@ -200,7 +201,7 @@ RBm1g0vfLOjV1tPs5/0QMy7ANExMLGtzIJidWWWzIzw2rx4WC7xcIkJ+iWFIIFNy
 S9RSPfwJS7+Zr8LP4H6APpstQWZEXOo=
 -----END EC PRIVATE KEY-----`
 
-//openssl genpkey  -algorithm ED25519 -out key.pem
+// openssl genpkey  -algorithm ED25519 -out key.pem
 const pkcs8Ed25519PrivateKey = `-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIHoHbl2RwHwmyWtXVLroUZEI+d/SqL3RKmECM5P7o7D5
 -----END PRIVATE KEY-----`
@@ -251,7 +252,7 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certString, cert, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
+	certString, cert, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +268,7 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certString, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration)
+	certString, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,6 +279,32 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != username {
 		t.Fatal("invalid cert content, bad username")
 	}
+	// test with non nil custom extensions:
+	extensionTest1 := map[string]string{"hello": "world"}
+	_, cert, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration, extensionTest1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for key, value := range cert.Permissions.Extensions {
+		if key == "hello" {
+			found = true
+			if value != "world" {
+				t.Fatal("extension value is invalid")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("custom extension not found")
+	}
+	// invalid extension blank name.. should NOT fail
+	invalidExtensionTest := map[string]string{"": "world"}
+	_, _, err = GenSSHCertFileString(username, ed25519PublicSSH, goodEd25519Signer, hostIdentity, testDuration, invalidExtensionTest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
@@ -287,7 +314,7 @@ func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity, testDuration)
+	_, _, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity, testDuration, nil)
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -451,12 +478,13 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 	return cert, pemCert, nil
 }
 
-//GenUserX509Cert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
+// GenUserX509Cert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
 func TestGenUserX509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
 	groups := []string{"group0", "group1"}
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, groups, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil,
+		testDuration, groups, nil, nil, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +520,8 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm,
+		testDuration, nil, nil, nil, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +538,7 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	// 6. kerberos realm info!
 }
 
-//GenSelfSignedCACert
+// GenSelfSignedCACert
 func TestGenSelfSignedCACertGood(t *testing.T) {
 	caPriv, err := GetSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -531,7 +560,8 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil, nil)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil,
+		testDuration, nil, nil, nil, testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}

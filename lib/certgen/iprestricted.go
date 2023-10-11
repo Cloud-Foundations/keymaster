@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //#nosec G505
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -109,7 +109,8 @@ func ComputePublicKeyKeyID(PublicKey interface{}) ([]byte, error) {
 		return nil, err
 	}
 
-	pubHash := sha1.Sum(subPKI.SubjectPublicKey.Bytes)
+	// sha1 is weak but that is the definition on the RFC
+	pubHash := sha1.Sum(subPKI.SubjectPublicKey.Bytes) //#nosec G401
 	return pubHash[:], nil
 }
 
@@ -145,7 +146,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 		IssuingCertificateURL: crlURL,
 		OCSPServer:            OCPServer,
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
 	}
 	if ipDelegationExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,

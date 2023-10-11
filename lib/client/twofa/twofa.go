@@ -24,6 +24,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
+	"github.com/marshallbrekka/go-u2fhost"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -225,22 +226,47 @@ func authenticateUser(
 	}
 	// upgrade to u2f
 	successful2fa := false
+
+	// Linux support for the new library is not quite correct
+	// so for now we keep using the old library (pure u2f)
+	// for linux cli as default. Windows 10 and MacOS have been
+	// tested successfully.
+	// The env variable allows us to swap what library is used by
+	// default
+	useWebAuthh := true
+	if runtime.GOOS == "linux" {
+		useWebAuthh = false
+	}
+	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
+		useWebAuthh = !useWebAuthh
+	}
 	if !skip2fa {
 		if allowU2F {
-			devices, err := u2fhid.Devices()
-			if err != nil {
-				logger.Fatal(err)
-				return err
-			}
-			if len(devices) > 0 {
-
-				err = u2f.DoU2FAuthenticate(
+			if useWebAuthh {
+				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
 					client, baseUrl, userAgentString, logger)
 				if err != nil {
-
+					logger.Printf("Error doing hid webathentication err=%s", err)
 					return err
 				}
 				successful2fa = true
+
+			} else {
+				devices, err := u2fhid.Devices()
+				if err != nil {
+					logger.Printf("could not open hid devices err=%s", err)
+					return err
+				}
+				if len(devices) > 0 {
+
+					err = u2f.DoU2FAuthenticate(
+						client, baseUrl, userAgentString, logger)
+					if err != nil {
+
+						return err
+					}
+					successful2fa = true
+				}
 			}
 		}
 

@@ -505,7 +505,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (
 	decoder := gob.NewDecoder(gobReader)
 	err = decoder.Decode(&defaultProfile)
 	if err != nil {
-		return nil, false, fromCache, err
+		return nil, false, fromCache,
+			fmt.Errorf("error decoding user profile: %s", err)
 	}
 	logger.Debugf(1, "loaded profile=%+v", defaultProfile)
 	return &defaultProfile, true, fromCache, nil

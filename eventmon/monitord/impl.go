@@ -72,6 +72,12 @@ func checkForEvent(channel <-chan struct{}) bool {
 	}
 }
 
+func (m *Monitor) initKeymasterStatus(addr string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.keymasterStatus[addr] = errors.New("not yet probed")
+}
+
 func (m *Monitor) monitorForever(logger log.Logger) {
 	for ; ; time.Sleep(time.Minute * 2) {
 		m.updateNotifierList(logger)
@@ -92,6 +98,7 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 			delete(addrsToDelete, addr)
 		} else {
 			logger.Printf("New keymaster server: %s\n", addr)
+			m.initKeymasterStatus(addr)
 			closeChannel := make(chan struct{}, 1)
 			m.closers[addr] = closeChannel
 			go m.startMonitoring(addr, closeChannel,
@@ -108,15 +115,19 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 	}
 }
 
-func (m *Monitor) setKeymasterStatus(addr string, err error) {
+// Returns true if the address should not be monitored anymore.
+func (m *Monitor) setKeymasterStatus(addr string, err error) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	if _, ok := m.keymasterStatus[addr]; !ok {
+		return true
+	}
 	m.keymasterStatus[addr] = err
+	return false
 }
 
 func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 	logger log.Logger) {
-	m.setKeymasterStatus(ip, errors.New("not yet probed"))
 	addr := fmt.Sprintf("%s:%d", ip, m.keymasterServerPortNum)
 	reportedNotReady := false
 	for ; ; time.Sleep(time.Second) {
@@ -124,7 +135,9 @@ func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 			return
 		}
 		conn, err := m.dialAndConnect(addr)
-		m.setKeymasterStatus(ip, err)
+		if m.setKeymasterStatus(ip, err) {
+			return
+		}
 		if err != nil {
 			if strings.Contains(err.Error(), "connection refused") {
 				reportedNotReady = false
@@ -174,7 +187,8 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 		}
 	}
 	conn := tls.Client(rawConn,
-		&tls.Config{ServerName: m.keymasterServerHostname})
+		&tls.Config{ServerName: m.keymasterServerHostname,
+			MinVersion: tls.VersionTLS12})
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
@@ -194,10 +208,12 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 	return conn, nil
 }
 
+// Returns true if monitoring should stop (because a message was sent to the
+// closeChannel).
 func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 	logger log.Logger) (bool, error) {
 	closedChannel := make(chan struct{}, 1)
-	exitChannel := make(chan struct{})
+	exitChannel := make(chan struct{}, 1)
 	go func() {
 		select {
 		case <-closeChannel:

@@ -1,7 +1,7 @@
 # Keymaster
-[![Build Status](https://travis-ci.org/Cloud-Foundations/keymaster.svg?branch=master)](https://travis-ci.org/Cloud-Foundations/keymaster)
+
+[![Build Status](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml/badge.svg?query=branch%3Amaster)](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml?query=branch%3Amaster)
 [![Coverage Status](https://coveralls.io/repos/github/Cloud-Foundations/keymaster/badge.svg?branch=master)](https://coveralls.io/github/Cloud-Foundations/keymaster?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Cloud-Foundations/keymaster)](https://goreportcard.com/report/github.com/Cloud-Foundations/keymaster)
 
 Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/), [U2F](https://fidoalliance.org/specifications/overview/) tokens or [TOTP](https://en.wikipedia.org/wiki/Time-based_One-time_Password_algorithm) compatible apps ([FreeOTP](https://freeotp.github.io/)/google authenticator ) ) for CLI operations (both SSHD and TLS).
 
@@ -35,7 +35,7 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 * make
 * gcc
 
-For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/).
+For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/). Recent windows builds fail  when using TDM-GCC 5.x. Successful builds are known with golang 1.16.X and gcc 10.X.
 
 #### Building
 1. make get-deps
@@ -98,7 +98,7 @@ patents and contracts.
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019-2020 Cloud-Foundations.org
+Copyright 2019-2021 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
@@ -110,3 +110,7 @@ License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for
 the specific language governing permissions and limitations under the
 License.
+
+## Versioning
+Keymaster versions follow the [Sementic Versioning](https://semver.org/)
+guidelines.

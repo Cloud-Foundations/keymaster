@@ -69,7 +69,8 @@ func main() {
 		logger.Fatal(err)
 	}
 	// Setup HTTPS clients.
-	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert},
+		MinVersion: tls.VersionTLS12}
 	tlsConfig.BuildNameToCertificate()
 	clients := makeClients(addrs, tlsConfig)
 	var password string

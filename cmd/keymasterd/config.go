@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,13 +35,17 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
+	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
+	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
+	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
 )
 
@@ -49,37 +54,56 @@ type autoUnseal struct {
 	AwsSecretKey string `yaml:"aws_secret_key"`
 }
 
+type sshExtension struct {
+	Key   string `yaml:"key"`
+	Value string `yaml:"value"`
+}
+
+type sshCertConfig struct {
+	Extensions []sshExtension `yaml:"extensions"`
+}
+
 type baseConfig struct {
-	HttpAddress                  string `yaml:"http_address"`
-	AdminAddress                 string `yaml:"admin_address"`
-	HttpRedirectPort             uint16 `yaml:"http_redirect_port"`
-	TLSCertFilename              string `yaml:"tls_cert_filename"`
-	TLSKeyFilename               string `yaml:"tls_key_filename"`
-	ACME                         acmecfg.AcmeConfig
-	SSHCAFilename                string     `yaml:"ssh_ca_filename"`
-	Ed25519CAFilename            string     `yaml:"ed25519_ca_keyfilename"`
-	AutoUnseal                   autoUnseal `yaml:"auto_unseal"`
-	HtpasswdFilename             string     `yaml:"htpasswd_filename"`
-	ExternalAuthCmd              string     `yaml:"external_auth_command"`
-	ClientCAFilename             string     `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename  string     `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                 string     `yaml:"host_identity"`
-	KerberosRealm                string     `yaml:"kerberos_realm"`
-	DataDirectory                string     `yaml:"data_directory"`
-	SharedDataDirectory          string     `yaml:"shared_data_directory"`
-	HideStandardLogin            bool       `yaml:"hide_standard_login"`
-	AllowedAuthBackendsForCerts  []string   `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI  []string   `yaml:"allowed_auth_backends_for_webui"`
-	AllowSelfServiceBootstrapOTP bool       `yaml:"allow_self_service_bootstrap_otp"`
-	AdminUsers                   []string   `yaml:"admin_users"`
-	AdminGroups                  []string   `yaml:"admin_groups"`
-	PublicLogs                   bool       `yaml:"public_logs"`
-	SecsBetweenDependencyChecks  int        `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups         []string   `yaml:"automation_user_groups"`
-	AutomationUsers              []string   `yaml:"automation_users"`
-	DisableUsernameNormalization bool       `yaml:"disable_username_normalization"`
-	EnableLocalTOTP              bool       `yaml:"enable_local_totp"`
-	EnableBootstrapOTP           bool       `yaml:"enable_bootstrapotp"`
+	HttpAddress                     string `yaml:"http_address"`
+	AdminAddress                    string `yaml:"admin_address"`
+	HttpRedirectPort                uint16 `yaml:"http_redirect_port"`
+	TLSCertFilename                 string `yaml:"tls_cert_filename"`
+	TLSKeyFilename                  string `yaml:"tls_key_filename"`
+	ACME                            acmecfg.AcmeConfig
+	SSHCAFilename                   string        `yaml:"ssh_ca_filename"`
+	Ed25519CAFilename               string        `yaml:"ed25519_ca_keyfilename"`
+	AutoUnseal                      autoUnseal    `yaml:"auto_unseal"`
+	HtpasswdFilename                string        `yaml:"htpasswd_filename"`
+	ExternalAuthCmd                 string        `yaml:"external_auth_command"`
+	ClientCAFilename                string        `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename     string        `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                    string        `yaml:"host_identity"`
+	KerberosRealm                   string        `yaml:"kerberos_realm"`
+	DataDirectory                   string        `yaml:"data_directory"`
+	SharedDataDirectory             string        `yaml:"shared_data_directory"`
+	AllowedAuthBackendsForCerts     []string      `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI     []string      `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP    bool          `yaml:"allow_self_service_bootstrap_otp"`
+	AdminUsers                      []string      `yaml:"admin_users"`
+	AdminGroups                     []string      `yaml:"admin_groups"`
+	PublicLogs                      bool          `yaml:"public_logs"`
+	SecsBetweenDependencyChecks     int           `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups            []string      `yaml:"automation_user_groups"`
+	AutomationUsers                 []string      `yaml:"automation_users"`
+	DisableUsernameNormalization    bool          `yaml:"disable_username_normalization"`
+	EnableLocalTOTP                 bool          `yaml:"enable_local_totp"`
+	EnableBootstrapOTP              bool          `yaml:"enable_bootstrapotp"`
+	WebauthTokenForCliLifetime      time.Duration `yaml:"webauth_token_for_cli_lifetime"`
+	PasswordAttemptGlobalBurstLimit uint          `yaml:"password_attempt_global_burst_limit"`
+	PasswordAttemptGlobalRateLimit  rate.Limit    `yaml:"password_attempt_global_rate_limit"`
+	SSHCertConfig                   sshCertConfig `yaml:"ssh_cert_config"`
+}
+
+type awsCertsConfig struct {
+	AllowedAccounts      []string `yaml:"allowed_accounts"`
+	ListAccountsRole     string   `yaml:"list_accounts_role"`
+	allowedAccounts      map[string]struct{}
+	organisationAccounts map[string]struct{}
 }
 
 type emailConfig struct {
@@ -122,22 +146,24 @@ type UserInfoSouces struct {
 }
 
 type Oauth2Config struct {
-	Config       *oauth2.Config
-	Enabled      bool   `yaml:"enabled"`
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	TokenUrl     string `yaml:"token_url"`
-	AuthUrl      string `yaml:"auth_url"`
-	UserinfoUrl  string `yaml:"userinfo_url"`
-	Scopes       string `yaml:"scopes"`
+	Config        *oauth2.Config
+	Enabled       bool   `yaml:"enabled"`
+	ForceRedirect bool   `yaml:"force_redirect"`
+	ClientID      string `yaml:"client_id"`
+	ClientSecret  string `yaml:"client_secret"`
+	TokenUrl      string `yaml:"token_url"`
+	AuthUrl       string `yaml:"auth_url"`
+	UserinfoUrl   string `yaml:"userinfo_url"`
+	Scopes        string `yaml:"scopes"`
 	//Todo add allowed orgs...
 }
 
 type OpenIDConnectClientConfig struct {
-	ClientID               string   `yaml:"client_id"`
-	ClientSecret           string   `yaml:"client_secret"`
-	AllowedRedirectURLRE   []string `yaml:"allowed_redirect_url_re"`
-	AllowedRedirectDomains []string `yaml:"allowed_redirect_domains"`
+	ClientID                   string   `yaml:"client_id"`
+	ClientSecret               string   `yaml:"client_secret"`
+	AllowClientChosenAudiences bool     `yaml:"allow_client_chose_audiences"`
+	AllowedRedirectURLRE       []string `yaml:"allowed_redirect_url_re"`
+	AllowedRedirectDomains     []string `yaml:"allowed_redirect_domains"`
 }
 
 type OpenIDConnectIDPConfig struct {
@@ -164,6 +190,7 @@ type SymantecVIPConfig struct {
 
 type AppConfigFile struct {
 	Base             baseConfig
+	AwsCerts         awsCertsConfig  `yaml:"aws_certs"`
 	DnsLoadBalancer  dnslbcfg.Config `yaml:"dns_load_balancer"`
 	Watchdog         watchdog.Config `yaml:"watchdog"`
 	Email            emailConfig
@@ -201,7 +228,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	// Load the built-in HTML templates.
 	htmlTemplates := []string{footerTemplateText, loginFormText,
 		secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText,
-		newTOTPHTML, newBootstrapOTPPHTML,
+		newTOTPHTML, newBootstrapOTPPHTML, showAuthTokenHTML,
 	}
 	for _, templateString := range htmlTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
@@ -357,6 +384,8 @@ func loadVerifyConfigFile(configFilename string,
 	}
 	runtimeState.initEmailDefaults()
 	runtimeState.Config.Watchdog.SetDefaults()
+	runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit = 100
+	runtimeState.Config.Base.PasswordAttemptGlobalRateLimit = 10
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return nil, err
@@ -369,6 +398,15 @@ func loadVerifyConfigFile(configFilename string,
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse config file: %s", err)
 	}
+	if runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit < 10 {
+		runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit = 10
+	}
+	if runtimeState.Config.Base.PasswordAttemptGlobalRateLimit < 1 {
+		runtimeState.Config.Base.PasswordAttemptGlobalRateLimit = 1
+	}
+	runtimeState.passwordAttemptGlobalLimiter = rate.NewLimiter(
+		runtimeState.Config.Base.PasswordAttemptGlobalRateLimit,
+		int(runtimeState.Config.Base.PasswordAttemptGlobalBurstLimit))
 
 	//share config
 	//runtimeState.userProfile = make(map[string]userProfile)
@@ -397,6 +435,15 @@ func loadVerifyConfigFile(configFilename string,
 		u2fAppID = u2fAppID + runtimeState.Config.Base.HttpAddress
 	}
 	u2fTrustedFacets = append(u2fTrustedFacets, u2fAppID)
+	runtimeState.webAuthn, err = webauthn.New(&webauthn.Config{
+		RPDisplayName: "Keymaster Server",        // Display Name for your site
+		RPID:          runtimeState.HostIdentity, // Generally the domain name for your site
+		RPOrigin:      u2fAppID,                  // The origin URL for WebAuthn requests
+		// RPIcon: "https://duo.com/logo.png", // Optional icon URL for your site
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
 		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
@@ -508,12 +555,6 @@ func loadVerifyConfigFile(configFilename string,
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
-	//
-	if runtimeState.Config.Base.HideStandardLogin && !runtimeState.Config.Oauth2.Enabled {
-		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
-		return nil, err
-	}
-
 	//Load extra templates
 	err = runtimeState.loadTemplates()
 	if err != nil {
@@ -525,9 +566,17 @@ func loadVerifyConfigFile(configFilename string,
 	// TODO(rgooch): We should probably support a priority list of
 	// authentication backends which are tried in turn. The current scheme is
 	// hacky and is limited to only one authentication backend.
+	if runtimeState.Config.Base.HtpasswdFilename != "" {
+		runtimeState.passwordChecker, err = htpassword.New(
+			runtimeState.Config.Base.HtpasswdFilename, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
-		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
+		runtimeState.passwordChecker, err = command.New(
+			runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -565,10 +614,20 @@ func loadVerifyConfigFile(configFilename string,
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
+	// If not using an OAuth2 IDP for primary authentication, must have an
+	// alternative enabled.
+	if runtimeState.passwordChecker == nil &&
+		!runtimeState.Config.Oauth2.Enabled {
+		return nil, errors.New(
+			"invalid configuration: no primary authentication method")
+	}
+
 	if runtimeState.Config.Base.SecsBetweenDependencyChecks < 1 {
 		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
 	}
-
+	if err := runtimeState.configureAwsRoles(); err != nil {
+		return nil, err
+	}
 	logger.Debugf(1, "End of config initialization: %+v", &runtimeState)
 
 	// UserInfo setup.
@@ -582,11 +641,32 @@ func loadVerifyConfigFile(configFilename string,
 		logger.Println("loaded UserInfo GitDB")
 	}
 
+	if runtimeState.Config.Base.WebauthTokenForCliLifetime >
+		maxWebauthForCliTokenLifetime {
+		runtimeState.Config.Base.WebauthTokenForCliLifetime =
+			maxWebauthForCliTokenLifetime
+	}
+
 	// Warn on potential issues
 	warnInsecureConfiguration(&runtimeState)
 
 	// DB initialization
 	if err := initDB(&runtimeState); err != nil {
+		return nil, err
+	}
+
+	failureWriter := func(w http.ResponseWriter, r *http.Request,
+		errorString string, code int) {
+		runtimeState.writeFailureResponse(w, r, code, errorString)
+	}
+	runtimeState.awsCertIssuer, err = aws_identity_cert.New(
+		aws_identity_cert.Params{
+			CertificateGenerator: runtimeState.generateRoleCert,
+			AccountIdValidator:   runtimeState.checkAwsAccountAllowed,
+			FailureWriter:        failureWriter,
+			Logger:               logger,
+		})
+	if err != nil {
 		return nil, err
 	}
 
