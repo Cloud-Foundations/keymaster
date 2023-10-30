@@ -123,6 +123,67 @@ func doCertRequestInternal(client *http.Client,
 	return ioutil.ReadAll(resp.Body)
 }
 
+// tryFidoMFA performs a fido authentication step
+// If there are no devices connected it will return false, nil
+// if there are fido devices connected it will return
+// true, nil on successul MFA and false, error on failure to
+// perform the Fido authentication
+func tryFidoMFA(
+	baseUrl string,
+	client *http.Client,
+	userAgentString string,
+	logger log.DebugLogger,
+) (bool, error) {
+	// Linux support for the new library is not quite correct
+	// so for now we keep using the old library (pure u2f)
+	// for linux cli as default. Windows 10 and MacOS have been
+	// tested successfully.
+	// The env variable allows us to swap what library is used by
+	// default
+	useWebAuthh := true
+	if runtime.GOOS == "linux" {
+		useWebAuthh = false
+	}
+	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
+		useWebAuthh = !useWebAuthh
+	}
+	var err error
+	if useWebAuthh {
+		devices := u2fhost.Devices()
+		if devices == nil || len(devices) < 1 {
+			logger.Debugf(2, "No Fido devices found")
+			return false, nil
+		}
+		err = u2f.WithDevicesDoWebAuthnAuthenticate(devices,
+			client, baseUrl, userAgentString, logger)
+		if err != nil {
+			logger.Printf("Error doing hid webathentication err=%s", err)
+			return false, err
+		}
+		return true, nil
+
+	} else {
+		devices, err := u2fhid.Devices()
+		if err != nil {
+			logger.Printf("could not open hid devices err=%s", err)
+			return false, err
+		}
+		if len(devices) < 1 {
+			logger.Debugf(2, "No Fido devices found")
+			return false, nil
+		}
+		err = u2f.DoU2FAuthenticate(
+			client, baseUrl, userAgentString, logger)
+		if err != nil {
+
+			return false, err
+		}
+		return true, nil
+
+	}
+	return false, nil
+}
+
 // This assumes the http client has a non-nul cookie jar
 func authenticateUser(
 	userName string,
@@ -227,49 +288,13 @@ func authenticateUser(
 	// upgrade to u2f
 	successful2fa := false
 
-	// Linux support for the new library is not quite correct
-	// so for now we keep using the old library (pure u2f)
-	// for linux cli as default. Windows 10 and MacOS have been
-	// tested successfully.
-	// The env variable allows us to swap what library is used by
-	// default
-	useWebAuthh := true
-	if runtime.GOOS == "linux" {
-		useWebAuthh = false
-	}
-	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
-		useWebAuthh = !useWebAuthh
-	}
 	if !skip2fa {
 		if allowU2F {
-			if useWebAuthh {
-				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
-					client, baseUrl, userAgentString, logger)
-				if err != nil {
-					logger.Printf("Error doing hid webathentication err=%s", err)
-					return err
-				}
-				successful2fa = true
-
-			} else {
-				devices, err := u2fhid.Devices()
-				if err != nil {
-					logger.Printf("could not open hid devices err=%s", err)
-					return err
-				}
-				if len(devices) > 0 {
-
-					err = u2f.DoU2FAuthenticate(
-						client, baseUrl, userAgentString, logger)
-					if err != nil {
-
-						return err
-					}
-					successful2fa = true
-				}
+			successful2fa, err = tryFidoMFA(baseUrl, client, userAgentString, logger)
+			if err != nil {
+				return err
 			}
 		}
-
 		if allowTOTP && !successful2fa {
 			err = totp.DoTOTPAuthenticate(
 				client, baseUrl, userAgentString, logger)
