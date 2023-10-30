@@ -339,11 +339,11 @@ func authenticateToTargetUrls(
 	logger log.DebugLogger) (baseURL string, err error) {
 
 	for _, baseURL = range targetUrls {
-		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
+		logger.Printf("attempting to target '%s' for '%s'\n", baseURL, userName)
 		err = authenticateUser(
 			userName,
 			password,
-			baseUrl,
+			baseURL,
 			skip2fa,
 			client,
 			userAgentString,
