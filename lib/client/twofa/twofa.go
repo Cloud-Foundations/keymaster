@@ -68,7 +68,7 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 }
 
 func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
-	baseUrl,
+	baseURL,
 	certType string,
 	addGroups bool,
 	userAgentString string, logger log.DebugLogger) ([]byte, error) {
@@ -97,15 +97,15 @@ func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
 		urlPostfix = "&addGroups=true"
 		logger.Debugln(0, "adding \"addGroups\" to request")
 	}
-	requestURL := baseUrl + "/certgen/" + userName + "?type=" + certType + urlPostfix
+	requestURL := baseURL + "/certgen/" + userName + "?type=" + certType + urlPostfix
 	return doCertRequestInternal(client, requestURL, serializedPubkey, userAgentString, logger)
 }
 
 func doCertRequestInternal(client *http.Client,
-	url, filedata string,
+	targetURL, filedata string,
 	userAgentString string, logger log.Logger) ([]byte, error) {
 
-	req, err := createKeyBodyRequest("POST", url, filedata)
+	req, err := createKeyBodyRequest("POST", targetURL, filedata)
 	if err != nil {
 		return nil, err
 	}
@@ -118,16 +118,73 @@ func doCertRequestInternal(client *http.Client,
 
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("got error from call %s, url='%s'\n", resp.Status, url)
+		return nil, fmt.Errorf("got error from call %s, url='%s'", resp.Status, targetURL)
 	}
 	return ioutil.ReadAll(resp.Body)
+}
+
+// tryFidoMFA performs a fido authentication step
+// If there are no devices connected it will return false, nil
+// if there are fido devices connected it will return
+// true, nil on successul MFA and false, error on failure to
+// perform the Fido authentication
+func tryFidoMFA(
+	baseURL string,
+	client *http.Client,
+	userAgentString string,
+	logger log.DebugLogger,
+) (bool, error) {
+	// Linux support for the new library is not quite correct
+	// so for now we keep using the old library (pure u2f)
+	// for linux cli as default. Windows 10 and MacOS have been
+	// tested successfully.
+	// The env variable allows us to swap what library is used by
+	// default
+	useWebAuthh := true
+	if runtime.GOOS == "linux" {
+		useWebAuthh = false
+	}
+	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
+		useWebAuthh = !useWebAuthh
+	}
+	var err error
+	if !useWebAuthh {
+		devices, err := u2fhid.Devices()
+		if err != nil {
+			logger.Printf("could not open hid devices err=%s", err)
+			return false, err
+		}
+		if len(devices) < 1 {
+			logger.Debugf(2, "No Fido devices found")
+			return false, nil
+		}
+		err = u2f.DoU2FAuthenticate(
+			client, baseURL, userAgentString, logger)
+		if err != nil {
+
+			return false, err
+		}
+		return true, nil
+	}
+	devices := u2fhost.Devices()
+	if devices == nil || len(devices) < 1 {
+		logger.Debugf(2, "No Fido devices found")
+		return false, nil
+	}
+	err = u2f.WithDevicesDoWebAuthnAuthenticate(devices,
+		client, baseURL, userAgentString, logger)
+	if err != nil {
+		logger.Printf("Error doing hid webathentication err=%s", err)
+		return false, err
+	}
+	return true, nil
 }
 
 // This assumes the http client has a non-nul cookie jar
 func authenticateUser(
 	userName string,
 	password []byte,
-	baseUrl string,
+	baseURL string,
 	skip2fa bool,
 	client *http.Client,
 	userAgentString string,
@@ -135,11 +192,11 @@ func authenticateUser(
 	if client == nil {
 		return fmt.Errorf("http client is nil")
 	}
-	loginUrl := baseUrl + proto.LoginPath
+	loginURL := baseURL + proto.LoginPath
 	form := url.Values{}
 	form.Add("username", userName)
 	form.Add("password", string(password[:]))
-	req, err := http.NewRequest("POST", loginUrl,
+	req, err := http.NewRequest("POST", loginURL,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
@@ -227,52 +284,16 @@ func authenticateUser(
 	// upgrade to u2f
 	successful2fa := false
 
-	// Linux support for the new library is not quite correct
-	// so for now we keep using the old library (pure u2f)
-	// for linux cli as default. Windows 10 and MacOS have been
-	// tested successfully.
-	// The env variable allows us to swap what library is used by
-	// default
-	useWebAuthh := true
-	if runtime.GOOS == "linux" {
-		useWebAuthh = false
-	}
-	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
-		useWebAuthh = !useWebAuthh
-	}
 	if !skip2fa {
 		if allowU2F {
-			if useWebAuthh {
-				err = u2f.WithDevicesDoWebAuthnAuthenticate(u2fhost.Devices(),
-					client, baseUrl, userAgentString, logger)
-				if err != nil {
-					logger.Printf("Error doing hid webathentication err=%s", err)
-					return err
-				}
-				successful2fa = true
-
-			} else {
-				devices, err := u2fhid.Devices()
-				if err != nil {
-					logger.Printf("could not open hid devices err=%s", err)
-					return err
-				}
-				if len(devices) > 0 {
-
-					err = u2f.DoU2FAuthenticate(
-						client, baseUrl, userAgentString, logger)
-					if err != nil {
-
-						return err
-					}
-					successful2fa = true
-				}
+			successful2fa, err = tryFidoMFA(baseURL, client, userAgentString, logger)
+			if err != nil {
+				return err
 			}
 		}
-
 		if allowTOTP && !successful2fa {
 			err = totp.DoTOTPAuthenticate(
-				client, baseUrl, userAgentString, logger)
+				client, baseURL, userAgentString, logger)
 			if err != nil {
 
 				return err
@@ -281,7 +302,7 @@ func authenticateUser(
 		}
 		if allowVIP && !successful2fa {
 			err = pushtoken.DoVIPAuthenticate(
-				client, baseUrl, userAgentString, logger)
+				client, baseURL, userAgentString, logger)
 			if err != nil {
 
 				return err
@@ -291,7 +312,7 @@ func authenticateUser(
 		// TODO: do better logic when both VIP and OKTA are configured
 		if allowOkta2FA && !successful2fa {
 			err = pushtoken.DoOktaAuthenticate(
-				client, baseUrl, userAgentString, logger)
+				client, baseURL, userAgentString, logger)
 			if err != nil {
 				return err
 			}
@@ -315,14 +336,14 @@ func authenticateToTargetUrls(
 	skip2fa bool,
 	client *http.Client,
 	userAgentString string,
-	logger log.DebugLogger) (baseUrl string, err error) {
+	logger log.DebugLogger) (baseURL string, err error) {
 
-	for _, baseUrl = range targetUrls {
-		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
+	for _, baseURL = range targetUrls {
+		logger.Printf("attempting to target '%s' for '%s'\n", baseURL, userName)
 		err = authenticateUser(
 			userName,
 			password,
-			baseUrl,
+			baseURL,
 			skip2fa,
 			client,
 			userAgentString,
@@ -330,7 +351,7 @@ func authenticateToTargetUrls(
 		if err != nil {
 			continue
 		}
-		return baseUrl, nil
+		return baseURL, nil
 
 	}
 	return "", fmt.Errorf("Failed to Authenticate to any URL")
