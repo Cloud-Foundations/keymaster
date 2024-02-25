@@ -8,10 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"mvdan.cc/sh/v3/shell"
 
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
@@ -217,8 +218,14 @@ func (state *RuntimeState) expandSSHExtensions(username string) (map[string]stri
 	}
 	userExtensions := make(map[string]string)
 	for _, extension := range state.Config.Base.SSHCertConfig.Extensions {
-		key := os.Expand(extension.Key, mapper)
-		value := os.Expand(extension.Value, mapper)
+		key, err := shell.Expand(extension.Key, mapper)
+		if err != nil {
+			return nil, err
+		}
+		value, err := shell.Expand(extension.Value, mapper)
+		if err != nil {
+			return nil, err
+		}
 		userExtensions[key] = value
 	}
 
