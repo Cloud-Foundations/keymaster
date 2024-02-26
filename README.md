@@ -81,7 +81,8 @@ To use keymasterd as an openid connect IDP please consult the documents
 [here](docs/website/openidc-idp.md)
 
 ##### SSH Cerfificate exteansion expansion
-Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we also reserver the pipe "|" so that we can do some future expansions. As of Feb 2024 only character replacement is part of the test-suite, so any other more complicated replacements are not forward compatible.
+Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we also reserve the pipe "|" so that we can do some future expansions.
+As of Feb 2024 only character replacement is part of the test-suite, so any other more complicated replacements are not considered forward compatible (as in the configuration may as expected in future versions).
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
@@ -102,7 +103,7 @@ patents and contracts.
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019-2021 Cloud-Foundations.org
+Copyright 2019-2024 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
