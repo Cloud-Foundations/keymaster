@@ -31,7 +31,7 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 ### Building from Source
 
 #### Prerequisites
-* go >= 1.13
+* go >= 1.19
 * make
 * gcc
 
@@ -68,6 +68,7 @@ Notice: Keymaster has a bug where the directory locations are not written correc
 ##### Supported backend authentication methods
 Several authentication methods are supported by the `keymasterd` service. You can separately specify which authentication methods you accept for the web backend (`allowed_auth_backends_for_webui`) and for obtaining certificates (`allowed_auth_backends_for_certs`).
 * **LDAP**: For LDAP the `bind_pattern` is a printf string where `%s` is the place where the username will be substituted. For example for an 389ds/openldap string might be: `"uid=%s,ou=People,dc=example,dc=com`. To leverage LDAP authentication set the appropriate `allowed_auth_*` setting to `["ldap"]`.
+* **OKTA** Keymasted can also use the public api for okta authentication, for both password and MFA (including both pushed and codes)
 * **Apache htpass**: The `passfile.htpass` file contains the usernames and their passwords allowed to access the `keymasterd` web interface. New users can be added via the following command: `htpasswd -B /etc/keymaster/passfile.htpass <username>`. `htpasswd` is distributed via the `httpd-tools` package. Keymaster will only accept htpass files that store BCRYPT encrypted credentials. To use Apache password files to authenticate users to the web interface set the following configuration item: `allowed_auth_*` to `["password"]`
 * **U2F tokens**: To enable U2F tokens set set the appropriate `allowed_auth_*` setting to `["U2F"]``
 * **VIP Manager**: To enable VIP Manager set set the appropriate `allowed_auth_*` setting to `["SymantecVIP"]`
@@ -78,6 +79,9 @@ Keymaster supports SQLite and PostgreSQL to store u2f tokens or username and pas
 ##### Openid Connect IDP
 To use keymasterd as an openid connect IDP please consult the documents
 [here](docs/website/openidc-idp.md)
+
+##### SSH Cerfificate exteansion expansion
+Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we allow reserver the pipe "|" so that we can do some future expansions.
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
