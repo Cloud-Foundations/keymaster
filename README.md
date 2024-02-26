@@ -31,7 +31,7 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 ### Building from Source
 
 #### Prerequisites
-* go >= 1.19
+* go >= 1.21
 * make
 * gcc
 
@@ -81,7 +81,7 @@ To use keymasterd as an openid connect IDP please consult the documents
 [here](docs/website/openidc-idp.md)
 
 ##### SSH Cerfificate exteansion expansion
-Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we allow reserver the pipe "|" so that we can do some future expansions.
+Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we also reserver the pipe "|" so that we can do some future expansions. As of Feb 2024 only character replacement is part of the test-suite, so any other more complicated replacements are not forward compatible.
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
