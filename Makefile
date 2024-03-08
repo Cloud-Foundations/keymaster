@@ -13,17 +13,27 @@ BINARY=keymaster
 VERSION=1.15.0
 #BUILD_TIME=`date +%FT%T%z`
 
+# keymaster client requires special tags on linux
+#EXTRA_BUILD_FLAGS 
+ifneq ($(OS),Windows_NT)
+	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S),Linux)
+		EXTRA_BUILD_FLAGS+= -tags=hidraw
+	endif
+endif
+
+
 # Setup the -ldflags option for go build here, interpolate the variable values
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
 all:	init-config-host cmd/keymasterd/binData.go
-	cd cmd/keymaster; go install -ldflags "-X main.Version=${VERSION}"
+	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}"
 	cd cmd/keymasterd; go install -ldflags "-X main.Version=${VERSION}"
 	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
 	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
 
 build:	cmd/keymasterd/binData.go
-	go build -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
+	go build ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
