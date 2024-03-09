@@ -220,8 +220,11 @@ func authenticateUser(
 	}
 	defer loginResp.Body.Close()
 	if loginResp.TLS != nil {
-		logger.Debugf(4, "LoginResp:  proto=%s tlsVer=%x", loginResp.Proto, loginResp.TLS.Version)
-		logger.Debugf(5, "LoginRespr: TLSissuer=%s", loginResp.TLS.VerifiedChains[0][0].Issuer.String())
+		logger.Debugf(4, "LoginResp:  proto:%s tlsVer:%x", loginResp.Proto, loginResp.TLS.Version)
+		for _, cert := range loginResp.TLS.VerifiedChains[0] {
+			logger.Debugf(5, "LoginRespr: Subject: %s    issuer: %s",
+				cert.Subject.String(), cert.Issuer.String())
+		}
 	} else {
 		logger.Printf("No TLS on authentication connection")
 	}
