@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -68,18 +67,12 @@ var (
 	FilePrefix = "keymaster"
 )
 
-func getUserHomeDir() (homeDir string) {
-	homeDir = os.Getenv("HOME")
-	if homeDir != "" {
-		return homeDir
-	}
-	usr, err := user.Current()
+func getUserHomeDir() string {
+	_, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
-		return homeDir
+		panic(err)
 	}
-	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	homeDir = usr.HomeDir
-	return
+	return homeDir
 }
 
 func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, error) {
@@ -97,28 +90,6 @@ func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, 
 
 	}
 	return rootCAs, nil
-}
-
-func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string, err error) {
-	usr, err := user.Current()
-	if err != nil {
-		logger.Printf("cannot get current user info")
-		return "", "", err
-	}
-	userName = usr.Username
-
-	if runtime.GOOS == "windows" {
-		splitName := strings.Split(userName, "\\")
-		if len(splitName) == 2 {
-			userName = strings.ToLower(splitName[1])
-		}
-	}
-
-	homeDir, err = util.GetUserHomeDir(usr)
-	if err != nil {
-		return "", "", err
-	}
-	return
 }
 
 func loadConfigFile(client *http.Client, logger log.Logger) (
@@ -497,7 +468,7 @@ func main() {
 		return
 	}
 	computeUserAgent()
-	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
 		logger.Fatal(err)
 	}
