@@ -91,6 +91,7 @@ func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
 		return nil, fmt.Errorf("invalid certType requested '%s'", certType)
 
 	}
+	logger.Debugf(3, "doCertReques: publicKey='%s'", serializedPubkey)
 	var urlPostfix string
 	// addgroups only makes sense for x509 plain .. maybe set as a check insetad of dropping?
 	if certType == "x509" && addGroups {
@@ -103,8 +104,9 @@ func doCertRequest(signer crypto.Signer, client *http.Client, userName string,
 
 func doCertRequestInternal(client *http.Client,
 	targetURL, filedata string,
-	userAgentString string, logger log.Logger) ([]byte, error) {
+	userAgentString string, logger log.DebugLogger) ([]byte, error) {
 
+	logger.Debugf(3, "doCertRequestInternal: top")
 	req, err := createKeyBodyRequest("POST", targetURL, filedata)
 	if err != nil {
 		return nil, err
@@ -189,6 +191,7 @@ func authenticateUser(
 	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (err error) {
+	logger.Debugf(3, "authenticateUser: top")
 	if client == nil {
 		return fmt.Errorf("http client is nil")
 	}
@@ -216,6 +219,12 @@ func authenticateUser(
 		return err
 	}
 	defer loginResp.Body.Close()
+	if loginResp.TLS != nil {
+		logger.Debugf(4, "LoginResp:  proto=%s tlsVer=%x", loginResp.Proto, loginResp.TLS.Version)
+		logger.Debugf(5, "LoginRespr: TLSissuer=%s", loginResp.TLS.VerifiedChains[0][0].Issuer.String())
+	} else {
+		logger.Printf("No TLS on authentication connection")
+	}
 	if loginResp.StatusCode != 200 {
 		if loginResp.StatusCode == http.StatusUnauthorized {
 			return fmt.Errorf("Unauthorized reponse from server. Check username and/or password")
