@@ -20,6 +20,7 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -69,13 +70,6 @@ func init() {
 	// we create other testing goroutines. By sleeping we yield the cpu and allow
 	// ListenAndServe to progress
 	time.Sleep(20 * time.Millisecond)
-}
-
-func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
-	_, _, err := getUserNameAndHomeDir(testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestGetHttpClient(t *testing.T) {
@@ -171,7 +165,7 @@ func TestMost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
