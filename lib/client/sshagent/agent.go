@@ -22,7 +22,7 @@ func connectToDefaultSSHAgentLocation() (net.Conn, error) {
 	return net.Dial("unix", socket)
 }
 
-func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, logger log.Logger) (int, error) {
+func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, logger log.DebugLogger) (int, error) {
 	keyList, err := agentClient.List()
 	if err != nil {
 		return 0, err
@@ -31,7 +31,7 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	for _, key := range keyList {
 		pubKey, err := ssh.ParsePublicKey(key.Marshal())
 		if err != nil {
-			logger.Println(err)
+			logger.Debugln(0, err)
 			continue
 		}
 		_, ok := pubKey.(*ssh.Certificate)
@@ -56,7 +56,7 @@ func upsertCertIntoAgent(
 	comment string,
 	lifeTimeSecs uint32,
 	confirmBeforeUse bool,
-	logger log.Logger) error {
+	logger log.DebugLogger) error {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
 	if err != nil {
 		logger.Println(err)
@@ -75,7 +75,7 @@ func upsertCertIntoAgent(
 	return withAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 }
 
-func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
+func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugLogger) error {
 	if certToAdd.Certificate == nil {
 		return fmt.Errorf("Needs a certificate to be added")
 	}
