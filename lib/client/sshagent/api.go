@@ -11,10 +11,10 @@ func UpsertCertIntoAgent(
 	privateKey interface{},
 	comment string,
 	lifeTimeSecs uint32,
-	logger log.Logger) error {
+	logger log.DebugLogger) error {
 	return upsertCertIntoAgent(certText, privateKey, comment, lifeTimeSecs, false, logger)
 }
 
-func WithAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.Logger) error {
+func WithAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugLogger) error {
 	return withAddedKeyUpsertCertIntoAgent(certToAdd, logger)
 }
