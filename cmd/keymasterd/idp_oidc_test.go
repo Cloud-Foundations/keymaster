@@ -306,6 +306,8 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	expectedSuccessURLS := []string{
 		"https://www.example.com",
 		"https://other.example.com:443",
+		"https://citadel.query.irconsul.example.com/#/silent-renew",
+		"https://citadel.query.irconsul.example.com/?fooo",
 	}
 	testConfigClients := []string{"weakREWithDomains", "onlyWithDomains"}
 	for _, clientID := range testConfigClients {
