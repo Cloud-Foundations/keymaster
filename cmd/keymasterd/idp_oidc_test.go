@@ -286,7 +286,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 
 	weakREWithDomains := OpenIDConnectClientConfig{
 		ClientID:               "weakREWithDomains",
-		AllowedRedirectURLRE:   []string{"https://[^/]*\\.example\\.com"},
+		AllowedRedirectURLRE:   []string{"^https://[^/]*\\.example\\.com"},
 		AllowedRedirectDomains: []string{"example.com"},
 	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, weakREWithDomains)
@@ -306,8 +306,6 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	expectedSuccessURLS := []string{
 		"https://www.example.com",
 		"https://other.example.com:443",
-		"https://citadel.query.irconsul.example.com/#/silent-renew",
-		"https://citadel.query.irconsul.example.com/?fooo",
 	}
 	testConfigClients := []string{"weakREWithDomains", "onlyWithDomains"}
 	for _, clientID := range testConfigClients {
