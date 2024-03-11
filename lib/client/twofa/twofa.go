@@ -143,9 +143,6 @@ func tryFidoMFA(
 	// The env variable allows us to swap what library is used by
 	// default
 	useWebAuthh := true
-	if runtime.GOOS == "linux" {
-		useWebAuthh = false
-	}
 	if os.Getenv("KEYMASTER_USEALTU2FLIB") != "" {
 		useWebAuthh = !useWebAuthh
 	}

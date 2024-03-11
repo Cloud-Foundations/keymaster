@@ -35,6 +35,10 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 * make
 * gcc
 
+In addition for linux you will also need:
+* pkg-config
+* libudev-dev
+
 For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/). Recent windows builds fail  when using TDM-GCC 5.x. Successful builds are known with golang 1.16.X and gcc 10.X.
 
 #### Building
