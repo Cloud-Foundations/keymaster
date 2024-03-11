@@ -106,7 +106,7 @@ func doU2FAuthenticate(
 	baseURL string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	logger.Printf("top of doU2fAuthenticate")
+	logger.Debugf(1, "top of doU2fAuthenticate")
 	url := baseURL + "/u2f/SignRequest"
 	signRequest, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -149,7 +149,7 @@ func doU2FAuthenticate(
 	}
 	// TODO: transform this into an iteration over all found devices
 	d := devices[0]
-	logger.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x",
+	logger.Debugf(0, "manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x",
 		d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 	dev, err := u2fhid.Open(d)
 	if err != nil {
@@ -530,7 +530,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	userAgentString string,
 	logger log.DebugLogger) error {
 
-	logger.Printf("top of withDevicesDoWebAutnfAuthenticate")
+	logger.Debugf(1, "top of withDevicesDoWebAutnfAuthenticate")
 	targetURL := baseURL + "/webauthn/AuthBegin/" // TODO: this should be grabbed from the webauthn definition as a const
 	signRequest, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
