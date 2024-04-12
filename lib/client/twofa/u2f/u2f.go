@@ -306,7 +306,7 @@ func checkDeviceAuthSuccess(req *u2fhost.AuthenticateRequest, device u2fhost.Dev
 	}
 }
 
-func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, keyHandles []string, logger log.DebugLogger) *u2fhost.AuthenticateResponse {
+func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, keyHandles []string, logger log.DebugLogger) (*u2fhost.AuthenticateResponse, error) {
 	logger.Debugf(1, "Authenticating with request %+v", req)
 	openDevices := []u2fhost.Device{}
 	registeredDevices := make(map[u2fhost.AuthenticateRequest]u2fhost.Device)
@@ -382,10 +382,10 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 	// Now we actually try to get users touch for devices that are found on the
 	// device list
 	if len(openDevices) == 0 {
-		logger.Fatalf("Failed to find any devices")
+		return nil, fmt.Errorf("Failed to find any devices")
 	}
 	if len(registeredDevices) == 0 {
-		logger.Fatalf("No registered devices found")
+		return nil, fmt.Errorf("No registered devices found")
 	}
 	prompted := false
 	timeout := time.After(time.Second * 25)
@@ -396,13 +396,13 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 		select {
 		case <-timeout:
 			fmt.Println("Failed to get authentication response after 25 seconds")
-			return nil
+			return nil, fmt.Errorf("Authentication timeout")
 		case <-interval.C:
 			for handleReq, device := range registeredDevices {
 				response, err := device.Authenticate(&handleReq)
 				if err == nil {
 					logger.Debugf(1, "device.Authenticate retured non error %s", err)
-					return response
+					return response, nil
 				} else if err.Error() == u2fHostTestUserPresenceError.Error() && !prompted {
 					logger.Printf("\nTouch the flashing U2F device to authenticate...")
 					prompted = true
@@ -412,7 +412,7 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			}
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("impossible Error")
 }
 
 // This ensures the hostname matches...at this moment we do NOT check port number
@@ -485,7 +485,10 @@ func withDevicesDoU2FAuthenticate(
 		Facet:     webSignRequest.AppID,                       //TODO: FIX this is actually Provided by client, so extract from baseURL
 		KeyHandle: webSignRequest.RegisteredKeys[0].KeyHandle, // TODO we should actually iterate over this?
 	}
-	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
+	deviceResponse, err := authenticateHelper(&req, devices, keyHandles, logger)
+	if err != nil {
+		return err
+	}
 	if deviceResponse == nil {
 		logger.Fatal("nil response from device?")
 	}
@@ -595,7 +598,10 @@ func withDevicesDoWebAuthnAuthenticate(
 		WebAuthn:  true,
 	}
 
-	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
+	deviceResponse, err := authenticateHelper(&req, devices, keyHandles, logger)
+	if err != nil {
+		return err
+	}
 	if deviceResponse == nil {
 		logger.Fatal("nil response from device?")
 	}
