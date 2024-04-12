@@ -503,7 +503,10 @@ func main() {
 		logger.Fatal(err)
 	}
 	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
+		err = u2f.CheckU2FDevices(logger)
+		if err != nil {
+			logger.Fatal(err)
+		}
 		return
 	}
 	computeUserAgent()
