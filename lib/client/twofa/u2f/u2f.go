@@ -59,15 +59,15 @@ type WebAuthnAuthenticationResponse struct {
 var u2fHostTestUserPresenceError u2fhost.TestOfUserPresenceRequiredError
 var u2fHostBadKeyHandleError u2fhost.BadKeyHandleError
 
-func checkU2FDevices(logger log.DebugLogger) {
+func checkU2FDevices(logger log.DebugLogger) error {
 	// TODO: move this to initialization code, ans pass the device list to this function?
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	if len(devices) == 0 {
-		logger.Fatal("no U2F tokens found")
+		return fmt.Errorf("no U2F tokens found")
 	}
 
 	// TODO: transform this into an iteration over all found devices
@@ -77,7 +77,7 @@ func checkU2FDevices(logger log.DebugLogger) {
 
 		dev, err := u2fhid.Open(d)
 		if err != nil {
-			logger.Fatal(err)
+			return err
 		}
 		defer dev.Close()
 	}
@@ -94,11 +94,10 @@ func checkU2FDevices(logger log.DebugLogger) {
 		logger.Printf("%+v", d2)
 	}
 	if len(devices2) == 0 {
-		logger.Fatal("no U2F (u2fHost) tokens found")
-	} else {
-		logger.Printf("u2fHost %d devices found", len(devices2))
+		return fmt.Errorf("no U2F (u2fHost) tokens found")
 	}
-
+	logger.Printf("u2fHost %d devices found", len(devices2))
+	return nil
 }
 
 func doU2FAuthenticate(
@@ -110,7 +109,7 @@ func doU2FAuthenticate(
 	url := baseURL + "/u2f/SignRequest"
 	signRequest, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	signRequest.Header.Set("User-Agent", userAgentString)
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
@@ -130,7 +129,7 @@ func doU2FAuthenticate(
 	var webSignRequest u2f.WebSignRequest
 	err = json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
@@ -139,7 +138,7 @@ func doU2FAuthenticate(
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
-		logger.Fatal(err)
+		logger.Println(err)
 		return err
 	}
 	if len(devices) == 0 {
@@ -153,13 +152,13 @@ func doU2FAuthenticate(
 		d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 	dev, err := u2fhid.Open(d)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	defer dev.Close()
 	t := u2ftoken.NewToken(dev)
 	version, err := t.Version()
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	// TODO: Maybe use Debugf()?
 	logger.Println("version:", version)
@@ -172,7 +171,7 @@ func doU2FAuthenticate(
 	err = json.NewEncoder(tokenAuthenticationBuf).Encode(
 		tokenAuthenticationClientData)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
 	// TODO: update creation to silence linter
@@ -189,7 +188,8 @@ func doU2FAuthenticate(
 		decodedHandle, err := base64.RawURLEncoding.DecodeString(
 			registeredKey.KeyHandle)
 		if err != nil {
-			logger.Fatal(err)
+			logger.Println(err)
+			return err
 		}
 		keyHandle = decodedHandle
 		req = u2ftoken.AuthenticateRequest{
@@ -233,7 +233,7 @@ func doU2FAuthenticate(
 				}
 
 			}
-			logger.Fatal(err)
+			return err
 		}
 		rawBytes = res.RawResponse
 		logger.Printf("counter = %d, signature = %x",
@@ -252,7 +252,8 @@ func doU2FAuthenticate(
 	webSignRequestBuf := &bytes.Buffer{}
 	err = json.NewEncoder(webSignRequestBuf).Encode(signRequestResponse)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Println(err)
+		return err
 	}
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
@@ -306,7 +307,7 @@ func checkDeviceAuthSuccess(req *u2fhost.AuthenticateRequest, device u2fhost.Dev
 	}
 }
 
-func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, keyHandles []string, logger log.DebugLogger) *u2fhost.AuthenticateResponse {
+func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.HidDevice, keyHandles []string, logger log.DebugLogger) (*u2fhost.AuthenticateResponse, error) {
 	logger.Debugf(1, "Authenticating with request %+v", req)
 	openDevices := []u2fhost.Device{}
 	registeredDevices := make(map[u2fhost.AuthenticateRequest]u2fhost.Device)
@@ -382,10 +383,10 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 	// Now we actually try to get users touch for devices that are found on the
 	// device list
 	if len(openDevices) == 0 {
-		logger.Fatalf("Failed to find any devices")
+		return nil, fmt.Errorf("Failed to find any devices")
 	}
 	if len(registeredDevices) == 0 {
-		logger.Fatalf("No registered devices found")
+		return nil, fmt.Errorf("No registered devices found")
 	}
 	prompted := false
 	timeout := time.After(time.Second * 25)
@@ -396,13 +397,13 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 		select {
 		case <-timeout:
 			fmt.Println("Failed to get authentication response after 25 seconds")
-			return nil
+			return nil, fmt.Errorf("Authentication timeout")
 		case <-interval.C:
 			for handleReq, device := range registeredDevices {
 				response, err := device.Authenticate(&handleReq)
 				if err == nil {
 					logger.Debugf(1, "device.Authenticate retured non error %s", err)
-					return response
+					return response, nil
 				} else if err.Error() == u2fHostTestUserPresenceError.Error() && !prompted {
 					logger.Printf("\nTouch the flashing U2F device to authenticate...")
 					prompted = true
@@ -412,7 +413,7 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			}
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("impossible Error")
 }
 
 // This ensures the hostname matches...at this moment we do NOT check port number
@@ -449,7 +450,7 @@ func withDevicesDoU2FAuthenticate(
 	url := baseURL + "/u2f/SignRequest"
 	signRequest, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	signRequest.Header.Set("User-Agent", userAgentString)
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
@@ -469,7 +470,7 @@ func withDevicesDoU2FAuthenticate(
 	var webSignRequest u2f.WebSignRequest
 	err = json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
@@ -485,9 +486,12 @@ func withDevicesDoU2FAuthenticate(
 		Facet:     webSignRequest.AppID,                       //TODO: FIX this is actually Provided by client, so extract from baseURL
 		KeyHandle: webSignRequest.RegisteredKeys[0].KeyHandle, // TODO we should actually iterate over this?
 	}
-	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
+	deviceResponse, err := authenticateHelper(&req, devices, keyHandles, logger)
+	if err != nil {
+		return err
+	}
 	if deviceResponse == nil {
-		logger.Fatal("nil response from device?")
+		return fmt.Errorf("nil response from device?")
 	}
 	logger.Debugf(1, "signResponse  authenticateHelper done")
 
@@ -496,7 +500,7 @@ func withDevicesDoU2FAuthenticate(
 	webSignRequestBuf := &bytes.Buffer{}
 	err = json.NewEncoder(webSignRequestBuf).Encode(deviceResponse)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
@@ -534,7 +538,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	targetURL := baseURL + "/webauthn/AuthBegin/" // TODO: this should be grabbed from the webauthn definition as a const
 	signRequest, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	signRequest.Header.Set("User-Agent", userAgentString)
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
@@ -553,7 +557,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	var credentialAssertion protocol.CredentialAssertion
 	err = json.NewDecoder(signRequestResp.Body).Decode(&credentialAssertion)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	io.Copy(ioutil.Discard, signRequestResp.Body)
 	signRequestResp.Body.Close()
@@ -595,9 +599,12 @@ func withDevicesDoWebAuthnAuthenticate(
 		WebAuthn:  true,
 	}
 
-	deviceResponse := authenticateHelper(&req, devices, keyHandles, logger)
+	deviceResponse, err := authenticateHelper(&req, devices, keyHandles, logger)
+	if err != nil {
+		return err
+	}
 	if deviceResponse == nil {
-		logger.Fatal("nil response from device?")
+		return fmt.Errorf("nil response from device?")
 	}
 	logger.Debugf(2, "signResponse  authenticateHelper done")
 
@@ -616,11 +623,11 @@ func withDevicesDoWebAuthnAuthenticate(
 	var clientData ClientData
 	clientDataBytes, err := base64.RawURLEncoding.DecodeString(deviceResponse.ClientData)
 	if err != nil {
-		logger.Fatal("Cant base64 decode ClientData")
+		return fmt.Errorf("Cant base64 decode ClientData")
 	}
 	err = json.Unmarshal(clientDataBytes, &clientData)
 	if err != nil {
-		logger.Fatal("unmarshall clientData")
+		return fmt.Errorf("unmarshall clientData")
 	}
 	logger.Debugf(2, "clientData =%+v", clientData)
 	if clientData.Typ == clientDataAuthenticationTypeValue {
@@ -629,7 +636,7 @@ func withDevicesDoWebAuthnAuthenticate(
 		webSignRequestBuf := &bytes.Buffer{}
 		err = json.NewEncoder(webSignRequestBuf).Encode(deviceResponse)
 		if err != nil {
-			logger.Fatal(err)
+			return err
 		}
 		targetURL = baseURL + "/u2f/SignResponse"
 		webSignRequest2, err := http.NewRequest("POST", targetURL, webSignRequestBuf)
@@ -668,7 +675,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	// Now we write the output data:
 	responseBytes, err := json.Marshal(webResponse)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	logger.Debugf(3, "responseBytes=%s", string(responseBytes))
 	webSignRequestBuf := bytes.NewReader(responseBytes)

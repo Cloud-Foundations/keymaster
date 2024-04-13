@@ -173,7 +173,7 @@ func tryFidoMFA(
 	err = u2f.WithDevicesDoWebAuthnAuthenticate(devices,
 		client, baseURL, userAgentString, logger)
 	if err != nil {
-		logger.Printf("Error doing hid webathentication err=%s", err)
+		logger.Debugf(1, "Error doing hid webathentication err=%s", err)
 		return false, err
 	}
 	return true, nil
@@ -297,14 +297,13 @@ func authenticateUser(
 		if allowU2F {
 			successful2fa, err = tryFidoMFA(baseURL, client, userAgentString, logger)
 			if err != nil {
-				return err
+				logger.Printf("Warning: fido2 configured, but Error doing Fido Auth: %s", err)
 			}
 		}
 		if allowTOTP && !successful2fa {
 			err = totp.DoTOTPAuthenticate(
 				client, baseURL, userAgentString, logger)
 			if err != nil {
-
 				return err
 			}
 			successful2fa = true

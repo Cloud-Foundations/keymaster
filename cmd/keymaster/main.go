@@ -143,6 +143,16 @@ func preConnectToHost(baseUrl string, client *http.Client, logger log.DebugLogge
 		logger.Debugf(1, "bad response code on pre-connect status=%d", response.StatusCode)
 		return err
 	}
+	logger.Debugf(3, "Success pre-connecting to: '%s'\n", baseUrl)
+	if response.TLS != nil {
+		logger.Debugf(3, "Preconnect is https")
+		for chainIndex, chainList := range response.TLS.VerifiedChains {
+			for index, cert := range chainList {
+				logger.Debugf(3, "Pre-connect VerifiedChain[%d]Subject[%d] = %s",
+					chainIndex, index, cert.Subject.String())
+			}
+		}
+	}
 	return nil
 }
 
@@ -493,7 +503,10 @@ func main() {
 		logger.Fatal(err)
 	}
 	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
+		err = u2f.CheckU2FDevices(logger)
+		if err != nil {
+			logger.Fatal(err)
+		}
 		return
 	}
 	computeUserAgent()
