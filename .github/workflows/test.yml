@@ -22,7 +22,6 @@ jobs:
     - uses: actions/setup-go@v3
       with:
         go-version: ${{ matrix.go-version }}
-        - uses: actions/setup-go@v3
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: gcc rpm alien rsync pkg-config libudev-dev
