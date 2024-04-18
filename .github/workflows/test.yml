@@ -4,7 +4,7 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -13,10 +13,10 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3
     - run: make test
-  buildpackage:
+  buildlinuxpackage:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-go@v3
