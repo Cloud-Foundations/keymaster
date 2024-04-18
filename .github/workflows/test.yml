@@ -25,5 +25,6 @@ jobs:
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: gcc rpm alien rsync pkg-config libudev-dev
+    - uses: actions/checkout@v3
     - run: make rpm
 
