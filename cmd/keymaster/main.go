@@ -46,6 +46,7 @@ var (
 	// process can inject the version number on the fly when building the
 	// binary. Use only from the Usage() function.
 	Version         = defaultVersionNumber
+	defaultHost     = defaultConfigHost
 	userAgentString = userAgentAppName
 )
 
@@ -110,10 +111,10 @@ func loadConfigFile(client *http.Client, logger log.Logger) (
 		if err != nil {
 			logger.Fatal(err)
 		}
-	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
+	} else if len(defaultHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, client, logger)
+				*configFilename, defaultHost, client, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}

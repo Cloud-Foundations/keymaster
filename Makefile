@@ -11,6 +11,9 @@ BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
 VERSION=1.15.3
+DEFAULT_HOST?=
+DEFAULT_LDFLAGS=-X main.Version=${VERSION}
+CLIENT_LDFLAGS=${DEFAULT_LDFLAGS} -X main.defaultHost=${DEFAULT_HOST}
 #BUILD_TIME=`date +%FT%T%z`
 
 # keymaster client requires special tags on linux
@@ -26,20 +29,22 @@ endif
 # Setup the -ldflags option for go build here, interpolate the variable values
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
-all:	init-config-host cmd/keymasterd/binData.go
-	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymasterd; go install -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
+all:	install-client
+	cd cmd/keymasterd; go install -ldflags "${DEFAULT_LDFLAGS}"
+	cd cmd/keymaster-unlocker; go install -ldflags "${DEFAULT_LDFLAGS}"
+	cd cmd/keymaster-eventmond;  go install -ldflags "${DEFAULT_LDFLAGS}"
 
 build:	cmd/keymasterd/binData.go
-	go build ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
+	go build ${EXTRA_BUILD_FLAGS} -ldflags "${DEFAULT_LDFLAGS}" -o bin/   ./...
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
 
+install-client:	init-config-host cmd/keymasterd/binData.go
+	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}"
+
 win-client: client-test
-	 go build -ldflags "-X main.Version=${VERSION}" -o bin .\cmd\keymaster\
+	 go build -ldflags "${CLIENT_LDFLAGS}" -o bin .\cmd\keymaster\
 
 client-test:
 	go test -v  ./cmd/keymaster/...
