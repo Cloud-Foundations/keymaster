@@ -26,6 +26,5 @@ jobs:
       with:
         packages: gcc rpm alien rsync pkg-config libudev-dev
     - uses: actions/checkout@v3
-    - run: make init-config-host
     - run: make rpm
 
