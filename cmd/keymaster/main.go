@@ -40,6 +40,7 @@ const (
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
+const defaultConfigHost = ""
 
 var (
 	// Must be a global variable in the data segment so that the build

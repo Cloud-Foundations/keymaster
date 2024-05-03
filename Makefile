@@ -23,6 +23,9 @@ ifneq ($(OS),Windows_NT)
 	ifeq ($(UNAME_S),Linux)
 		EXTRA_BUILD_FLAGS+= -tags=hidraw
 	endif
+	CLIENT_DEST?="./cmd./keymaster/"
+else
+	CLIENT_DEST?=".\\\\cmd\\\\keymaster\\\\"
 endif
 
 
@@ -35,13 +38,16 @@ all:	install-client
 	cd cmd/keymaster-eventmond;  go install -ldflags "${DEFAULT_LDFLAGS}"
 
 build:	cmd/keymasterd/binData.go
-	go build ${EXTRA_BUILD_FLAGS} -ldflags "${DEFAULT_LDFLAGS}" -o bin/   ./...
+	go build ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}" -o bin/ ./...
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
 
-install-client:	init-config-host cmd/keymasterd/binData.go
+install-client:	cmd/keymasterd/binData.go
 	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}"
+
+build-client:	cmd/keymasterd/binData.go
+	go build -ldflags "${CLIENT_LDFLAGS}" -o bin $(CLIENT_DEST)
 
 win-client: client-test
 	 go build -ldflags "${CLIENT_LDFLAGS}" -o bin .\cmd\keymaster\
@@ -49,15 +55,12 @@ win-client: client-test
 client-test:
 	go test -v  ./cmd/keymaster/...
 
-get-deps:	init-config-host
+get-deps:
 	go get -t ./...
 
 clean:
 	rm -f bin/*
 	rm -f keymaster-*.tar.gz
-
-init-config-host:
-	@test -f cmd/keymaster/config_host.go || (cp -p templates/config_host_go cmd/keymaster/config_host.go && echo 'Created initial cmd/keymaster/config_host.go')
 
 ${BINARY}-${VERSION}.tar.gz:
 	mkdir ${BINARY}-${VERSION}
@@ -76,11 +79,11 @@ rpm:	${BINARY}-${VERSION}.tar.gz
 
 tar:	${BINARY}-${VERSION}.tar.gz
 
-test:	init-config-host
+test:
 	make -f makefile.certs
 	go test ./...
 
-verbose-test:	init-config-host
+verbose-test:
 	go test -v ./...
 
 format:
