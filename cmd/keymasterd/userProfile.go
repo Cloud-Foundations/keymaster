@@ -33,6 +33,7 @@ func (u *userProfile) WebAuthnIcon() string {
 
 // This function is needed to create a unified view of all webauthn credentials
 func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
+	logger.Debugf(3, "top of profile.WebAuthnCredentials ")
 	var rvalue []webauthn.Credential
 	for _, authData := range u.WebauthnData {
 		if !authData.Enabled {
@@ -81,6 +82,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 
 // This function will eventualy also do migration of credential data if needed
 func (u *userProfile) FixupCredential(username string, displayname string) {
+	logger.Debugf(3, "top of profile.FixupCredential ")
 	if u.DisplayName == "" {
 		u.DisplayName = displayname
 	}
@@ -98,7 +100,7 @@ func (u *userProfile) FixupCredential(username string, displayname string) {
 	}
 }
 
-/// next are not actually from there... but make it simpler
+// / next are not actually from there... but make it simpler
 func (u *userProfile) AddWebAuthnCredential(cred webauthn.Credential) error {
 	index := time.Now().Unix()
 	authData := webauthAuthData{
