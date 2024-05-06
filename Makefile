@@ -23,7 +23,7 @@ ifneq ($(OS),Windows_NT)
 	ifeq ($(UNAME_S),Linux)
 		EXTRA_BUILD_FLAGS+= -tags=hidraw
 	endif
-	CLIENT_DEST?="./cmd./keymaster/"
+	CLIENT_DEST?="./cmd/keymaster/"
 	OUTPUT_DIR?=bin/
 else
 	CLIENT_DEST?=".\\\\cmd\\\\keymaster\\\\"
