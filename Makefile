@@ -17,15 +17,17 @@ CLIENT_LDFLAGS=${DEFAULT_LDFLAGS} -X main.defaultHost=${DEFAULT_HOST}
 #BUILD_TIME=`date +%FT%T%z`
 
 # keymaster client requires special tags on linux
-#EXTRA_BUILD_FLAGS 
+EXTRA_BUILD_FLAGS?=
 ifneq ($(OS),Windows_NT)
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
 		EXTRA_BUILD_FLAGS+= -tags=hidraw
 	endif
-	CLIENT_DEST?="./cmd./keymaster/"
+	CLIENT_DEST?="./cmd/keymaster/"
+	OUTPUT_DIR?=bin/
 else
 	CLIENT_DEST?=".\\\\cmd\\\\keymaster\\\\"
+	OUTPUT_DIR?=bin\\
 endif
 
 
@@ -38,7 +40,7 @@ all:	install-client
 	cd cmd/keymaster-eventmond;  go install -ldflags "${DEFAULT_LDFLAGS}"
 
 build:	cmd/keymasterd/binData.go
-	go build ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}" -o bin/ ./...
+	go build ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) ./...
 
 cmd/keymasterd/binData.go:
 	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
@@ -47,10 +49,10 @@ install-client:	cmd/keymasterd/binData.go
 	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}"
 
 build-client:	cmd/keymasterd/binData.go
-	go build -ldflags "${CLIENT_LDFLAGS}" -o bin $(CLIENT_DEST)
+	go build -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) $(CLIENT_DEST)
 
 win-client: client-test
-	 go build -ldflags "${CLIENT_LDFLAGS}" -o bin .\cmd\keymaster\
+	 go build -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) .\cmd\keymaster\
 
 client-test:
 	go test -v  ./cmd/keymaster/...
