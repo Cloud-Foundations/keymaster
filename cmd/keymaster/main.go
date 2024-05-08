@@ -182,7 +182,7 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 	return fmt.Errorf("Cannot connect to any keymaster Server")
 }
 
-const rsaKeySize = 2048
+const rsaKeySize = 3072
 
 func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
