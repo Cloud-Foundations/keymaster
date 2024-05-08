@@ -29,7 +29,7 @@ steps:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-   - name: Upload coverage reports to Codecov
+    - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
