@@ -10,8 +10,8 @@ on:
     - cron: '17 11 * * 2'
 
 jobs:
-  analyze:
-    name: Analyze
+  analyzecover:
+    name: Analyzecover
     runs-on: ubuntu-latest
     permissions:
       actions: read
