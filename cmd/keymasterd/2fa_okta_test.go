@@ -53,11 +53,11 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 			Status:          "MFA_REQUIRED",
 			Embedded: okta.OktaApiEmbeddedDataResponseType{
 				Factor: []okta.OktaApiMFAFactorsType{
-					okta.OktaApiMFAFactorsType{
+					{
 						Id:         "someid",
 						FactorType: "token:software:totp",
 						VendorName: "OKTA"},
-					okta.OktaApiMFAFactorsType{
+					{
 						Id:         "anotherid",
 						FactorType: "push",
 						VendorName: "OKTA",
@@ -76,7 +76,7 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 			Status:          "MFA_REQUIRED",
 			Embedded: okta.OktaApiEmbeddedDataResponseType{
 				Factor: []okta.OktaApiMFAFactorsType{
-					okta.OktaApiMFAFactorsType{
+					{
 						Id:         "anotherid",
 						FactorType: "push",
 						VendorName: "OKTA",

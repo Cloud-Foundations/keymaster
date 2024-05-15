@@ -79,7 +79,7 @@ func (r *LoggingWriter) SetCustomLogRecord(key, value string) {
 	r.logRecord.CustomRecords[key] = value
 }
 
-//  w.(accesslogger.LoggingWriter).SetUsername("alice")
+// w.(accesslogger.LoggingWriter).SetUsername("alice")
 func (r *LoggingWriter) SetUsername(username string) {
 	r.logRecord.Username = username
 }

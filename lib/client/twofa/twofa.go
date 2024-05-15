@@ -299,6 +299,7 @@ func authenticateUser(
 			if err != nil {
 				logger.Printf("Warning: fido2 configured, but Error doing Fido Auth: %s", err)
 			}
+			logger.Debugf(3, "authenticate user: after tryFidoMFA success=%v", successful2fa)
 		}
 		if allowTOTP && !successful2fa {
 			err = totp.DoTOTPAuthenticate(

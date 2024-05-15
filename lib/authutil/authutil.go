@@ -32,7 +32,7 @@ const argon2m = 20
 const argon2p = 2
 const argon2l = 32
 
-//There is no well defined number for argon2. We define our own
+// There is no well defined number for argon2. We define our own
 const argon2dPrefix = "$argon2d$"
 
 const randomStringEntropyBytes = 32

@@ -234,11 +234,11 @@ func TestExpandSSHExtensionsSimple(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
-		sshExtension{
+		{
 			Key:   "user:username",
 			Value: "$USERNAME",
 		},
-		sshExtension{
+		{
 			Key:   "key:$USERNAME",
 			Value: "value:userkey",
 		},
@@ -283,7 +283,7 @@ func TestExpandSSHExtensionsReplace(t *testing.T) {
 	}
 	for username, expected := range expansionTest {
 		state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
-			sshExtension{
+			{
 				Key:   "somekey",
 				Value: "${USERNAME/./-}",
 			},

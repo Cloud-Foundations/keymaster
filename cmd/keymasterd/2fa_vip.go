@@ -26,7 +26,7 @@ func (state *RuntimeState) startVIPPush(cookieVal string, username string) error
 	return nil
 }
 
-///
+// /
 const vipAuthPath = "/api/v0/vipAuth"
 
 func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +141,7 @@ func (state *RuntimeState) getPushPollTransaction(cookieValue string) (pushPollT
 	return value, ok
 }
 
-///////////////////////////
+// /////////////////////////
 const vipPushStartPath = "/api/v0/vipPushStart"
 
 func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +190,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 	return
 }
 
-////////////////////////////
+// //////////////////////////
 const vipPollCheckPath = "/api/v0/vipPollCheck"
 
 func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Request) {

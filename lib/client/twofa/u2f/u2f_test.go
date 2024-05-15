@@ -6,21 +6,21 @@ import (
 
 func TestVerifyAppId(t *testing.T) {
 	passingData := map[string][]string{
-		"https://good.example.com/": []string{
+		"https://good.example.com/": {
 			"good.example.com",
 			"https://good.example.com/",
 		},
-		"https://good.example.com:443/": []string{
+		"https://good.example.com:443/": {
 			"good.example.com",
 			"https://good.example.com/",
 		},
 	}
 	invalidAppid := map[string][]string{
-		"https://good.example.com/": []string{
+		"https://good.example.com/": {
 			"evil.example.com",
 			"https://evil.example.com/",
 		},
-		"https://good.example.com:443/": []string{
+		"https://good.example.com:443/": {
 			"evil.example.com",
 			"https://evil.example.com/",
 		},

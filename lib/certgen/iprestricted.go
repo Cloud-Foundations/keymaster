@@ -26,7 +26,7 @@ type IpAdressFamily struct {
 var oidIPAddressDelegation = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 7}
 var ipV4FamilyEncoding = []byte{0, 1, 1}
 
-//For now ipv4 only
+// For now ipv4 only
 func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 	ones, bits := netBlock.Mask.Size()
 	if bits != 32 {
@@ -90,7 +90,6 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	return netBlock, nil
 }
 
-//
 type subjectPublicKeyInfo struct {
 	Algorithm        pkix.AlgorithmIdentifier
 	SubjectPublicKey asn1.BitString

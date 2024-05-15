@@ -139,7 +139,7 @@ func (m *MockExtendedAgent) Signers() ([]ssh.Signer, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-//next are extended
+// next are extended
 func (m *MockExtendedAgent) SignWithFlags(key ssh.PublicKey, data []byte, flags agent.SignatureFlags) (*ssh.Signature, error) {
 	return nil, fmt.Errorf("not implemented")
 }

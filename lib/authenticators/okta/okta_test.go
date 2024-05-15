@@ -320,8 +320,8 @@ func TestMfaOTPFailNoValidDevices(t *testing.T) {
 	response := OktaApiPrimaryResponseType{
 		StateToken: "foo", Status: "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{Factor: []OktaApiMFAFactorsType{
-			OktaApiMFAFactorsType{Id: "someid", FactorType: "token:software:totp"},
-			OktaApiMFAFactorsType{Id: "someid", VendorName: "OKTA"},
+			{Id: "someid", FactorType: "token:software:totp"},
+			{Id: "someid", VendorName: "OKTA"},
 		}},
 	}
 	expiredUserCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
@@ -356,7 +356,7 @@ func TestMFAOTPFailInvalidOTP(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "someid",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
@@ -387,7 +387,7 @@ func TestMfaOTPSuccess(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "validId",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
@@ -417,11 +417,11 @@ func TestMfaMutliOTPSuccess(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "invalid",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
-				OktaApiMFAFactorsType{
+				{
 					Id:         "success",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
@@ -485,7 +485,7 @@ func TestMfaPushWaiting(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
@@ -517,7 +517,7 @@ func TestMfaPushAccept(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
@@ -549,11 +549,11 @@ func TestMfaPushAcceptMulti(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "waiting",
 					FactorType: "push",
 					VendorName: "OKTA"},
-				OktaApiMFAFactorsType{
+				{
 					Id:         "success",
 					FactorType: "push",
 					VendorName: "OKTA"},
@@ -585,7 +585,7 @@ func TestMfaPushTimeout(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},
@@ -617,7 +617,7 @@ func TestMfaPushInvalidWrapper(t *testing.T) {
 		Status:     "MFA_REQUIRED",
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
-				OktaApiMFAFactorsType{
+				{
 					Id:         "someid",
 					FactorType: "push",
 					VendorName: "OKTA"},

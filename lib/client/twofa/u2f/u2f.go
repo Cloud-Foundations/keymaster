@@ -401,18 +401,23 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 		case <-interval.C:
 			for handleReq, device := range registeredDevices {
 				response, err := device.Authenticate(&handleReq)
-				if err == nil {
-					logger.Debugf(1, "device.Authenticate retured non error %s", err)
-					return response, nil
-				} else if err.Error() == u2fHostTestUserPresenceError.Error() && !prompted {
-					logger.Printf("\nTouch the flashing U2F device to authenticate...")
-					prompted = true
-				} else {
-					logger.Debugf(3, "Got status response %s", err)
+				logger.Debugf(4, "authenticateHelper, device.Authenticate")
+				if err != nil {
+					logger.Debugf(3, "Got status response err=%s", err)
+					if err.Error() == u2fHostTestUserPresenceError.Error() && !prompted {
+						logger.Printf("\nTouch the flashing U2F device to authenticate...")
+						prompted = true
+
+					}
+					continue
 				}
+
+				logger.Debugf(1, "device.Authenticate retured non error %s", err)
+				return response, nil
 			}
 		}
 	}
+	logger.Debugf(3, "End of auhtenticateHelper loop")
 	return nil, fmt.Errorf("impossible Error")
 }
 
