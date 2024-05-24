@@ -68,7 +68,8 @@ var (
 		"If true, use the smart round-robin dialer")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
-
+	printVersion = flag.Bool("version", false,
+		"Print version and exit")
 	FilePrefix = "keymaster"
 )
 
@@ -496,6 +497,10 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 	logger := cmdlogger.New()
+	if *printVersion {
+		fmt.Println(Version)
+		return
+	}
 	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
 	if err != nil {
 		logger.Fatal(err)

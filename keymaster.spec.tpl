@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        1.15.3
+Version:        {{VERSION}}
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -74,5 +74,3 @@ systemctl daemon-reload
 %config(noreplace) %{_datarootdir}/keymasterd/customization_data/web_resources/*
 %config(noreplace) %{_datarootdir}/keymasterd/customization_data/templates/*
 %changelog
-
-
