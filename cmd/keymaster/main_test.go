@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
@@ -273,5 +275,35 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	}
 	os.Remove(privateKeyPath)
 	// TODO: on linux/macos create agent + unix socket and pass that
+
+}
+
+func TestMainSimple(t *testing.T) {
+	logger := testlogger.New(t)
+	var b bytes.Buffer
+
+	// version
+	*printVersion = true
+	err := mainWithError(&b, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("versionout='%s'", b.String())
+	// TODO: compara out to version string
+	*printVersion = false
+	b.Reset()
+
+	// checkDevices
+	*checkDevices = true
+	// As of May 2024, no devices returns an error on checkForDevices
+	// Because this will run inside or outside testing infra, we can
+	// only check if the error is consistent if any
+	checkDevRvalue := u2f.CheckU2FDevices(logger)
+	err = mainWithError(&b, logger)
+	if err != nil && (err.Error() != checkDevRvalue.Error()) {
+		t.Fatalf("manual an executed error mismatch mainerr=%s; chdevDerr=%s", err, checkDevRvalue)
+	}
+	*checkDevices = false
+	b.Reset()
 
 }

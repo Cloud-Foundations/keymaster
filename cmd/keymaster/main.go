@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -475,7 +476,7 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	}
 	if *roundRobinDialer {
 		if rrDialer, err := rrdialer.New(rawDialer, "", logger); err != nil {
-			logger.Fatalln(err)
+			return nil, err
 		} else {
 			defer rrDialer.WaitForBackgroundResults(time.Second)
 			dialer = rrDialer
@@ -493,33 +494,31 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
+// We assume here flags are parsed
+func mainWithError(stdout io.Writer, logger log.DebugLogger) error {
 	if *printVersion {
-		fmt.Println(Version)
-		return
+		fmt.Fprintln(stdout, Version)
+		return nil
 	}
 	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	client, err := getHttpClient(rootCAs, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	if *checkDevices {
 		err = u2f.CheckU2FDevices(logger)
 		if err != nil {
-			logger.Fatal(err)
+			return err
 		}
-		return
+		return nil
 	}
 	computeUserAgent()
 	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	config := loadConfigFile(client, logger)
 	logger.Debugf(3, "loaded Config=%+v", config)
@@ -543,7 +542,19 @@ func main() {
 		err = setupCerts(userName, homeDir, config, client, logger)
 	}
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	logger.Printf("Success")
+	return nil
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+	err := mainWithError(os.Stdout, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 }
