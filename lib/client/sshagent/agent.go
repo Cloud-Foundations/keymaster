@@ -50,12 +50,13 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	return deletedCount, nil
 }
 
-func upsertCertIntoAgent(
+func upsertCertIntoAgentConnection(
 	certText []byte,
 	privateKey interface{},
 	comment string,
 	lifeTimeSecs uint32,
 	confirmBeforeUse bool,
+	conn net.Conn,
 	logger log.DebugLogger) error {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
 	if err != nil {
@@ -72,23 +73,32 @@ func upsertCertIntoAgent(
 		Comment:          comment,
 		ConfirmBeforeUse: confirmBeforeUse,
 	}
-	return withAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
+	return withAddedKeyUpsertCertIntoAgentConnection(keyToAdd, conn, logger)
 }
 
-func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugLogger) error {
-	if certToAdd.Certificate == nil {
-		return fmt.Errorf("Needs a certificate to be added")
-	}
-
+func upsertCertIntoAgent(
+	certText []byte,
+	privateKey interface{},
+	comment string,
+	lifeTimeSecs uint32,
+	confirmBeforeUse bool,
+	logger log.DebugLogger) error {
 	conn, err := connectToDefaultSSHAgentLocation()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	return upsertCertIntoAgentConnection(certText, privateKey, comment, lifeTimeSecs, confirmBeforeUse, conn, logger)
+}
+
+func withAddedKeyUpsertCertIntoAgentConnection(certToAdd agent.AddedKey, conn net.Conn, logger log.DebugLogger) error {
+	if certToAdd.Certificate == nil {
+		return fmt.Errorf("Needs a certificate to be added")
+	}
 	agentClient := agent.NewClient(conn)
 
 	//delete certs in agent with the same comment
-	_, err = deleteDuplicateEntries(certToAdd.Comment, agentClient, logger)
+	_, err := deleteDuplicateEntries(certToAdd.Comment, agentClient, logger)
 	if err != nil {
 		logger.Printf("failed during deletion err=%s", err)
 		return err
@@ -101,4 +111,13 @@ func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugL
 	}
 
 	return agentClient.Add(certToAdd)
+}
+
+func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugLogger) error {
+	conn, err := connectToDefaultSSHAgentLocation()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return withAddedKeyUpsertCertIntoAgentConnection(certToAdd, conn, logger)
 }
