@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -200,20 +201,30 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 	}
 }
 
-// copied from https://golang.org/src/crypto/tls/generate_cert.go
-func publicKey(priv interface{}) interface{} {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &k.PublicKey
-	case *ecdsa.PrivateKey:
-		return &k.PublicKey
-	case ed25519.PrivateKey:
-		return k.Public().(ed25519.PublicKey)
-	case *ed25519.PrivateKey:
-		return k.Public().(*ed25519.PublicKey)
+func getSignerHashFromPublic(pub interface{}) (crypto.Hash, error) {
+	// crypto.SHA256
+	switch pub := pub.(type) {
+	case *rsa.PublicKey:
+		return crypto.SHA256, nil
+	case *ecdsa.PublicKey:
+		switch pub.Curve {
+		case elliptic.P224(), elliptic.P256():
+			return crypto.SHA256, nil
+		case elliptic.P384():
+			return crypto.SHA384, nil
+		case elliptic.P521():
+			return crypto.SHA512, nil
+		default:
+			return 0, fmt.Errorf("x509: unknown elliptic curve")
+		}
+	//Ed25519 signatures (by default) dont have a prefered signer
+	case *ed25519.PublicKey, ed25519.PublicKey:
+		return 0, nil
+
 	default:
-		return nil
+		return 0, fmt.Errorf("unknown key type")
 	}
+
 }
 
 // ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
@@ -268,7 +279,11 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		return nil, err
 	}
 	sum := sha256.Sum256([]byte(commonName))
-	signedCN, err := caPriv.Sign(rand.Reader, sum[:], crypto.SHA256)
+	hashfunc, err := getSignerHashFromPublic(caPriv.Public())
+	if err != nil {
+		return nil, err
+	}
+	signedCN, err := caPriv.Sign(rand.Reader, sum[:], hashfunc)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +304,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		IsCA:                  true,
 	}
 
-	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
+	return x509.CreateCertificate(rand.Reader, &template, &template, caPriv.Public(), caPriv)
 }
 
 // From RFC 4120 section 5.2.2 (https://tools.ietf.org/html/rfc4120)

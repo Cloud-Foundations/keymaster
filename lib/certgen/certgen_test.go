@@ -540,32 +540,35 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 
 // GenSelfSignedCACert
 func TestGenSelfSignedCACertGood(t *testing.T) {
-	caPriv, err := GetSignerFromPEMBytes([]byte(testSignerPrivateKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	derCACert, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	validPemKeys := []string{testSignerPrivateKey, pkcs8ecPrivateKey, pkcs8Ed25519PrivateKey}
+	for _, signerPem := range validPemKeys {
+		caPriv, err := GetSignerFromPEMBytes([]byte(signerPem))
+		if err != nil {
+			t.Fatal(err)
+		}
+		derCACert, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	cert, pemCert, err := derBytesCertToCertAndPem(derCACert)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("got '%s'", pemCert)
+		cert, pemCert, err := derBytesCertToCertAndPem(derCACert)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("got '%s'", pemCert)
 
-	// Now we use it to generate a user Cert
-	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
-	if err != nil {
-		t.Fatal(err)
+		// Now we use it to generate a user Cert
+		userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil,
+			testDuration, nil, nil, nil, testlogger.New(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		//t.Logf("got '%s'", certString)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil,
-		testDuration, nil, nil, nil, testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	//t.Logf("got '%s'", certString)
 
 }
 
