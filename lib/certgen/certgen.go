@@ -8,7 +8,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -201,32 +200,6 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 	}
 }
 
-func getSignerHashFromPublic(pub interface{}) (crypto.Hash, error) {
-	// crypto.SHA256
-	switch pub := pub.(type) {
-	case *rsa.PublicKey:
-		return crypto.SHA256, nil
-	case *ecdsa.PublicKey:
-		switch pub.Curve {
-		case elliptic.P224(), elliptic.P256():
-			return crypto.SHA256, nil
-		case elliptic.P384():
-			return crypto.SHA384, nil
-		case elliptic.P521():
-			return crypto.SHA512, nil
-		default:
-			return 0, fmt.Errorf("x509: unknown elliptic curve")
-		}
-	//Ed25519 signatures (by default) dont have a prefered signer
-	case *ed25519.PublicKey, ed25519.PublicKey:
-		return 0, nil
-
-	default:
-		return 0, fmt.Errorf("unknown key type")
-	}
-
-}
-
 // ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
 // At this moment it checks for sizes of parameters only. For RSA it means bits>=2041 && exponent>=65537,
 // For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
@@ -266,6 +239,31 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 }
 */
 
+// On the initial version of keymaster we used the base64 encoding
+// of the sha256sum of the rsa signature of the sha256 of the
+// common name. This to have a stable, key dependent
+// serial number.
+// Howeve this was a bad idea as:
+// 1. Not all signers can use sha256
+// 2. Not all signatures are stable.
+//
+// Thus we will keep the rsa behaviour for compatiblity reasons
+// But for all other keys we will just return the pkix asn1 encoding
+// of the public key
+func getKMCompatbileKeyStableBytesForSerial(priv interface{}, commonName []byte) ([]byte, error) {
+	switch v := priv.(type) {
+	case *rsa.PrivateKey:
+		sum := sha256.Sum256(commonName)
+		return v.Sign(rand.Reader, sum[:], crypto.SHA256)
+	case *ecdsa.PrivateKey:
+		return x509.MarshalPKIXPublicKey(v.Public())
+	case ed25519.PrivateKey:
+		return x509.MarshalPKIXPublicKey(v.Public())
+	default:
+		return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+	}
+}
+
 // return both an internal representation an the pem representation of the string
 // As long as the issuer value matches THEN the serial number can be different every time
 func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) ([]byte, error) {
@@ -278,16 +276,11 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256([]byte(commonName))
-	hashfunc, err := getSignerHashFromPublic(caPriv.Public())
+	keyStableBytes, err := getKMCompatbileKeyStableBytesForSerial(caPriv, []byte(commonName))
 	if err != nil {
 		return nil, err
 	}
-	signedCN, err := caPriv.Sign(rand.Reader, sum[:], hashfunc)
-	if err != nil {
-		return nil, err
-	}
-	sigSum := sha256.Sum256(signedCN)
+	sigSum := sha256.Sum256(keyStableBytes)
 	sig := base64.StdEncoding.EncodeToString(sigSum[:])
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
