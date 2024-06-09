@@ -1,6 +1,7 @@
 package certgen
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
@@ -214,6 +215,22 @@ owAAAAtzc2gtZWQyNTUxOQAAACDICn5DsRIjR4GyKVUPucWJ7A3+7TKoNfK/ImglUc6shQ
 AAAECdSciYZnODYp2QC0s838bYh8d2XEOuvBOqcOEA6MUjL8gKfkOxEiNHgbIpVQ+5xYns
 Df7tMqg18r8iaCVRzqyFAAAAHWN2aWVjY29AY3ZpZWNjby0tTWFjQm9va1BybzE1
 -----END OPENSSH PRIVATE KEY-----`
+
+// We should not be using p224 keys except for testing
+// openssl ecparam -name secp224r1 -genkey
+const testP224Privatekey = `-----BEGIN EC PRIVATE KEY-----
+MGgCAQEEHNBN+rQ+YDZ27lRc6tHu5myU+kq8Tetzodw4bfOgBwYFK4EEACGhPAM6
+AARWr9bjMJaYzHyQjD2za224ohGmBg6/6H5pomxWY8fkAfZy/DmjRRCD72pX86xp
+PSDtPZDi9/ao4g==
+-----END EC PRIVATE KEY-----`
+
+// The tranformation requires the full information of the private key
+//
+//	openssl ec -in private.ec.key -pubout
+const testP224PublicKey = `-----BEGIN PUBLIC KEY-----
+ME4wEAYHKoZIzj0CAQYFK4EEACEDOgAEVq/W4zCWmMx8kIw9s2ttuKIRpgYOv+h+
+aaJsVmPH5AH2cvw5o0UQg+9qV/OsaT0g7T2Q4vf2qOI=
+-----END PUBLIC KEY-----`
 
 const testDuration = time.Duration(120 * time.Second)
 
@@ -541,6 +558,8 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 // GenSelfSignedCACert
 func TestGenSelfSignedCACertGood(t *testing.T) {
 	validPemKeys := []string{testSignerPrivateKey, pkcs8ecPrivateKey, pkcs8Ed25519PrivateKey}
+	publcKeyPems := []string{testUserPEMPublicKey, testP224PublicKey}
+
 	for _, signerPem := range validPemKeys {
 		caPriv, err := GetSignerFromPEMBytes([]byte(signerPem))
 		if err != nil {
@@ -557,15 +576,29 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 		}
 		t.Logf("got '%s'", pemCert)
 
-		// Now we use it to generate a user Cert
-		userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
+		derCaCert2, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil,
-			testDuration, nil, nil, nil, testlogger.New(t))
+		cacert2, _, err := derBytesCertToCertAndPem(derCaCert2)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if !bytes.Equal(cert.RawSubject, cacert2.RawSubject) {
+			t.Fatalf("subjects across generations should match")
+		}
+
+		// Now we use it to generate a user Cert
+		for _, publicPem := range publcKeyPems {
+			userPub, err := getPubKeyFromPem(publicPem)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil,
+				testDuration, nil, nil, nil, testlogger.New(t))
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 		//t.Logf("got '%s'", certString)
 	}
