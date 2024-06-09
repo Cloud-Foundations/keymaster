@@ -53,24 +53,25 @@ var (
 )
 
 var (
+	checkDevices = flag.Bool("checkDevices", false,
+		"CheckU2F devices in your system")
 	configFilename = flag.String("config",
 		filepath.Join(getUserHomeDir(), keymasterSubdir, "client_config.yml"),
 		"The filename of the configuration")
-	rootCAFilename = flag.String("rootCAFilename", "",
-		"(optional) name for using non OS root CA to verify TLS connections")
 	configHost = flag.String("configHost", "",
 		"Get a bootstrap config from this host")
-	cliUsername  = flag.String("username", "", "username for keymaster")
-	checkDevices = flag.Bool("checkDevices", false,
-		"CheckU2F devices in your system")
 	cliFilePrefix = flag.String("fileprefix", "",
 		"Prefix for the output files")
+	rootCAFilename = flag.String("rootCAFilename", "",
+		"(optional) name for using non OS root CA to verify TLS connections")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
-	webauthBrowser = flag.String("webauthBrowser", "",
-		"Browser command to use for webauth")
+	cliUsername  = flag.String("username", "", "username for keymaster")
 	printVersion = flag.Bool("version", false,
 		"Print version and exit")
+	webauthBrowser = flag.String("webauthBrowser", "",
+		"Browser command to use for webauth")
+
 	FilePrefix = "keymaster"
 )
 
