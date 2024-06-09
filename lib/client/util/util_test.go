@@ -6,10 +6,9 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"os/user"
 	"testing"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 )
 
@@ -44,18 +43,15 @@ func TestGenKeyPairFailNoPerms(t *testing.T) {
 }
 
 func TestGetUserHomeDirSuccess(t *testing.T) {
-	usr, err := user.Current()
+	userName, homeDir, err := GetUserNameAndHomeDir()
 	if err != nil {
-		t.Logf("cannot get current user info")
 		t.Fatal(err)
 	}
-	homeDir, err := GetUserHomeDir(usr)
-	if err != nil {
-		t.Fatal(err)
+	if len(userName) < 1 {
+		t.Fatal("invalid userName")
 	}
 	if len(homeDir) < 1 {
-		t.Fatal("invalid homedir")
-
+		t.Fatal("invalid homeDir")
 	}
 }
 
@@ -89,7 +85,8 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 }
 
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
-//  gopass checks
+//
+//	gopass checks
 func TestPipe(t *testing.T) {
 	_, err := pipeToStdin("password\n")
 	if err != nil {

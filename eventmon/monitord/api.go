@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
 

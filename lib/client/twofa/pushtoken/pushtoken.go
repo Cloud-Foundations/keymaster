@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -131,7 +131,7 @@ func genericAuthenticateWithToken(
 	pushType string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	logger.Printf("top of genericAuthenticateWithToken")
+	logger.Debugf(1, "top of genericAuthenticateWithToken")
 
 	// Read VIP token from client
 

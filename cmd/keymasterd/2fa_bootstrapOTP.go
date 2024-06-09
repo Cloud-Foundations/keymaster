@@ -32,12 +32,12 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 			"Error parsing form")
 		return
 	}
-	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		state.logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	var inputOtpHash [sha512.Size]byte
 	if val, ok := r.Form["OTP"]; !ok {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
@@ -53,7 +53,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		}
 		inputOtpHash = sha512.Sum512([]byte(val[0]))
 	}
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
 		state.logger.Printf("error loading user profile err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError,
@@ -73,7 +73,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	}
 	if subtle.ConstantTimeCompare(inputOtpHash[:], requiredOtpHash) != 1 {
 		state.logger.Debugf(0, "Invalid Bootstrap OTP value for %s\n",
-			authUser)
+			authData.Username)
 		var tmp [sha512.Size]byte
 		copy(tmp[:], requiredOtpHash)
 		state.logger.Debugf(4, "  input: \"%v\" required: \"%v\"\n",
@@ -83,13 +83,13 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		return
 	}
 	profile.BootstrapOTP = bootstrapOTPData{}
-	if err := state.SaveUserProfile(authUser, profile); err != nil {
+	if err := state.SaveUserProfile(authData.Username, profile); err != nil {
 		state.logger.Printf("error saving profile randr=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	_, err = state.updateAuthCookieAuthlevel(w, r,
-		currentAuthLevel|AuthTypeBootstrapOTP)
+		authData.AuthType|AuthTypeBootstrapOTP)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError,
@@ -97,7 +97,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 		return
 	}
 	// eventNotifier.PublishBootstrapOtpAuthEvent(eventmon.AuthTypeBootstrapOTP,
-	// authUser)
+	// authData.Username)
 	// Now we send the user to the appropriate place
 	returnAcceptType := getPreferredAcceptType(r)
 	// TODO: The cert backend should depend also on per user preferences.
@@ -105,7 +105,7 @@ func (state *RuntimeState) BootstrapOtpAuthHandler(w http.ResponseWriter,
 	switch returnAcceptType {
 	case "text/html":
 		loginDestination := getLoginDestination(r)
-		eventNotifier.PublishWebLoginEvent(authUser)
+		eventNotifier.PublishWebLoginEvent(authData.Username)
 		state.logger.Debugf(0, "redirecting to: %s\n", loginDestination)
 		http.Redirect(w, r, loginDestination, 302)
 	default:

@@ -1,8 +1,9 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
-	//"fmt"
 	stdlog "log"
 	"net/http"
 	"net/url"
@@ -10,12 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	//"time"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	cv "github.com/nirasan/go-oauth-pkce-code-verifier"
 	"gopkg.in/square/go-jose.v2/jwt"
-	//"golang.org/x/net/context"
-	//"golang.org/x/oauth2"
 )
 
 func init() {
@@ -72,6 +71,19 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// now add Ed25519 key to set of public keys
+	_, ed25519Priv, err := ed25519.GenerateKey(rand.Reader)
+	state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, ed25519Priv.Public())
+	req2, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req2, state.idpOpenIDCJWKSHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: verify contents returned
+
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
@@ -135,6 +147,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
 	if err != nil {
+		t.Logf("bad handler code %+v", rr)
 		t.Fatal(err)
 	}
 	t.Logf("%+v", rr)
@@ -177,7 +190,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultAccessToken := accessToken{}
+	resultAccessToken := tokenResponse{}
 	body := tokenRR.Result().Body
 	err = json.NewDecoder(body).Decode(&resultAccessToken)
 	if err != nil {
@@ -203,6 +216,67 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 }
 
+// Related to Issue 141: U2F redirect comes w/ semicolons
+func TestIDPOpenIDCAuthorizationInvalidURL(t *testing.T) {
+	badURLList := []string{
+		"/idp/oauth2/authorize?client_id=generc-purestorage&amp;redirect_uri=https%3Acloudgate.example.com%2Foauth2%2Fredirectendpoint&amp;response_type=code&amp;scope=openid+mail+profile&amp;state=eyJhbGciOiJIUzI1NiIsInR5cCI",
+	}
+
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
+
+	valid_client_id := "valid_client_id"
+	valid_client_secret := "secret_password"
+	//valid_redirect_uri := "https://localhost:12345"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+
+	//url := idpOpenIDCAuthorizationPath
+	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//First we do a simple request.. no auth should fail for now.. after build out it
+	// should be a redirect to the login page
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// now we add a cookie for auth
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+	// and we retry with no params... it should fail again
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, invalidURL := range badURLList {
+		req, err := http.NewRequest("GET", invalidURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&authCookie)
+		_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+}
+
 func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
@@ -212,7 +286,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 
 	weakREWithDomains := OpenIDConnectClientConfig{
 		ClientID:               "weakREWithDomains",
-		AllowedRedirectURLRE:   []string{"https://[^/]*\\.example\\.com"},
+		AllowedRedirectURLRE:   []string{"^https://[^/]*\\.example\\.com"},
 		AllowedRedirectDomains: []string{"example.com"},
 	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, weakREWithDomains)
@@ -235,8 +309,12 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	}
 	testConfigClients := []string{"weakREWithDomains", "onlyWithDomains"}
 	for _, clientID := range testConfigClients {
+		client, err := state.idpOpenIDCGetClientConfig(clientID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, mustFailURL := range attackerTestURLS {
-			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustFailURL)
+			resultMatch, _, err := client.CanRedirectToURL(mustFailURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -245,14 +323,299 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 		for _, mustPassURL := range expectedSuccessURLS {
-			resultMatch, err := state.idpOpenIDCClientCanRedirect(clientID, mustPassURL)
+			resultMatch, parsedURL, err := client.CanRedirectToURL(mustPassURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if resultMatch == false {
 				t.Fatal("should have allowed this url")
 			}
+			if parsedURL == nil {
+				t.Fatal("should have parsed this url")
+			}
 		}
+	}
+}
+
+func TestIdpSealUnsealRoundTrip(t *testing.T) {
+	key, err := genRandomBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonceStr, err := genRandomString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPlainText := "hello world"
+	nonce := []byte(nonceStr)
+	cipherText, err := sealEncodeData([]byte(originalPlainText), nonce, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("ciphertext=%s", cipherText)
+	plainText, err := decodeOpenData(cipherText, nonce, key)
+	plainTextStr := string(plainText)
+	if plainTextStr != originalPlainText {
+		t.Fatalf("texts do not match original=%s recovered=%s", originalPlainText, plainTextStr)
+	}
+}
+
+// https://tools.ietf.org/html/rfc7636
+// we use a third party code generator to check some of the compatiblity issues
+func TestIDPOpenIDCPKCEFlowSuccess(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
+	valid_client_id := "valid_client_id"
+	valid_redirect_uri := "https://localhost:12345"
+	nonPKCEclientID := "nonPKCEClientId"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "", AllowedRedirectURLRE: []string{"localhost"}}
+	clientConfig2 := OpenIDConnectClientConfig{ClientID: nonPKCEclientID, ClientSecret: "supersecret", AllowedRedirectURLRE: []string{"localhost"}}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig2)
+	// now we add a cookie for auth
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	//prepare code challenge
+	var CodeVerifier, _ = cv.CreateCodeVerifier()
+	// Create code_challenge with S256 method
+	codeChallenge := CodeVerifier.CodeChallengeS256()
+	// add the required params
+	form := url.Values{}
+	form.Add("scope", "openid")
+	form.Add("response_type", "code")
+	form.Add("client_id", valid_client_id)
+	form.Add("redirect_uri", valid_redirect_uri)
+	form.Add("nonce", "123456789")
+	form.Add("state", "this is my state")
+	form.Add("code_challenge_method", "S256")
+	form.Add("code_challenge", codeChallenge)
+	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	postReq.AddCookie(&authCookie)
+	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%+v", rr)
+	locationText := rr.Header().Get("Location")
+	t.Logf("location=%s", locationText)
+	location, err := url.Parse(locationText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rCode := location.Query().Get("code")
+	t.Logf("rCode=%s", rCode)
+
+	// a broken code verifier should not grant us access:
+	badVerifierTokenForm := url.Values{}
+	badVerifierTokenForm.Add("grant_type", "authorization_code")
+	badVerifierTokenForm.Add("redirect_uri", valid_redirect_uri)
+	badVerifierTokenForm.Add("code", rCode)
+	badVerifierTokenForm.Add("client_id", valid_client_id)
+	badVerifierTokenForm.Add("code_verifier", "invalidValue")
+	badVerifierTokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(badVerifierTokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	badVerifierTokenReq.Header.Add("Content-Length", strconv.Itoa(len(badVerifierTokenForm.Encode())))
+	badVerifierTokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	_, err = checkRequestHandlerCode(badVerifierTokenReq, state.idpOpenIDCTokenHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// now a good verifier, but bad client_id
+	badVerifierTokenForm.Set("code_verifier", CodeVerifier.String())
+	badVerifierTokenForm.Set("client_id", nonPKCEclientID)
+	badVerifierTokenReq, err = http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(badVerifierTokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	badVerifierTokenReq.Header.Add("Content-Length", strconv.Itoa(len(badVerifierTokenForm.Encode())))
+	badVerifierTokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	_, err = checkRequestHandlerCode(badVerifierTokenReq, state.idpOpenIDCTokenHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//now we do a valid token request
+	tokenForm := url.Values{}
+	tokenForm.Add("grant_type", "authorization_code")
+	tokenForm.Add("redirect_uri", valid_redirect_uri)
+	tokenForm.Add("code", rCode)
+	tokenForm.Add("client_id", valid_client_id)
+	tokenForm.Add("code_verifier", CodeVerifier.String())
+	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
+	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultAccessToken := tokenResponse{}
+	body := tokenRR.Result().Body
+	err = json.NewDecoder(body).Decode(&resultAccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("resultAccessToken='%+v'", resultAccessToken)
+	//now the userinfo
+	userinfoForm := url.Values{}
+	userinfoForm.Add("access_token", resultAccessToken.AccessToken)
+	userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
+	userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// we use a third party code generator to check some of the compatiblity issues
+func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
+
+	valid_client_id := "valid_client_id"
+	//valid_client_secret := "secret_password"
+	valid_redirect_uri := "https://localhost:12345"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: "",
+		AllowClientChosenAudiences: true,
+		AllowedRedirectURLRE:       []string{"localhost"}, AllowedRedirectDomains: []string{"localhost"},
+	}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+
+	// now we add a cookie for auth
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	//prepare code challenge
+	var CodeVerifier, _ = cv.CreateCodeVerifier()
+
+	// Create code_challenge with S256 method
+	codeChallenge := CodeVerifier.CodeChallengeS256()
+
+	// add the required params
+	form := url.Values{}
+	form.Add("scope", "openid")
+	form.Add("response_type", "code")
+	form.Add("client_id", valid_client_id)
+	form.Add("redirect_uri", valid_redirect_uri)
+	form.Add("nonce", "123456789")
+	form.Add("state", "this is my state")
+	form.Add("code_challenge_method", "S256")
+	form.Add("code_challenge", codeChallenge)
+	form.Add("audience", "https://api.localhost")
+
+	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	postReq.AddCookie(&authCookie)
+	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%+v", rr)
+	locationText := rr.Header().Get("Location")
+	t.Logf("location=%s", locationText)
+	location, err := url.Parse(locationText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rCode := location.Query().Get("code")
+	t.Logf("rCode=%s", rCode)
+
+	//now we do a token request
+	tokenForm := url.Values{}
+	tokenForm.Add("grant_type", "authorization_code")
+	tokenForm.Add("redirect_uri", valid_redirect_uri)
+	tokenForm.Add("code", rCode)
+	tokenForm.Add("client_id", valid_client_id)
+	tokenForm.Add("code_verifier", CodeVerifier.String())
+
+	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
+	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultAccessToken := tokenResponse{}
+	body := tokenRR.Result().Body
+	err = json.NewDecoder(body).Decode(&resultAccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("resultAccessToken='%+v'", resultAccessToken)
+
+	// lets parse the access token to ensure the requested audience is there.
+	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Debugf(1, "tok=%+v", tok)
+	parsedAccessToken := bearerAccessToken{}
+	if err := state.JWTClaims(tok, &parsedAccessToken); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("parsedAccessToken Data ='%+v'", parsedAccessToken)
+	if len(parsedAccessToken.Audience) != 2 {
+		t.Fatalf("should have had only 2 audiences")
+	}
+	if parsedAccessToken.Audience[0] != "https://api.localhost" {
+		t.Fatalf("0th audience is not the one requested")
+	}
+
+	//now the userinfo
+	userinfoForm := url.Values{}
+	userinfoForm.Add("access_token", resultAccessToken.AccessToken)
+
+	userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
+	userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 }

@@ -7,9 +7,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +41,10 @@ Unc9jsYhX7DR3SV8vcFqduUmSH8vdc/zJEk76T2D+qe1aWqtr84QpxXBTrIKvSXD
 igkmavdG2gu3SpbFzNxuVCrxQ88Kte0xYJTe7vY=
 -----END CERTIFICATE-----`
 
+// Ed25519 ones is copied from lib/certgent_test.go
+
+const testEd25519PublicSSH = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDdNbfR67CJ0/iB5a5lQfZowi3VTrkDu7/rpMNKfHFPs cviecco@cviecco--MacBookPro15`
+
 // we do not support dsa
 const dsaPublicSSH = `ssh-dss AAAAB3NzaC1kc3MAAACBALd5BLQoXxeJHHMQpJzk283nbne65LQiFNPeH6VuNiNEGZI6N3KlQsijYK1oJX2R3oTDEhqEjQsdNa6s++eGbh2z6U3Xwu34odNCFJekKB3qZN7/gqWXzBcgFvir//edTCrN0evzbTedtjz3pB5KlB6OSsnntm/y6E/j45Q3ijGTAAAAFQCjyfpjPi4gmdskz5/cQZbGirVzmwAAAIEAr/LZ7rvsgdnQ1/x5NpJAGEy7QlxfjGfIUo2a57WpDvcjiQmpa9VRCF0ziF3XSv2iDfWZ19qPrbxAp4FIe+xXF3kR0XMmDQzeEZsBzl8pNe7ZxLBHKFX8ZL66VBngYJL2a4v84QoPCpXDJ1hWd7t+okqkFj/a+99cuWj65jk2zLkAAACAPbtpnU39ZioS+9HolaGqudhTfToNAVsVPwj7uiuqiR2OTywbR0WpDPs7zrYsJTzIviuuEXzTVLFWBDR6EwXQdg9Acz+uRRiiZ58e7kN7qv+hQ3FBT3W214A0EVkRJMozowYhzS4HM0x/LrxlNHHFpzMu/njkNfNYDJTK4I47BO0= cviecco@cviecco--MacBookPro15`
 
@@ -46,7 +52,7 @@ const invalidSSHFileBadKeyData = `ssh-rsa AAAAB3NzaC1kc3dddMAAACBALd5BLQoXxeJHHM
 
 const testDuration = time.Duration(120 * time.Second)
 
-/// X509section (this is from certgen TODO: make public)
+// X509section (this is from certgen TODO: make public)
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
@@ -170,4 +176,132 @@ func TestGetValidSSHPublicKey(t *testing.T) {
 		}
 	}
 
+}
+
+func TestGenSSHEd25519(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	err = state.loadSignersFromPemData([]byte(testSignerPrivateKey), []byte(pkcs8Ed25519PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypePassword)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+
+	// Get request
+	req, err := createKeyBodyRequest("POST", "/certgen/username", testEd25519PublicSSH, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+
+	rr, err := checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := rr.Result()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("EdCert=%s", string(body))
+	if !strings.HasPrefix(string(body), "ssh-ed25519-cert-v01@openssh.com") {
+		t.Fatal("Return valued does not look like ed25519 cert")
+	}
+	// Now we disable the Ed signer and it should fail
+	state.Ed25519Signer = nil
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusUnprocessableEntity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestExpandSSHExtensionsSimple(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
+		sshExtension{
+			Key:   "user:username",
+			Value: "$USERNAME",
+		},
+		sshExtension{
+			Key:   "key:$USERNAME",
+			Value: "value:userkey",
+		},
+	}
+	extensions, err := state.expandSSHExtensions("username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extensions == nil {
+		t.Fatal("nil extension")
+	}
+	compareMap := map[string]string{
+		"user:username": "username",
+		"key:username":  "value:userkey",
+	}
+	if len(state.Config.Base.SSHCertConfig.Extensions) != len(extensions) {
+		t.Fatal("incomplete expansion")
+	}
+	for key, value := range extensions {
+		cValue, ok := compareMap[key]
+		if !ok {
+			t.Fatal("key not found")
+		}
+		if value != cValue {
+			t.Fatal("value does not match")
+		}
+	}
+}
+
+func TestExpandSSHExtensionsReplace(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	expansionTest := map[string]string{
+		"username":  "username",
+		".username": "-username",
+		"username.": "username-",
+		"user.name": "user-name",
+	}
+	for username, expected := range expansionTest {
+		state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
+			sshExtension{
+				Key:   "somekey",
+				Value: "${USERNAME/./-}",
+			},
+		}
+		extensions, err := state.expandSSHExtensions(username)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if extensions == nil {
+			t.Fatal("nil extension")
+		}
+		if len(state.Config.Base.SSHCertConfig.Extensions) != len(extensions) {
+			t.Fatal("incomplete expansion")
+		}
+		for _, value := range extensions {
+			if value != expected {
+				t.Fatalf("Expansion does not match got %s expected %s, username=%s", value, expected, username)
+			}
+		}
+	}
 }

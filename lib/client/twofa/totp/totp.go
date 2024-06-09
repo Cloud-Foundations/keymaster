@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -47,7 +47,7 @@ func doTOTPAuthenticate(
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgentString)
-	
+
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("got error from req")

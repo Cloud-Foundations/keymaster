@@ -2,13 +2,15 @@ package okta
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/simplestorage/memstore"
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
 )
 
 var authnURL string
@@ -62,6 +64,11 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	path := strings.Split(req.URL.Path, "/")
+	//log.Printf("Path=%+v", path)
+	factorId := path[5] // assumes path is  Path=[ api v1 authn factors someid verify]
+	//log.Printf("factorId=%+v", factorId)
+
 	// For now we do TOTP only verifyTOTPFactorDataType
 	var otpData OktaApiVerifyTOTPFactorDataType
 	decoder := json.NewDecoder(req.Body)
@@ -77,6 +84,17 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(invalidOTPStringFromDoc))
 		return
+	case "multi-otp":
+		switch factorId {
+		case "invalid":
+
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(invalidOTPStringFromDoc))
+			return
+		default:
+			writeStatus(w, "SUCCESS")
+			return
+		}
 	case "push-send-waiting":
 		response := OktaApiPushResponseType{
 			Status:       "MFA_CHALLENGE",
@@ -90,6 +108,24 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	case "push-send-accept":
 		writeStatus(w, "SUCCESS")
+		return
+	case "push-send-multi":
+		switch factorId {
+		case "success":
+			log.Printf("multi success!")
+			writeStatus(w, "SUCCESS")
+			return
+		default:
+			response := OktaApiPushResponseType{
+				Status:       "MFA_CHALLENGE",
+				FactorResult: "WAITING",
+			}
+			encoder := json.NewEncoder(w)
+
+			if err := encoder.Encode(response); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}
 		return
 	case "push-send-timeout":
 		response := OktaApiPushResponseType{
@@ -352,7 +388,7 @@ func TestMfaOTPSuccess(t *testing.T) {
 		Embedded: OktaApiEmbeddedDataResponseType{
 			Factor: []OktaApiMFAFactorsType{
 				OktaApiMFAFactorsType{
-					Id:         "someid",
+					Id:         "validId",
 					FactorType: "token:software:totp",
 					VendorName: "OKTA"},
 			}},
@@ -361,6 +397,40 @@ func TestMfaOTPSuccess(t *testing.T) {
 		response: response,
 	}
 	goodOTPUser := "goodOTPUser"
+	pa.recentAuth[goodOTPUser] = expiredUserCachedData
+	valid, err := pa.ValidateUserOTP(goodOTPUser, 123456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !valid {
+		t.Fatal("should have succeeded with good  user")
+	}
+}
+
+func TestMfaMutliOTPSuccess(t *testing.T) {
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := OktaApiPrimaryResponseType{
+		StateToken: "valid-otp",
+		Status:     "MFA_REQUIRED",
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
+					Id:         "invalid",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+				OktaApiMFAFactorsType{
+					Id:         "success",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+			}},
+	}
+	expiredUserCachedData := authCacheData{expires: time.Now().Add(60 * time.Second),
+		response: response,
+	}
+	goodOTPUser := "goodOTPUserMulti"
 	pa.recentAuth[goodOTPUser] = expiredUserCachedData
 	valid, err := pa.ValidateUserOTP(goodOTPUser, 123456)
 	if err != nil {
@@ -449,6 +519,42 @@ func TestMfaPushAccept(t *testing.T) {
 			Factor: []OktaApiMFAFactorsType{
 				OktaApiMFAFactorsType{
 					Id:         "someid",
+					FactorType: "push",
+					VendorName: "OKTA"},
+			}},
+	}
+	userCacheData := authCacheData{
+		expires:  time.Now().Add(60 * time.Second),
+		response: response,
+	}
+	username := "puhsUserAccept"
+	pa.recentAuth[username] = userCacheData
+	pushResult, err := pa.ValidateUserPush(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseApproved {
+		t.Fatal("Was supposed to be approved")
+	}
+}
+
+func TestMfaPushAcceptMulti(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := OktaApiPrimaryResponseType{
+		StateToken: "push-send-multi",
+		Status:     "MFA_REQUIRED",
+		Embedded: OktaApiEmbeddedDataResponseType{
+			Factor: []OktaApiMFAFactorsType{
+				OktaApiMFAFactorsType{
+					Id:         "waiting",
+					FactorType: "push",
+					VendorName: "OKTA"},
+				OktaApiMFAFactorsType{
+					Id:         "success",
 					FactorType: "push",
 					VendorName: "OKTA"},
 			}},

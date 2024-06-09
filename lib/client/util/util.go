@@ -14,9 +14,12 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/user"
+	"runtime"
+	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/net"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
@@ -35,6 +38,70 @@ func getUserCreds(userName string) (password []byte, err error) {
 	return password, nil
 }
 
+func getUserNameAndHomeDir() (string, string, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return "", "", fmt.Errorf("cannot get current user info")
+	}
+	userName := usr.Username
+	if runtime.GOOS == "windows" {
+		splitName := strings.Split(userName, "\\")
+		if len(splitName) == 2 {
+			userName = strings.ToLower(splitName[1])
+		}
+	}
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" {
+		return userName, homeDir, nil
+	}
+	return userName, usr.HomeDir, nil
+}
+
+// will encode key as pkcs8.... camilo needs to test for interop
+func writeSSHKeyPairToFile(privateKeyPath string, identity string,
+	privateKey crypto.Signer, logger log.Logger) (string, error) {
+
+	var encodedSigner []byte
+	var err error
+	var pemBlockType = "PRIVATE KEY"
+	// For Interoperatibility we want to keep using pkcs1 until we can verify pkc8 is good
+	switch v := privateKey.(type) {
+	case *rsa.PrivateKey:
+		pemBlockType = "RSA PRIVATE KEY"
+		encodedSigner = x509.MarshalPKCS1PrivateKey(v)
+	default:
+		encodedSigner, err = x509.MarshalPKCS8PrivateKey(privateKey)
+		if err != nil {
+			return "", err
+		}
+	}
+	err = ioutil.WriteFile(
+		privateKeyPath,
+		pem.EncodeToMemory(&pem.Block{Type: pemBlockType, Bytes: encodedSigner}),
+		0600)
+	if err != nil {
+		logger.Printf("Failed to save privkey")
+	}
+	// generate and write public key
+	pub, err := ssh.NewPublicKey(privateKey.Public())
+	if err != nil {
+		return "", err
+	}
+	marshaledPubKeyBytes := ssh.MarshalAuthorizedKey(pub)
+	marshaledPubKeyBytes = bytes.TrimRight(marshaledPubKeyBytes, "\r\n")
+	var pubKeyBuffer bytes.Buffer
+	_, err = pubKeyBuffer.Write(marshaledPubKeyBytes)
+	if err != nil {
+		return "", err
+	}
+	_, err = pubKeyBuffer.Write([]byte(" " + identity + "\n"))
+	if err != nil {
+		return "", err
+	}
+	pubKeyPath := privateKeyPath + ".pub"
+	return pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
+}
+
 // mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
 func genKeyPair(
 	privateKeyPath string, identity string, logger log.Logger) (
@@ -43,35 +110,11 @@ func genKeyPair(
 	if err != nil {
 		return nil, "", err
 	}
-	// privateKeyPath := BasePath + prefix
-	pubKeyPath := privateKeyPath + ".pub"
-
-	err = ioutil.WriteFile(
-		privateKeyPath,
-		pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}),
-		0600)
-	if err != nil {
-		logger.Printf("Failed to save privkey")
-		return nil, "", err
-	}
-
-	// generate and write public key
-	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	pubKeyPath, err := writeSSHKeyPairToFile(privateKeyPath, identity, privateKey, logger)
 	if err != nil {
 		return nil, "", err
 	}
-	marshaledPubKeyBytes := ssh.MarshalAuthorizedKey(pub)
-	marshaledPubKeyBytes = bytes.TrimRight(marshaledPubKeyBytes, "\r\n")
-	var pubKeyBuffer bytes.Buffer
-	_, err = pubKeyBuffer.Write(marshaledPubKeyBytes)
-	if err != nil {
-		return nil, "", err
-	}
-	_, err = pubKeyBuffer.Write([]byte(" " + identity + "\n"))
-	if err != nil {
-		return nil, "", err
-	}
-	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
+	return privateKey, pubKeyPath, nil
 }
 
 func getHttpClient(tlsConfig *tls.Config,

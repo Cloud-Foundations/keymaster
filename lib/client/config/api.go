@@ -3,14 +3,16 @@ package config
 import (
 	"net/http"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
 type BaseConfig struct {
-	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
-	Username      string `yaml:"username"`
-	FilePrefix    string `yaml:"file_prefix"`
-	AddGroups     bool   `yaml:"add_groups"`
+	Gen_Cert_URLS   string `yaml:"gen_cert_urls"`
+	Username        string `yaml:"username"`
+	FilePrefix      string `yaml:"file_prefix"`
+	AddGroups       bool   `yaml:"add_groups"`
+	WebauthBrowser  string `yaml:"webauth_browser"`
+	AgentConfirmUse bool   `yaml:"agent_confirm_use"`
 }
 
 // AppConfigFile represents a keymaster client configuration file

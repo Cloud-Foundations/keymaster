@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 )
 

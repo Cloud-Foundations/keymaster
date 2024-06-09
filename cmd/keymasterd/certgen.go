@@ -12,14 +12,20 @@ import (
 	"strings"
 	"time"
 
+	"mvdan.cc/sh/v3/shell"
+
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"golang.org/x/crypto/ssh"
 )
 
-const certgenPath = "/certgen/"
+const (
+	certgenPath            = "/certgen/"
+	maxCertificateLifetime = time.Hour * 24
+)
 
 func prependGroups(groups []string, prefix string) []string {
 	if prefix == "" {
@@ -53,12 +59,15 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+	logger.Debugf(1,
+		"Certgen, authenticated at level=%x, username=`%s`, expires=%s",
+		authData.AuthType, authData.Username, authData.ExpiresAt)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -66,64 +75,67 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypePassword {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
+		if certPref == proto.AuthTypeU2F &&
+			((authData.AuthType & AuthTypeU2F) == AuthTypeU2F) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeTOTP && ((authLevel & AuthTypeTOTP) == AuthTypeTOTP) {
+		if certPref == proto.AuthTypeTOTP &&
+			((authData.AuthType & AuthTypeTOTP) == AuthTypeTOTP) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
+		if certPref == proto.AuthTypeSymantecVIP &&
+			((authData.AuthType & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeIPCertificate && ((authLevel & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
+		if certPref == proto.AuthTypeIPCertificate &&
+			((authData.AuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeOkta2FA && ((authLevel & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
+		if certPref == proto.AuthTypeOkta2FA &&
+			((authData.AuthType & AuthTypeOkta2FA) == AuthTypeOkta2FA) {
+			sufficientAuthLevel = true
+		}
+		if certPref == proto.AuthTypeWebauthForCLI &&
+			((authData.AuthType & AuthTypeWebauthForCLI) ==
+				AuthTypeWebauthForCLI) {
 			sufficientAuthLevel = true
 		}
 	}
 	// if you have u2f you can always get the cert
-	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
+	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {
 		sufficientAuthLevel = true
 	}
 
 	if !sufficientAuthLevel {
 		logger.Printf("Not enough auth level for getting certs")
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+			"Not enough auth level for getting certs")
 		return
 	}
 
 	targetUser := r.URL.Path[len(certgenPath):]
-	if authUser != targetUser {
+	if authData.Username != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("User %s asking for creds for %s", authUser, targetUser)
+		logger.Debugf(1, "User %s asking for creds for %s",
+			authData.Username, targetUser)
 		return
 	}
-	logger.Debugf(3, "auth succedded for %s", authUser)
+	targetUser = authData.Username
+	logger.Debugf(3, "auth succedded for %s", authData.Username)
 
-	switch r.Method {
-	case "GET":
-		logger.Debugf(3, "Got client GET connection")
-		err = r.ParseForm()
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-			return
-		}
-	case "POST":
-		logger.Debugf(3, "Got client POST connection")
-		err = r.ParseMultipartForm(1e7)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-			return
-		}
-	default:
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
 
-	duration := time.Duration(24 * time.Hour)
+	logger.Debugf(3, "Got client POST connection")
+	err = r.ParseMultipartForm(1e7)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return
+	}
+	duration := maxCertificateLifetime
 	if formDuration, ok := r.Form["duration"]; ok {
 		stringDuration := formDuration[0]
 		newDuration, err := time.ParseDuration(stringDuration)
@@ -140,16 +152,20 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		}
 		duration = newDuration
 	}
+	maxDuration := time.Until(authData.IssuedAt.Add(maxCertificateLifetime))
+	if duration > maxDuration {
+		duration = maxDuration
+	}
 
 	certType := "ssh"
 	if val, ok := r.Form["type"]; ok {
 		certType = val[0]
 	}
-	logger.Printf("cert type =%s", certType)
+	logger.Debugf(1, "cert type =%s", certType)
 
 	switch certType {
 	case "ssh":
-		state.postAuthSSHCertHandler(w, r, targetUser, keySigner, duration)
+		state.postAuthSSHCertHandler(w, r, targetUser, duration)
 		return
 	case "x509":
 		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, false)
@@ -192,68 +208,103 @@ func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
 	return userSSH, nil, nil
 }
 
+func (state *RuntimeState) expandSSHExtensions(username string) (map[string]string, error) {
+	mapper := func(placeholderName string) string {
+		switch placeholderName {
+		case "USERNAME":
+			return username
+		}
+		return ""
+	}
+	userExtensions := make(map[string]string)
+	for _, extension := range state.Config.Base.SSHCertConfig.Extensions {
+		key, err := shell.Expand(extension.Key, mapper)
+		if err != nil {
+			return nil, err
+		}
+		value, err := shell.Expand(extension.Value, mapper)
+		if err != nil {
+			return nil, err
+		}
+		userExtensions[key] = value
+	}
+
+	return userExtensions, nil
+}
+
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
-	keySigner crypto.Signer, duration time.Duration) {
-	signer, err := ssh.NewSignerFromSigner(keySigner)
+	duration time.Duration) {
+
+	var certString string
+	var cert ssh.Certificate
+	if r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	file, _, err := r.FormFile("pubkeyfile")
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
+		return
+	}
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(file)
+	userPubKey := buf.String()
+
+	sshUserPublicKey, userErr, err := getValidSSHPublicKey(userPubKey)
+	if err != nil {
+		logger.Debugf(1, "postAuthSSHCertHandler:  getValidSSHPublicKey err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if userErr != nil {
+		logger.Printf("validating Error err: %s", userErr)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
+		return
+	}
+	var cryptoSigner crypto.Signer
+	switch sshUserPublicKey.Type() {
+	case ssh.KeyAlgoED25519:
+		if state.Ed25519Signer == nil {
+			logger.Printf("requesting an Ed25519 cert, but no such ca defined")
+			state.writeFailureResponse(w, r, http.StatusUnprocessableEntity, "key type not allowed")
+			return
+		}
+		cryptoSigner = state.Ed25519Signer
+	default:
+		cryptoSigner = state.Signer
+	}
+	signer, err := ssh.NewSignerFromSigner(cryptoSigner)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("Signer failed to load")
 		return
 	}
-
-	var certString string
-	var cert ssh.Certificate
-	switch r.Method {
-	case "GET":
-		certString, cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-	case "POST":
-		file, _, err := r.FormFile("pubkeyfile")
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
-			return
-		}
-		defer file.Close()
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(file)
-		userPubKey := buf.String()
-
-		_, userErr, err := getValidSSHPublicKey(userPubKey)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if userErr != nil {
-			logger.Printf("validating Error err: %s", userErr)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, userErr.Error())
-			return
-		}
-
-		certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("signUserPubkey Err")
-			return
-		}
-
-	default:
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+	extensions, err := state.expandSSHExtensions(targetUser)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Extensions Failed to expand")
 		return
-
 	}
+	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration, extensions)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("signUserPubkey Err")
+		return
+	}
+
 	eventNotifier.PublishSSH(cert.Marshal())
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
+	clientIpAddress := util.GetRequestRealIp(r)
 
-	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+cert.Type()+"-cert.pub\"")
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", certString)
-	logger.Printf("Generated SSH Certifcate for %s. Serial:%d", targetUser, cert.Serial)
+	logger.Printf("Generated SSH Certificate for %s (from %s) . Serial: %d",
+		targetUser, clientIpAddress, cert.Serial)
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
@@ -316,6 +367,14 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 	return nil, nil
 }
 
+func (state *RuntimeState) getServiceMethods(username string) (
+	[]string, error) {
+	if state.gitDB == nil {
+		return nil, nil
+	}
+	return state.gitDB.GetUserServiceMethods(username)
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
@@ -329,7 +388,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		logger.Debugf(2, "Groups needed for cert")
 		userGroups, err = state.getUserGroups(targetUser)
 		if err != nil {
-			logger.Println(err)
+			logger.Printf("Cannot get user groups: %s\n", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
@@ -341,73 +400,88 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	if kubernetesHack {
 		organizations = userGroups
 	}
+	serviceMethods, err := state.getServiceMethods(targetUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 	var cert string
-	switch r.Method {
-	case "POST":
-		file, _, err := r.FormFile("pubkeyfile")
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Missing public key file")
-			return
-		}
-		defer file.Close()
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(file)
-
-		block, _ := pem.Decode(buf.Bytes())
-		if block == nil || block.Type != "PUBLIC KEY" {
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Invalid File, Unable to decode pem")
-			logger.Printf("invalid file, unable to decode pem")
-			return
-		}
-		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusBadRequest,
-				"Cannot parse public key")
-			logger.Printf("Cannot parse public key")
-			return
-		}
-		validKey, err := certgen.ValidatePublicKeyStrength(userPub)
-		if err != nil {
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		if !validKey {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
-			logger.Printf("Invalid File, Check Key strength/key type")
-			return
-		}
-		caCert, err := x509.ParseCertificate(state.caCertDer)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("Cannot parse CA Der data")
-			return
-		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-			keySigner, state.KerberosRealm, duration, groups, organizations)
-		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			logger.Printf("Cannot Generate x509cert")
-			return
-		}
-		eventNotifier.PublishX509(derCert)
-		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
-			Bytes: derCert}))
-
-	default:
+	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
-
 	}
+
+	file, _, err := r.FormFile("pubkeyfile")
+	if err != nil {
+		logger.Printf("Cannot get public key from form: %s\n", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Missing public key file")
+		return
+	}
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(file)
+
+	block, _ := pem.Decode(buf.Bytes())
+	if block == nil || block.Type != "PUBLIC KEY" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Invalid File, Unable to decode pem")
+		logger.Printf("invalid file, unable to decode pem")
+		return
+	}
+	userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			"Cannot parse public key")
+		logger.Printf("Cannot parse public key: %s\n", err)
+		return
+	}
+	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+	if err != nil {
+		logger.Printf("Cannot validate public key strength: %s\n", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if !validKey {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
+		logger.Printf("Invalid File, Check Key strength/key type")
+		return
+	}
+	caCert, err := x509.ParseCertificate(state.caCertDer)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot parse CA Der: %s\n data", err)
+		return
+	}
+	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
+		keySigner, state.KerberosRealm, duration, groups, organizations,
+		serviceMethods, logger)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot Generate x509cert: %s\n", err)
+		return
+	}
+	parsedCert, err := x509.ParseCertificate(derCert)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Cannot Parse Generated x509cert: %s\n", err)
+		return
+	}
+
+	eventNotifier.PublishX509(derCert)
+	cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
+		Bytes: derCert}))
+
 	metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
+
+	clientIpAddress := util.GetRequestRealIp(r)
 
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	logger.Printf("Generated x509 Certifcate for %s", targetUser)
+	logger.Printf("Generated x509 Certificate for %s (from %s). Serial: %s",
+		targetUser, clientIpAddress, parsedCert.SerialNumber.String())
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()

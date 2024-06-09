@@ -1,18 +1,28 @@
 package main
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"golang.org/x/crypto/ssh"
+
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
+	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -62,13 +72,6 @@ func init() {
 	// we create other testing goroutines. By sleeping we yield the cpu and allow
 	// ListenAndServe to progress
 	time.Sleep(20 * time.Millisecond)
-}
-
-func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
-	_, _, err := getUserNameAndHomeDir(testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestGetHttpClient(t *testing.T) {
@@ -164,7 +167,7 @@ func TestMost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,5 +199,111 @@ func TestMost(t *testing.T) {
 		appConfig,
 		client,
 		logger)
+
+}
+
+func goCertToFileString(c ssh.Certificate, username string) (string, error) {
+	certBytes := c.Marshal()
+	encoded := base64.StdEncoding.EncodeToString(certBytes)
+	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
+	return c.Type() + " " + encoded + " " + fileComment, nil
+}
+
+func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
+	//step 1: generate
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshPublic, err := ssh.NewPublicKey(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := ssh.Certificate{
+		Key:             sshPublic,
+		ValidPrincipals: []string{"username"},
+		ValidAfter:      uint64(time.Now().Unix()) - 10,
+		ValidBefore:     uint64(time.Now().Unix()) + 10,
+	}
+	sshSigner, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cert.SignCert(rand.Reader, sshSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, err := goCertToFileString(cert, "username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This test needs a running agent... and remote windows
+	// builders do NOT have this... thus we need to abort this test
+	// until we have a way to NOT timeout on missing agent in
+	// windows
+	if runtime.GOOS == "windows" {
+		return
+	}
+
+	/////////Now actually do the work
+	oldSSHSock, ok := os.LookupEnv("SSH_AUTH_SOCK")
+	if ok {
+		os.Unsetenv("SSH_AUTH_SOCK")
+		defer os.Setenv("SSH_AUTH_SOCK", oldSSHSock)
+	}
+	tempDir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir) // clean up
+	privateKeyPath := filepath.Join(tempDir, "test")
+
+	err = insertSSHCertIntoAgentORWriteToFilesystem([]byte(certString),
+		privateKey,
+		"someprefix",
+		"username",
+		privateKeyPath,
+		false,
+		testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	//now for now we only check that the file exists
+	_, err = os.Stat(privateKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(privateKeyPath)
+	// TODO: on linux/macos create agent + unix socket and pass that
+
+}
+
+func TestMainSimple(t *testing.T) {
+	logger := testlogger.New(t)
+	var b bytes.Buffer
+
+	// version
+	*printVersion = true
+	err := mainWithError(&b, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("versionout='%s'", b.String())
+	// TODO: compara out to version string
+	*printVersion = false
+	b.Reset()
+
+	// checkDevices
+	*checkDevices = true
+	// As of May 2024, no devices returns an error on checkForDevices
+	// Because this will run inside or outside testing infra, we can
+	// only check if the error is consistent if any
+	checkDevRvalue := u2f.CheckU2FDevices(logger)
+	err = mainWithError(&b, logger)
+	if err != nil && (err.Error() != checkDevRvalue.Error()) {
+		t.Fatalf("manual an executed error mismatch mainerr=%s; chdevDerr=%s", err, checkDevRvalue)
+	}
+	*checkDevices = false
+	b.Reset()
 
 }

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
 var (
@@ -21,18 +21,28 @@ var (
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
 
-// GetCertFromTargetUrls gets a signed cert from the given target URLs.
-func GetCertFromTargetUrls(
-	signer crypto.Signer,
+// AuthenticateToTargetUrls does an authentication to the keymasted server
+// it performs 2fa if needed using the server side specified methods
+// it assumes the http client has a valid cookiejar
+func AuthenticateToTargetUrls(
 	userName string,
 	password []byte,
 	targetUrls []string,
-	skipu2f bool,
-	addGroups bool,
+	skip2fa bool,
 	client *http.Client,
 	userAgentString string,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
-	return getCertFromTargetUrls(
-		signer, userName, password, targetUrls, skipu2f, addGroups,
-		client, userAgentString, logger)
+	logger log.DebugLogger) (baseUrl string, err error) {
+	return authenticateToTargetUrls(userName, password, targetUrls, skip2fa, client,
+		userAgentString, logger)
+}
+
+// After a client has authenticated it can call DoCertRequest for the appropiate type
+func DoCertRequest(signer crypto.Signer, client *http.Client, userName string,
+	baseUrl,
+	certType string,
+	addGroups bool,
+	userAgentString string, logger log.DebugLogger) ([]byte, error) {
+	return doCertRequest(signer, client, userName, baseUrl,
+		certType, addGroups,
+		userAgentString, logger)
 }

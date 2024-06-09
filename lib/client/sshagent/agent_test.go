@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log/testlogger"
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/npipe"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"

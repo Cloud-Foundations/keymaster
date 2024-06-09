@@ -11,6 +11,7 @@ const (
 	AuthTypeTOTP          = "TOTP"
 	AuthTypeOkta2FA       = "Okta2FA"
 	AuthTypeBootstrapOTP  = "BootstrapOTP"
+	AuthTypeWebauthForCLI = "WebauthForCLI"
 )
 
 type LoginResponse struct {
