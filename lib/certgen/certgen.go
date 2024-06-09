@@ -243,7 +243,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 // of the sha256sum of the rsa signature of the sha256 of the
 // common name. This to have a stable, key dependent
 // serial number.
-// Howeve this was a bad idea as:
+// However this was a bad idea as:
 // 1. Not all signers can use sha256
 // 2. Not all signatures are stable.
 //
