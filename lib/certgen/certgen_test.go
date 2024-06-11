@@ -578,9 +578,10 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 		}
 		t.Logf("got '%s'", pemCert)
 		t.Logf("certSerial='%s'", cert.Subject.SerialNumber)
-		if signerIndex == 1 {
+		if signerIndex == 0 { //
+			//TODO we need a better check for when using the rsa private key
 			if cert.Subject.SerialNumber != testSignerSerialNumberCompatValue {
-
+				t.Fatal("rsa compat serial number does not match")
 			}
 		}
 
