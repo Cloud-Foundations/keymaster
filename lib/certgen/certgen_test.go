@@ -555,12 +555,14 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	// 6. kerberos realm info!
 }
 
+const testSignerSerialNumberCompatValue = "qQn21Wskjm7BubrPwWnFh4swblslkB/H+LxFqOSvl3I="
+
 // GenSelfSignedCACert
 func TestGenSelfSignedCACertGood(t *testing.T) {
 	validPemKeys := []string{testSignerPrivateKey, pkcs8ecPrivateKey, pkcs8Ed25519PrivateKey}
 	publcKeyPems := []string{testUserPEMPublicKey, testP224PublicKey}
 
-	for _, signerPem := range validPemKeys {
+	for signerIndex, signerPem := range validPemKeys {
 		caPriv, err := GetSignerFromPEMBytes([]byte(signerPem))
 		if err != nil {
 			t.Fatal(err)
@@ -575,6 +577,12 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("got '%s'", pemCert)
+		t.Logf("certSerial='%s'", cert.Subject.SerialNumber)
+		if signerIndex == 1 {
+			if cert.Subject.SerialNumber != testSignerSerialNumberCompatValue {
+
+			}
+		}
 
 		derCaCert2, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
 		if err != nil {
