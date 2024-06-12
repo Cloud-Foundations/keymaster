@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -13,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	htmltemplate "html/template"
+	"io/fs"
 	"io/ioutil"
 	stdlog "log"
 	"net"
@@ -280,6 +282,18 @@ var (
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier *eventnotifier.EventNotifier
 )
+
+//go:embed data/*
+var compiledData embed.FS
+
+// This function is just to "remove" the /data path of the embeddedFS
+func getCompiledDataFS() http.FileSystem {
+	fsys, err := fs.Sub(compiledData, "data")
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return http.FS(fsys)
+}
 
 func cacheControlHandler(h http.Handler) http.Handler {
 	maxAgeSeconds := maxCacheLifetime / time.Second
@@ -1823,7 +1837,8 @@ func main() {
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir(staticFilesPath)))))
 	serviceMux.Handle("/static/compiled/", cacheControlHandler(
-		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile()))))
+		http.StripPrefix("/static/compiled/",
+			http.FileServer(getCompiledDataFS()))))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
