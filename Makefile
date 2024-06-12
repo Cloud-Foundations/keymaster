@@ -48,8 +48,6 @@ all:	install-client
 build:	prebuild
 	go build ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) ./...
 
-cmd/keymasterd/binData.go:
-	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
 
 keymaster.spec:
     ifeq ($(OS), Windows_NT)
@@ -58,7 +56,7 @@ keymaster.spec:
 		sed 's/{{VERSION}}/$(VERSION)/g' keymaster.spec.tpl > keymaster.spec;
     endif
 
-prebuild: keymaster.spec cmd/keymasterd/binData.go
+prebuild: keymaster.spec
 
 install-client:	prebuild
 	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}"
