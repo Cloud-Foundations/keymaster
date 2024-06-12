@@ -250,18 +250,13 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 // Thus we will keep the rsa behaviour for compatiblity reasons
 // But for all other keys we will just return the pkix asn1 encoding
 // of the public key
-func getKMCompatbileKeyStableBytesForSerial(priv interface{}, commonName []byte) ([]byte, error) {
-	switch v := priv.(type) {
-	case *rsa.PrivateKey:
+func getKMCompatbileKeyStableBytesForSerial(signer crypto.Signer, commonName []byte) ([]byte, error) {
+	swRSA, ok := signer.(*rsa.PrivateKey)
+	if ok {
 		sum := sha256.Sum256(commonName)
-		return v.Sign(rand.Reader, sum[:], crypto.SHA256)
-	case *ecdsa.PrivateKey:
-		return x509.MarshalPKIXPublicKey(v.Public())
-	case ed25519.PrivateKey:
-		return x509.MarshalPKIXPublicKey(v.Public())
-	default:
-		return nil, fmt.Errorf("Type not recognized  %T!\n", v)
+		return swRSA.Sign(rand.Reader, sum[:], crypto.SHA256)
 	}
+	return x509.MarshalPKIXPublicKey(signer.Public())
 }
 
 // return both an internal representation an the pem representation of the string
