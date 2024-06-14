@@ -76,6 +76,7 @@ get-deps:
 clean:
 	rm -f bin/*
 	rm -f keymaster-*.tar.gz
+	rm -f keymaster.spec
 
 ${BINARY}-${VERSION}.tar.gz:	prebuild
 	mkdir ${BINARY}-${VERSION}
