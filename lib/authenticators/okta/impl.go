@@ -202,7 +202,7 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 	if userResponse == nil {
 		return PushResponseRejected, nil
 	}
-	pa.logger.Debugf(2, "oktaAuthenticator: validsteUserPush: after getting userResponse=%+v", userResponse)
+	pa.logger.Debugf(2, "oktaAuthenticator: validateUserPush: after getting userResponse=%+v", userResponse)
 	rvalue := PushResponseRejected
 	for _, factor := range userResponse.Embedded.Factor {
 		if !(factor.FactorType == "push" && factor.VendorName == "OKTA") {

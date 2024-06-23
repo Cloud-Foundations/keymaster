@@ -101,7 +101,7 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 	}
 	if len(userResponse.Embedded.Factor) < 1 {
 		logger.Printf("oktaPushStartHandler: user %s does not have valid authenticators", authData.Username)
-		logger.Debugf(2, "oktaPushStartHandler: usedata for broken user%s is :%s", authData.Username, userResponse)
+		logger.Debugf(2, "oktaPushStartHandler: userdata for broken user%s is :%s", authData.Username, userResponse)
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "No valid MFA authenticators available")
 		return
 	}
