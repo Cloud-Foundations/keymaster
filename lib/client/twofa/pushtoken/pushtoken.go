@@ -154,7 +154,7 @@ func genericAuthenticateWithToken(
 	pushType string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	logger.Printf("top of genericAuthenticateWithToken")
+	logger.Debugf(1, "top of genericAuthenticateWithToken")
 
 	// Read VIP token from client
 

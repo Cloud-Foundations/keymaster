@@ -7,15 +7,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/net/rrdialer"
@@ -38,48 +41,46 @@ const (
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
+const defaultConfigHost = ""
 
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
 	// binary. Use only from the Usage() function.
 	Version         = defaultVersionNumber
+	defaultHost     = defaultConfigHost
 	userAgentString = userAgentAppName
 )
 
 var (
+	checkDevices = flag.Bool("checkDevices", false,
+		"CheckU2F devices in your system")
 	configFilename = flag.String("config",
 		filepath.Join(getUserHomeDir(), keymasterSubdir, "client_config.yml"),
 		"The filename of the configuration")
-	rootCAFilename = flag.String("rootCAFilename", "",
-		"(optional) name for using non OS root CA to verify TLS connections")
 	configHost = flag.String("configHost", "",
 		"Get a bootstrap config from this host")
-	cliUsername  = flag.String("username", "", "username for keymaster")
-	checkDevices = flag.Bool("checkDevices", false,
-		"CheckU2F devices in your system")
 	cliFilePrefix = flag.String("fileprefix", "",
 		"Prefix for the output files")
+	rootCAFilename = flag.String("rootCAFilename", "",
+		"(optional) name for using non OS root CA to verify TLS connections")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
+	cliUsername  = flag.String("username", "", "username for keymaster")
+	printVersion = flag.Bool("version", false,
+		"Print version and exit")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
 
 	FilePrefix = "keymaster"
 )
 
-func getUserHomeDir() (homeDir string) {
-	homeDir = os.Getenv("HOME")
-	if homeDir != "" {
-		return homeDir
-	}
-	usr, err := user.Current()
+func getUserHomeDir() string {
+	_, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
-		return homeDir
+		panic(err)
 	}
-	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	homeDir = usr.HomeDir
-	return
+	return homeDir
 }
 
 func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, error) {
@@ -99,28 +100,6 @@ func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, 
 	return rootCAs, nil
 }
 
-func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string, err error) {
-	usr, err := user.Current()
-	if err != nil {
-		logger.Printf("cannot get current user info")
-		return "", "", err
-	}
-	userName = usr.Username
-
-	if runtime.GOOS == "windows" {
-		splitName := strings.Split(userName, "\\")
-		if len(splitName) == 2 {
-			userName = strings.ToLower(splitName[1])
-		}
-	}
-
-	homeDir, err = util.GetUserHomeDir(usr)
-	if err != nil {
-		return "", "", err
-	}
-	return
-}
-
 func loadConfigFile(client *http.Client, logger log.Logger) (
 	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
@@ -136,10 +115,10 @@ func loadConfigFile(client *http.Client, logger log.Logger) (
 		if err != nil {
 			logger.Fatal(err)
 		}
-	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
+	} else if len(defaultHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, client, logger)
+				*configFilename, defaultHost, client, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -169,6 +148,16 @@ func preConnectToHost(baseUrl string, client *http.Client, logger log.DebugLogge
 		logger.Debugf(1, "bad response code on pre-connect status=%d", response.StatusCode)
 		return err
 	}
+	logger.Debugf(3, "Success pre-connecting to: '%s'\n", baseUrl)
+	if response.TLS != nil {
+		logger.Debugf(3, "Preconnect is https")
+		for chainIndex, chainList := range response.TLS.VerifiedChains {
+			for index, cert := range chainList {
+				logger.Debugf(3, "Pre-connect VerifiedChain[%d]Subject[%d] = %s",
+					chainIndex, index, cert.Subject.String())
+			}
+		}
+	}
 	return nil
 }
 
@@ -196,7 +185,7 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 	return fmt.Errorf("Cannot connect to any keymaster Server")
 }
 
-const rsaKeySize = 2048
+const rsaKeySize = 3072
 
 func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
@@ -271,9 +260,29 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	filePrefix string,
 	userName string,
 	privateKeyPath string,
+	confirmBeforeUse bool,
 	logger log.DebugLogger) (err error) {
+
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
+	if err != nil {
+		logger.Println(err)
+		return err
+	}
+	sshCert, ok := pubKey.(*ssh.Certificate)
+	if !ok {
+		return fmt.Errorf("It is not a certificate")
+	}
+	comment := filePrefix + "-" + userName
+	keyToAdd := agent.AddedKey{
+		PrivateKey:       signer,
+		Certificate:      sshCert,
+		Comment:          comment,
+		LifetimeSecs:     uint32((*twofa.Duration).Seconds()),
+		ConfirmBeforeUse: confirmBeforeUse,
+	}
+
 	//comment should be based on key type?
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, uint32((*twofa.Duration).Seconds()), logger)
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -282,7 +291,10 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 	// barfs on timeouts missing, so we rety without a timeout in case
 	// we are on windows OR we have an agent running on windows thar is forwarded
 	// to us.
-	err = sshagent.UpsertCertIntoAgent(certText, signer, filePrefix+"-"+userName, 0, logger)
+	keyToAdd.LifetimeSecs = 0
+	// confirmation is also broken on windows, but since it is an opt-in security
+	// feature we never change the user preference
+	err = sshagent.WithAddedKeyUpsertCertIntoAgent(keyToAdd, logger)
 	if err == nil {
 		return nil
 	}
@@ -391,6 +403,7 @@ func setupCerts(
 	}
 	logger.Debugf(0, "certificates successfully generated")
 
+	confirmKeyUse := configContents.Base.AgentConfirmUse
 	// Time to write certs and keys
 	// old agents do not understand sha2 certs, so we inject Ed25519 first
 	// if present
@@ -400,6 +413,7 @@ func setupCerts(
 			FilePrefix+"-ed25519",
 			userName,
 			sshKeyPath+"-ed25519",
+			confirmKeyUse,
 			logger)
 		if err != nil {
 			return err
@@ -410,6 +424,7 @@ func setupCerts(
 		FilePrefix+"-rsa",
 		userName,
 		sshKeyPath+"-rsa",
+		confirmKeyUse,
 		logger)
 	if err != nil {
 		return err
@@ -463,7 +478,7 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	}
 	if *roundRobinDialer {
 		if rrDialer, err := rrdialer.New(rawDialer, "", logger); err != nil {
-			logger.Fatalln(err)
+			return nil, err
 		} else {
 			defer rrDialer.WaitForBackgroundResults(time.Second)
 			dialer = rrDialer
@@ -481,28 +496,34 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
+// We assume here flags are parsed
+func mainWithError(stdout io.Writer, logger log.DebugLogger) error {
+	if *printVersion {
+		fmt.Fprintln(stdout, Version)
+		return nil
+	}
 	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	client, err := getHttpClient(rootCAs, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
-		return
+		err = u2f.CheckU2FDevices(logger)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	computeUserAgent()
-	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	config := loadConfigFile(client, logger)
+	logger.Debugf(3, "loaded Config=%+v", config)
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
 		userName = config.Base.Username
@@ -523,7 +544,19 @@ func main() {
 		err = setupCerts(userName, homeDir, config, client, logger)
 	}
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	logger.Printf("Success")
+	return nil
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+	err := mainWithError(os.Stdout, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 }

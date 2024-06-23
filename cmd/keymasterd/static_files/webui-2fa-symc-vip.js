@@ -28,7 +28,7 @@
       xhr.onreadystatechange = function() {
           if (this.readyState == 4 && this.status == 200) {
               // Action to be performed when the document is read;
-              cosole.log("success vip push start")
+              console.log("success vip push start")
           }
       };
       xhr.open("GET", "/api/v0/vipPushStart", true);

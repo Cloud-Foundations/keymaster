@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/time/rate"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
@@ -169,7 +171,10 @@ func setupPasswdFile() (f *os.File, err error) {
 func setupValidRuntimeStateSigner(t *testing.T) (
 	*RuntimeState, *os.File, error) {
 	logger := testlogger.New(t)
-	state := RuntimeState{logger: logger}
+	state := RuntimeState{
+		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
+		logger:                       logger,
+	}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {

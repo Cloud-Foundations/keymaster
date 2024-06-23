@@ -19,7 +19,6 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-	"github.com/mendsley/gojwk"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -77,28 +76,22 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	out.WriteTo(w)
 }
 
-type jwsKeyList struct {
-	Keys []*gojwk.Key `json:"keys"`
-}
-
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	var currentKeys jwsKeyList
+	var currentKeys jose.JSONWebKeySet
 	for _, key := range state.KeymasterPublicKeys {
-		jwkKey, err := gojwk.PublicKey(key)
-		if err != nil {
-			log.Printf("error getting key idpOpenIDCJWKSHandler: %s", err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
-			return
-		}
-		jwkKey.Kid, err = getKeyFingerprint(key)
+		kid, err := getKeyFingerprint(key)
 		if err != nil {
 			log.Printf("error computing key fingerprint in  idpOpenIDCJWKSHandler: %s", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
 			return
+		}
+		jwkKey := jose.JSONWebKey{
+			Key:   key,
+			KeyID: kid,
 		}
 		currentKeys.Keys = append(currentKeys.Keys, jwkKey)
 	}
@@ -158,15 +151,15 @@ func (state *RuntimeState) idpOpenIDCGetClientConfig(client_id string) (*OpenIDC
 // 1. redirect_urls scheme MUST be https (to prevent code snooping).
 // 2. redirect_urls MUST not include a query  (to prevent stealing of code with faulty clients (open redirect))
 // 3. redirect_url path MUST NOT contain ".." to prevent path traversal attacks
-func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, error) {
+func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (bool, *url.URL, error) {
 	if len(client.AllowedRedirectDomains) < 1 && len(client.AllowedRedirectURLRE) < 1 {
-		return false, nil
+		return false, nil, nil
 	}
 	matchedRE := false
 	for _, re := range client.AllowedRedirectURLRE {
 		matched, err := regexp.MatchString(re, redirectUrl)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if matched {
 			matchedRE = true
@@ -176,20 +169,20 @@ func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (b
 	parsedURL, err := url.Parse(redirectUrl)
 	if err != nil {
 		logger.Debugf(1, "user passed unparsable url as string err = %s", err)
-		return false, nil
+		return false, nil, nil
 	}
 	if parsedURL.Scheme != "https" {
-		return false, nil
+		return false, nil, nil
 	}
 	if len(parsedURL.RawQuery) > 0 {
-		return false, nil
+		return false, nil, nil
 	}
 	if strings.Contains(parsedURL.Path, "..") {
-		return false, nil
+		return false, nil, nil
 	}
 	// if no domains, the matchedRE answer is authoritative
 	if len(client.AllowedRedirectDomains) < 1 {
-		return matchedRE, nil
+		return matchedRE, parsedURL, nil
 	}
 	if len(client.AllowedRedirectURLRE) < 1 {
 		matchedRE = true
@@ -202,7 +195,7 @@ func (client *OpenIDConnectClientConfig) CanRedirectToURL(redirectUrl string) (b
 			break
 		}
 	}
-	return matchedDomain && matchedRE, nil
+	return matchedDomain && matchedRE, parsedURL, nil
 }
 
 func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool, error) {
@@ -223,7 +216,6 @@ func (client *OpenIDConnectClientConfig) CorsOriginAllowed(origin string) (bool,
 	return false, nil
 }
 
-//
 func (client *OpenIDConnectClientConfig) RequestedAudienceIsAllowed(audience string) bool {
 	return client.AllowClientChosenAudiences
 }
@@ -396,7 +388,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	requestRedirectURLString := r.Form.Get("redirect_uri")
-	ok, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
+	ok, parsedRedirectURL, err := oidcClient.CanRedirectToURL(requestRedirectURLString)
 	if err != nil {
 		logger.Printf("%v", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -506,7 +498,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
 	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
-	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, requestRedirectURLString)
+	logger.Debugf(0, "IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authData.Username, parsedRedirectURL.Redacted())
 	eventNotifier.PublishServiceProviderLoginEvent(requestRedirectURLString, authData.Username)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
@@ -583,7 +575,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	if r.Form.Get("grant_type") != "authorization_code" {
-		logger.Printf("invalid grant type='%s'", r.Form.Get("grant_type"))
+		logger.Debugf(1, "invalid grant type='%s'", url.QueryEscape(r.Form.Get("grant_type")))
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid grant type")
 		return
 	}
@@ -931,7 +923,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	logger.Debugf(1, "access_token='%s'", accessToken)
 	if accessToken == "" {
-		logger.Printf("access_token='%s'", accessToken)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Missing access token")
 		return

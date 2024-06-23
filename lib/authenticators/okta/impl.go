@@ -175,7 +175,7 @@ func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) 
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusForbidden {
-			return false, nil
+			continue
 		}
 		if resp.StatusCode != http.StatusOK {
 			return false, fmt.Errorf("bad status: %s", resp.Status)
@@ -186,7 +186,7 @@ func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) 
 			return false, err
 		}
 		if response.Status != "SUCCESS" {
-			return false, nil
+			continue
 		}
 		return true, nil
 	}
@@ -203,6 +203,7 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 		return PushResponseRejected, nil
 	}
 	pa.logger.Debugf(2, "oktaAuthenticator: validsteUserPush: after getting userResponse=%+v", userResponse)
+	rvalue := PushResponseRejected
 	for _, factor := range userResponse.Embedded.Factor {
 		if !(factor.FactorType == "push" && factor.VendorName == "OKTA") {
 			continue
@@ -231,7 +232,8 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return PushResponseRejected, fmt.Errorf("bad status: %s", resp.Status)
+			rvalue = PushResponseRejected
+			continue
 		}
 		decoder := json.NewDecoder(resp.Body)
 		var response OktaApiPushResponseType
@@ -244,18 +246,20 @@ func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse
 		case "MFA_CHALLENGE":
 			break
 		default:
-			pa.logger.Printf("invalid status")
-			return PushResponseRejected, nil
+			pa.logger.Printf("invalid Response status (internal)")
+			continue
 		}
+		//
 		switch response.FactorResult {
 		case "WAITING":
-			return PushResponseWaiting, nil
+			rvalue = PushResponseWaiting
+			continue
 		case "TIMEOUT":
-			return PushResonseTimeout, nil
+			rvalue = PushResonseTimeout
 		default:
-			return PushResponseRejected, nil
+			rvalue = PushResponseRejected
 		}
 
 	}
-	return PushResponseRejected, nil
+	return rvalue, nil
 }

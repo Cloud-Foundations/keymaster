@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +30,11 @@ type authInfoJWT struct {
 }
 
 func authenticate(s state) (string, error) {
+	// Fail early if token file cannot be written.
+	dirname := filepath.Dir(s.tokenFilename)
+	if err := os.MkdirAll(dirname, 0755); err != nil {
+		return "", err
+	}
 	gotCookie := make(chan struct{}, 1)
 	s.gotCookie = gotCookie
 	if err := s.startLocalServer(); err != nil {

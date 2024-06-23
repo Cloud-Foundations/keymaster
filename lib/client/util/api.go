@@ -7,21 +7,19 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"net/http"
-	"os/user"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/net"
 )
 
-// GetUserCreds prompts the user for thier password and returns it.
+// GetUserCreds prompts the user for their password and returns it.
 func GetUserCreds(userName string) (password []byte, err error) {
 	return getUserCreds(userName)
 }
 
-// GetUserHomeDir returns the user's home directory.
-func GetUserHomeDir(usr *user.User) (string, error) {
-	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	return usr.HomeDir, nil
+// GetUserNameAndHomeDir gets the user name and home directory.
+func GetUserNameAndHomeDir() (userName, homeDir string, err error) {
+	return getUserNameAndHomeDir()
 }
 
 // GenKeyPair uses internal golang functions to be portable

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	stdlog "log"
 	"net/http"
@@ -69,6 +71,19 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// now add Ed25519 key to set of public keys
+	_, ed25519Priv, err := ed25519.GenerateKey(rand.Reader)
+	state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, ed25519Priv.Public())
+	req2, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req2, state.idpOpenIDCJWKSHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: verify contents returned
+
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
@@ -271,7 +286,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 
 	weakREWithDomains := OpenIDConnectClientConfig{
 		ClientID:               "weakREWithDomains",
-		AllowedRedirectURLRE:   []string{"https://[^/]*\\.example\\.com"},
+		AllowedRedirectURLRE:   []string{"^https://[^/]*\\.example\\.com"},
 		AllowedRedirectDomains: []string{"example.com"},
 	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, weakREWithDomains)
@@ -299,7 +314,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, mustFailURL := range attackerTestURLS {
-			resultMatch, err := client.CanRedirectToURL(mustFailURL)
+			resultMatch, _, err := client.CanRedirectToURL(mustFailURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,12 +323,15 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 		for _, mustPassURL := range expectedSuccessURLS {
-			resultMatch, err := client.CanRedirectToURL(mustPassURL)
+			resultMatch, parsedURL, err := client.CanRedirectToURL(mustPassURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if resultMatch == false {
 				t.Fatal("should have allowed this url")
+			}
+			if parsedURL == nil {
+				t.Fatal("should have parsed this url")
 			}
 		}
 	}

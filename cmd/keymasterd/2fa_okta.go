@@ -124,6 +124,7 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 }
 
 func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf(3, "top of oktaPollCheckHandler")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -160,6 +161,7 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating Okta token")
 			return
 		}
+		logger.Debugf(2, "oktaPollCheckHandler success")
 		w.WriteHeader(http.StatusOK)
 		return
 	case okta.PushResponseWaiting:
