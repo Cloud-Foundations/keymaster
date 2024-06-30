@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -261,23 +262,30 @@ func (state *RuntimeState) loadTemplates() (err error) {
 func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))
-	signerPKFingerprint, err := getKeyFingerprint(state.Signer.Public())
-	if err != nil {
-		return err
+	var localSigners []crypto.Signer
+	if state.Ed25519Signer != nil {
+		localSigners = append(localSigners, state.Ed25519Signer)
 	}
-	found := false
-	for _, key := range state.KeymasterPublicKeys {
-		fp, err := getKeyFingerprint(key)
+	localSigners = append(localSigners, state.Signer)
+	for _, signer := range localSigners {
+		signerPKFingerprint, err := getKeyFingerprint(signer.Public())
 		if err != nil {
 			return err
 		}
-		if signerPKFingerprint == fp {
-			found = true
+		found := false
+		for _, key := range state.KeymasterPublicKeys {
+			fp, err := getKeyFingerprint(key)
+			if err != nil {
+				return err
+			}
+			if signerPKFingerprint == fp {
+				found = true
+			}
 		}
-	}
-	if !found {
-		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
-			state.Signer.Public())
+		if !found {
+			state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
+				signer.Public())
+		}
 	}
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))
@@ -311,6 +319,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 		default:
 			return fmt.Errorf("Ed2559 configred file is not really an Ed25519 key. Type is %T!\n", v)
 		}
+		ed25519CaCertDer, err := generateCADer(state, edSigner)
+		if err != nil {
+			state.logger.Printf("Cannot generate Ed25519 CA DER")
+			return err
+		}
+		state.caCertDer = append(state.caCertDer, ed25519CaCertDer)
 		state.Ed25519Signer = edSigner
 	}
 	signer, err := getSignerFromPEMBytes(signerPem)
@@ -326,11 +340,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 	default:
 		return fmt.Errorf("Signer file is a valid Signer key. Type is %T!\n", v)
 	}
-	state.caCertDer, err = generateCADer(state, signer)
+	caCertDer, err := generateCADer(state, signer)
 	if err != nil {
 		state.logger.Printf("Cannot generate CA DER")
 		return err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
 	// Assignment of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
