@@ -311,6 +311,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 		default:
 			return fmt.Errorf("Ed2559 configred file is not really an Ed25519 key. Type is %T!\n", v)
 		}
+		ed25519CaCertDer, err := generateCADer(state, edSigner)
+		if err != nil {
+			state.logger.Printf("Cannot generate Ed25519 CA DER")
+			return err
+		}
+		state.caCertDer = append(state.caCertDer, ed25519CaCertDer)
 		state.Ed25519Signer = edSigner
 	}
 	signer, err := getSignerFromPEMBytes(signerPem)
@@ -326,11 +332,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 	default:
 		return fmt.Errorf("Signer file is a valid Signer key. Type is %T!\n", v)
 	}
-	state.caCertDer, err = generateCADer(state, signer)
+	caCertDer, err := generateCADer(state, signer)
 	if err != nil {
 		state.logger.Printf("Cannot generate CA DER")
 		return err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
 	// Assignment of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer

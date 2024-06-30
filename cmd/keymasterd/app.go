@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/tls"
@@ -193,7 +194,7 @@ type RuntimeState struct {
 	ClientCAPool                 *x509.CertPool
 	HostIdentity                 string
 	KerberosRealm                *string
-	caCertDer                    []byte
+	caCertDer                    [][]byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
 	localAuthData                map[string]localUserData
@@ -1040,11 +1041,20 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
-		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
-
+		var outCABuf bytes.Buffer
+		for _, derCert := range state.caCertDer {
+			//pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
+			err := pem.Encode(&outCABuf, &pem.Block{Type: "CERTIFICATE", Bytes: derCert})
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing pemCA")
+				return
+			}
+		}
 		w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "%s", pemCert)
+		outCABuf.WriteTo(w)
+		//fmt.Fprintf(w, "%s", pemCert)
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
@@ -1959,11 +1969,13 @@ func main() {
 	if runtimeState.ClientCAPool == nil {
 		runtimeState.ClientCAPool = x509.NewCertPool()
 	}
-	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
-	if err != nil {
-		panic(err)
+	for _, derCert := range runtimeState.caCertDer {
+		myCert, err := x509.ParseCertificate(derCert)
+		if err != nil {
+			panic(err)
+		}
+		runtimeState.ClientCAPool.AddCert(myCert)
 	}
-	runtimeState.ClientCAPool.AddCert(myCert)
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating
