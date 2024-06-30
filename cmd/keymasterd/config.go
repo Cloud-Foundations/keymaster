@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -261,23 +262,30 @@ func (state *RuntimeState) loadTemplates() (err error) {
 func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))
-	signerPKFingerprint, err := getKeyFingerprint(state.Signer.Public())
-	if err != nil {
-		return err
+	var localSigners []crypto.Signer
+	if state.Ed25519Signer != nil {
+		localSigners = append(localSigners, state.Ed25519Signer)
 	}
-	found := false
-	for _, key := range state.KeymasterPublicKeys {
-		fp, err := getKeyFingerprint(key)
+	localSigners = append(localSigners, state.Signer)
+	for _, signer := range localSigners {
+		signerPKFingerprint, err := getKeyFingerprint(signer.Public())
 		if err != nil {
 			return err
 		}
-		if signerPKFingerprint == fp {
-			found = true
+		found := false
+		for _, key := range state.KeymasterPublicKeys {
+			fp, err := getKeyFingerprint(key)
+			if err != nil {
+				return err
+			}
+			if signerPKFingerprint == fp {
+				found = true
+			}
 		}
-	}
-	if !found {
-		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
-			state.Signer.Public())
+		if !found {
+			state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
+				signer.Public())
+		}
 	}
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))

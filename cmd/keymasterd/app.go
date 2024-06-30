@@ -31,6 +31,7 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
@@ -1034,6 +1035,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	target := r.URL.Path[len(publicPath):]
 
+	caPubMaxSeconds := 30
 	switch target {
 	case "loginForm":
 		//fmt.Fprintf(w, "%s", loginFormText)
@@ -1043,7 +1045,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	case "x509ca":
 		var outCABuf bytes.Buffer
 		for _, derCert := range state.caCertDer {
-			//pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
 			err := pem.Encode(&outCABuf, &pem.Block{Type: "CERTIFICATE", Bytes: derCert})
 			if err != nil {
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1051,10 +1052,37 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 		}
-		w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymasterx509CA.pem"`)
 		w.WriteHeader(200)
 		outCABuf.WriteTo(w)
-		//fmt.Fprintf(w, "%s", pemCert)
+	case "sshca":
+		var outCABuf bytes.Buffer
+		for _, pub := range state.KeymasterPublicKeys {
+			sshPub, err := ssh.NewPublicKey(pub)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+			pubBytes := ssh.MarshalAuthorizedKey(sshPub)
+			_, err = fmt.Fprintf(&outCABuf, "%s", pubBytes)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymastersshCCA.pub"`)
+		w.WriteHeader(200)
+		outCABuf.WriteTo(w)
+
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
