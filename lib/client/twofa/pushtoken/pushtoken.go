@@ -108,7 +108,7 @@ func doGenericPushCheck(client *http.Client,
 	baseURL string,
 	pushType string,
 	userAgentString string,
-	codeIsDone chan bool,
+	codeIsDone <-chan bool,
 	logger log.DebugLogger,
 	errorReturnDuration time.Duration) error {
 
