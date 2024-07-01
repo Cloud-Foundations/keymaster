@@ -374,6 +374,7 @@ func setupCerts(
 
 		}
 	}
+	logger.Debugf(1, "SetupCerts: authentication Complete")
 	if err := signers.Wait(); err != nil {
 		return err
 	}

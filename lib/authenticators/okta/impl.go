@@ -122,7 +122,7 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 }
 
-func (pa *PasswordAuthenticator) getValidUserResponse(username string) (*OktaApiPrimaryResponseType, error) {
+func (pa *PasswordAuthenticator) GetValidUserResponse(username string) (*OktaApiPrimaryResponseType, error) {
 	pa.mutex.Lock()
 	userData, ok := pa.recentAuth[username]
 	defer pa.mutex.Unlock()
@@ -138,7 +138,7 @@ func (pa *PasswordAuthenticator) getValidUserResponse(username string) (*OktaApi
 }
 
 func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) (bool, error) {
-	userResponse, err := pa.getValidUserResponse(username)
+	userResponse, err := pa.GetValidUserResponse(username)
 	if err != nil {
 		return false, err
 	}
@@ -195,13 +195,14 @@ func (pa *PasswordAuthenticator) validateUserOTP(username string, otpValue int) 
 }
 
 func (pa *PasswordAuthenticator) validateUserPush(username string) (PushResponse, error) {
-	userResponse, err := pa.getValidUserResponse(username)
+	userResponse, err := pa.GetValidUserResponse(username)
 	if err != nil {
 		return PushResponseRejected, err
 	}
 	if userResponse == nil {
 		return PushResponseRejected, nil
 	}
+	pa.logger.Debugf(2, "oktaAuthenticator: validateUserPush: after getting userResponse=%+v", userResponse)
 	rvalue := PushResponseRejected
 	for _, factor := range userResponse.Embedded.Factor {
 		if !(factor.FactorType == "push" && factor.VendorName == "OKTA") {
