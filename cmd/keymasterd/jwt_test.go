@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/square/go-jose.v2"
-	"gopkg.in/square/go-jose.v2/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int, issuer string, audience []string) (string, error) {
@@ -20,7 +20,7 @@ func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
 	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
-	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
+	return jwt.Signed(signer).Claims(authToken).Serialize()
 }
 
 func TestJWTAudtienceAuthToken(t *testing.T) {
