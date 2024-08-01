@@ -13,8 +13,9 @@ import (
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	cv "github.com/nirasan/go-oauth-pkce-code-verifier"
-	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 func init() {
@@ -159,7 +160,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	}
 	rCode := location.Query().Get("code")
 	t.Logf("rCode=%s", rCode)
-	tok, err := jwt.ParseSigned(rCode)
+	tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +586,7 @@ func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
 	t.Logf("resultAccessToken='%+v'", resultAccessToken)
 
 	// lets parse the access token to ensure the requested audience is there.
-	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken)
+	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		t.Fatal(err)
 	}
