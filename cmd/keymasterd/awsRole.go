@@ -178,12 +178,16 @@ func (state *RuntimeState) generateRoleCert(template *x509.Certificate,
 	if !strong {
 		return nil, fmt.Errorf("key too weak")
 	}
-	caCert, err := x509.ParseCertificate(state.caCertDer)
+	signer, caCertDer, err := state.getSignerX509CAForPublic(publicKey)
+	if err != nil {
+		return nil, err
+	}
+	caCert, err := x509.ParseCertificate(caCertDer)
 	if err != nil {
 		return nil, err
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert,
-		publicKey, state.Signer)
+		publicKey, signer)
 	if err != nil {
 		return nil, err
 	}

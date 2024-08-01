@@ -185,10 +185,11 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 	state.signerPublicKeyToKeymasterKeys()
 
 	//for x509
-	state.caCertDer, err = generateCADer(&state, signer)
+	caCertDer, err := generateCADer(&state, signer)
 	if err != nil {
 		return nil, nil, err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
@@ -512,7 +513,7 @@ func TestPublicHandleLoginForm(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	urlList := []string{"/public/loginForm", "/public/x509ca"}
+	urlList := []string{"/public/loginForm", "/public/x509ca", "/public/sshca"}
 	err = state.loadTemplates()
 	if err != nil {
 		t.Fatal(err)
