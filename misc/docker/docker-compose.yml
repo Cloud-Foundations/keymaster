@@ -1,7 +1,5 @@
 # See ../../docs/docker for more info. This will not work without bootstrapping
 
-version: "2"
-
 services:
   keymaster:
     image: "local/keymaster"

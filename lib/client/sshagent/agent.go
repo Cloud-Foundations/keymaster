@@ -22,7 +22,7 @@ func connectToDefaultSSHAgentLocation() (net.Conn, error) {
 	return net.Dial("unix", socket)
 }
 
-func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, logger log.Logger) (int, error) {
+func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, logger log.DebugLogger) (int, error) {
 	keyList, err := agentClient.List()
 	if err != nil {
 		return 0, err
@@ -31,7 +31,7 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	for _, key := range keyList {
 		pubKey, err := ssh.ParsePublicKey(key.Marshal())
 		if err != nil {
-			logger.Println(err)
+			logger.Debugln(0, err)
 			continue
 		}
 		_, ok := pubKey.(*ssh.Certificate)
@@ -50,12 +50,14 @@ func deleteDuplicateEntries(comment string, agentClient agent.ExtendedAgent, log
 	return deletedCount, nil
 }
 
-func upsertCertIntoAgent(
+func upsertCertIntoAgentConnection(
 	certText []byte,
 	privateKey interface{},
 	comment string,
 	lifeTimeSecs uint32,
-	logger log.Logger) error {
+	confirmBeforeUse bool,
+	conn net.Conn,
+	logger log.DebugLogger) error {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(certText)
 	if err != nil {
 		logger.Println(err)
@@ -65,30 +67,57 @@ func upsertCertIntoAgent(
 	if !ok {
 		return fmt.Errorf("It is not a certificate")
 	}
+	keyToAdd := agent.AddedKey{
+		PrivateKey:       privateKey,
+		Certificate:      sshCert,
+		Comment:          comment,
+		ConfirmBeforeUse: confirmBeforeUse,
+	}
+	return withAddedKeyUpsertCertIntoAgentConnection(keyToAdd, conn, logger)
+}
+
+func upsertCertIntoAgent(
+	certText []byte,
+	privateKey interface{},
+	comment string,
+	lifeTimeSecs uint32,
+	confirmBeforeUse bool,
+	logger log.DebugLogger) error {
 	conn, err := connectToDefaultSSHAgentLocation()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	return upsertCertIntoAgentConnection(certText, privateKey, comment, lifeTimeSecs, confirmBeforeUse, conn, logger)
+}
+
+func withAddedKeyUpsertCertIntoAgentConnection(certToAdd agent.AddedKey, conn net.Conn, logger log.DebugLogger) error {
+	if certToAdd.Certificate == nil {
+		return fmt.Errorf("Needs a certificate to be added")
+	}
 	agentClient := agent.NewClient(conn)
 
 	//delete certs in agent with the same comment
-	_, err = deleteDuplicateEntries(comment, agentClient, logger)
+	_, err := deleteDuplicateEntries(certToAdd.Comment, agentClient, logger)
 	if err != nil {
 		logger.Printf("failed during deletion err=%s", err)
 		return err
 	}
-
-	keyToAdd := agent.AddedKey{
-		PrivateKey:  privateKey,
-		Certificate: sshCert,
-		Comment:     comment,
-	}
 	// NOTE: Current Windows ssh (OpenSSH_for_Windows_7.7p1, LibreSSL 2.6.5)
 	// barfs when encountering a lifetime so we only add it for non-windows
-	if runtime.GOOS != "windows" {
-		keyToAdd.LifetimeSecs = lifeTimeSecs
+	if runtime.GOOS == "windows" {
+		certToAdd.LifetimeSecs = 0
+		certToAdd.ConfirmBeforeUse = false
 	}
 
-	return agentClient.Add(keyToAdd)
+	return agentClient.Add(certToAdd)
+}
+
+func withAddedKeyUpsertCertIntoAgent(certToAdd agent.AddedKey, logger log.DebugLogger) error {
+	conn, err := connectToDefaultSSHAgentLocation()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return withAddedKeyUpsertCertIntoAgentConnection(certToAdd, conn, logger)
 }

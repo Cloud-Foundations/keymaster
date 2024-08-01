@@ -23,7 +23,7 @@ cmd/keymaster/testcerts_test.go: misc/testcerts/localhost.pem misc/testcerts/roo
 	echo "package main\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > cmd/keymaster/testcerts_test.go
 
 misc/testcerts/localhost.pem: misc/testcerts/localhost.csr misc/testcerts/localhost.ext misc/testcerts/root.pem
-	openssl  x509 -req -sha256 -days 7300 -CAkey misc/testcerts/rootkey.pem -CA misc/testcerts/root.pem -set_serial 12312389324 -out misc/testcerts/localhost.pem -in misc/testcerts/localhost.csr  -extfile misc/testcerts/localhost.ext
+	openssl  x509 -req -sha256 -days 730 -CAkey misc/testcerts/rootkey.pem -CA misc/testcerts/root.pem -set_serial 12312389324 -out misc/testcerts/localhost.pem -in misc/testcerts/localhost.csr  -extfile misc/testcerts/localhost.ext
 
 
 misc/testcerts/localhost.csr: misc/testcerts/eekey.pem

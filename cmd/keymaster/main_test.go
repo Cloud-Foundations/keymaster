@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,6 +21,8 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
+	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 )
 
@@ -68,13 +72,6 @@ func init() {
 	// we create other testing goroutines. By sleeping we yield the cpu and allow
 	// ListenAndServe to progress
 	time.Sleep(20 * time.Millisecond)
-}
-
-func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
-	_, _, err := getUserNameAndHomeDir(testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestGetHttpClient(t *testing.T) {
@@ -170,7 +167,7 @@ func TestMost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,6 +237,14 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This test needs a running agent... and remote windows
+	// builders do NOT have this... thus we need to abort this test
+	// until we have a way to NOT timeout on missing agent in
+	// windows
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	/////////Now actually do the work
 	oldSSHSock, ok := os.LookupEnv("SSH_AUTH_SOCK")
 	if ok {
@@ -258,6 +263,7 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 		"someprefix",
 		"username",
 		privateKeyPath,
+		false,
 		testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
@@ -269,5 +275,35 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	}
 	os.Remove(privateKeyPath)
 	// TODO: on linux/macos create agent + unix socket and pass that
+
+}
+
+func TestMainSimple(t *testing.T) {
+	logger := testlogger.New(t)
+	var b bytes.Buffer
+
+	// version
+	*printVersion = true
+	err := mainWithError(&b, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("versionout='%s'", b.String())
+	// TODO: compara out to version string
+	*printVersion = false
+	b.Reset()
+
+	// checkDevices
+	*checkDevices = true
+	// As of May 2024, no devices returns an error on checkForDevices
+	// Because this will run inside or outside testing infra, we can
+	// only check if the error is consistent if any
+	checkDevRvalue := u2f.CheckU2FDevices(logger)
+	err = mainWithError(&b, logger)
+	if err != nil && (err.Error() != checkDevRvalue.Error()) {
+		t.Fatalf("manual an executed error mismatch mainerr=%s; chdevDerr=%s", err, checkDevRvalue)
+	}
+	*checkDevices = false
+	b.Reset()
 
 }

@@ -4,26 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"encoding/xml"
 	"fmt"
-	"io/ioutil"
-	"math/big"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/Cloud-Foundations/keymaster/lib/certgen"
-	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 )
 
 const (
@@ -36,118 +28,25 @@ type assumeRoleCredentialsProvider struct {
 	stsClient   *sts.Client
 }
 
-type getCallerIdentityResult struct {
-	Arn string
-}
-
-type getCallerIdentityResponse struct {
-	GetCallerIdentityResult getCallerIdentityResult
-}
-
-type parsedArnType struct {
-	parsedArn arn.ARN
-	role      string
-}
-
 func awsListAccounts(ctx context.Context, orgClient *organizations.Client) (
 	map[string]struct{}, error) {
-	output, err := orgClient.ListAccounts(ctx,
-		&organizations.ListAccountsInput{})
-	if err != nil {
-		return nil, err
-	}
-	list := make(map[string]struct{}, len(output.Accounts))
-	for _, account := range output.Accounts {
-		list[*account.Id] = struct{}{}
+	list := make(map[string]struct{})
+	var nextToken *string
+	for {
+		output, err := orgClient.ListAccounts(ctx,
+			&organizations.ListAccountsInput{NextToken: nextToken})
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range output.Accounts {
+			list[*account.Id] = struct{}{}
+		}
+		if output.NextToken == nil {
+			break
+		}
+		nextToken = output.NextToken
 	}
 	return list, nil
-}
-
-func getCallerIdentity(header http.Header,
-	validator func(presignedUrl string) (*url.URL, error)) (
-	*parsedArnType, error) {
-	claimedArn := header.Get("claimed-arn")
-	presignedMethod := header.Get("presigned-method")
-	presignedUrl := header.Get("presigned-url")
-	if claimedArn == "" || presignedUrl == "" || presignedMethod == "" {
-		return nil, fmt.Errorf("missing presigned request data")
-	}
-	validatedUrl, err := validator(presignedUrl)
-	if err != nil {
-		return nil, err
-	}
-	presignedUrl = validatedUrl.String()
-	validateReq, err := http.NewRequest(presignedMethod, presignedUrl, nil)
-	if err != nil {
-		return nil, err
-	}
-	validateResp, err := http.DefaultClient.Do(validateReq)
-	if err != nil {
-		return nil, err
-	}
-	defer validateResp.Body.Close()
-	if validateResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("verification request failed")
-	}
-	body, err := ioutil.ReadAll(validateResp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var callerIdentity getCallerIdentityResponse
-	if err := xml.Unmarshal(body, &callerIdentity); err != nil {
-		return nil, err
-	}
-	parsedArn, err := arn.Parse(callerIdentity.GetCallerIdentityResult.Arn)
-	if err != nil {
-		return nil, err
-	}
-	// Normalise to the actual role ARN, rather than an ARN showing how the
-	// credentials were obtained. This mirrors the way AWS policy documents are
-	// written.
-	parsedArn.Region = ""
-	parsedArn.Service = "iam"
-	splitResource := strings.Split(parsedArn.Resource, "/")
-	if len(splitResource) < 2 || splitResource[0] != "assumed-role" {
-		return nil, fmt.Errorf("invalid resource: %s", parsedArn.Resource)
-	}
-	parsedArn.Resource = "role/" + splitResource[1]
-	if parsedArn.String() != claimedArn {
-		return nil, fmt.Errorf("validated ARN: %s != claimed ARN: %s",
-			parsedArn.String(), claimedArn)
-	}
-	return &parsedArnType{
-		parsedArn: parsedArn,
-		role:      splitResource[1],
-	}, nil
-}
-
-// validateStsPresignedUrl will validate if the URL is a valid AWS URL.
-// It returns the parsed, validated URL so that the caller can rebuild the URL
-// (to hopefully silence code security scanners which are dumb).
-func validateStsPresignedUrl(presignedUrl string) (*url.URL, error) {
-	parsedPresignedUrl, err := url.Parse(presignedUrl)
-	if err != nil {
-		return nil, err
-	}
-	if parsedPresignedUrl.Scheme != "https" {
-		return nil, fmt.Errorf("invalid scheme: %s", parsedPresignedUrl.Scheme)
-	}
-	if parsedPresignedUrl.Path != "/" {
-		return nil, fmt.Errorf("invalid path: %s", parsedPresignedUrl.Path)
-	}
-	if !strings.HasPrefix(parsedPresignedUrl.RawQuery,
-		"Action=GetCallerIdentity&") {
-		return nil,
-			fmt.Errorf("invalid action: %s", parsedPresignedUrl.RawQuery)
-	}
-	splitHost := strings.Split(parsedPresignedUrl.Host, ".")
-	if len(splitHost) != 4 ||
-		splitHost[0] != "sts" ||
-		splitHost[2] != "amazonaws" ||
-		splitHost[3] != "com" {
-		return nil, fmt.Errorf("malformed presigned URL host")
-	}
-	return parsedPresignedUrl, nil
 }
 
 func (p *assumeRoleCredentialsProvider) Retrieve(ctx context.Context) (
@@ -187,8 +86,10 @@ func (state *RuntimeState) configureAwsRoles() error {
 		state.Config.AwsCerts.allowedAccounts =
 			make(map[string]struct{})
 		for _, id := range state.Config.AwsCerts.AllowedAccounts {
-			if _, err := strconv.ParseUint(id, 10, 64); err != nil {
-				return fmt.Errorf("accountID: %s is not a number", id)
+			if id != "*" {
+				if _, err := strconv.ParseUint(id, 10, 64); err != nil {
+					return fmt.Errorf("accountID: %s is not a number", id)
+				}
 			}
 			state.Config.AwsCerts.allowedAccounts[id] = struct{}{}
 		}
@@ -216,6 +117,8 @@ func (state *RuntimeState) configureAwsRoles() error {
 		if err != nil {
 			return err
 		}
+		state.logger.Printf("Discovered %d accounts in AWS Organisation\n",
+			len(state.Config.AwsCerts.organisationAccounts))
 		go state.refreshAwsAccounts(ctx, orgClient)
 	}
 	return nil
@@ -241,7 +144,13 @@ func (state *RuntimeState) refreshAwsAccounts(ctx context.Context,
 		if list, err := awsListAccounts(ctx, orgClient); err != nil {
 			state.logger.Println(err)
 		} else {
+			oldLength := len(state.Config.AwsCerts.organisationAccounts)
 			state.Config.AwsCerts.organisationAccounts = list
+			if len(list) != oldLength {
+				state.logger.Printf(
+					"Discovered %d accounts in AWS Organisation, was %d\n",
+					len(list), oldLength)
+			}
 		}
 	}
 }
@@ -252,120 +161,38 @@ func (state *RuntimeState) requestAwsRoleCertificateHandler(
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
+	cert := state.awsCertIssuer.RequestHandler(w, r)
+	if cert != nil {
+		w.(*instrumentedwriter.LoggingWriter).SetUsername(
+			cert.Subject.CommonName)
 	}
-	// First extract and validate AWS credentials claim.
-	callerArn, err := getCallerIdentity(r.Header, validateStsPresignedUrl)
-	if err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusUnauthorized,
-			"verification request failed")
-		return
-	}
-	if !state.checkAwsAccountAllowed(callerArn.parsedArn.AccountID) {
-		state.logger.Printf("AWS account: %s not allowed\n",
-			callerArn.parsedArn.AccountID)
-		state.writeFailureResponse(w, r, http.StatusUnauthorized,
-			"AWS account not allowed")
-	}
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError,
-			"error reading body")
-		return
-	}
-	// Now extract the public key PEM data.
-	block, _ := pem.Decode(body)
-	if block == nil {
-		state.logger.Println("unable to decode PEM block")
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"invalid PEM block")
-		return
-	}
-	if block.Type != "PUBLIC KEY" {
-		state.logger.Printf("unsupport PEM type: %s\n", block.Type)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"unsupported PEM type")
-		return
-	}
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "invalid DER")
-		return
-	}
-	strong, err := certgen.ValidatePublicKeyStrength(pub)
-	if err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest,
-			"cannot check key strength")
-		return
-	}
-	if !strong {
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "key too weak")
-		return
-	}
-	certDER, commonName, err := state.generateRoleCert(pub, callerArn)
-	if err != nil {
-		state.logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError,
-			"cannot generate certificate")
-		return
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(commonName)
-	pem.Encode(w, &pem.Block{Bytes: certDER, Type: "CERTIFICATE"})
 }
 
-// Returns certificate DER and CommonName.
-func (state *RuntimeState) generateRoleCert(publicKey interface{},
-	callerArn *parsedArnType) ([]byte, string, error) {
-	commonName := fmt.Sprintf("aws:iam:%s:%s",
-		callerArn.parsedArn.AccountID, callerArn.role)
-	subject := pkix.Name{
-		CommonName:   commonName,
-		Organization: []string{"keymaster"},
-	}
-	arnUrl, err := url.Parse(callerArn.parsedArn.String())
+// Returns signed certificate DER.
+func (state *RuntimeState) generateRoleCert(template *x509.Certificate,
+	publicKey interface{}) ([]byte, error) {
+	strong, err := certgen.ValidatePublicKeyStrength(publicKey)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return nil, "", err
-	}
-	now := time.Now()
-	template := x509.Certificate{
-		SerialNumber:          serialNumber,
-		Subject:               subject,
-		NotBefore:             now,
-		NotAfter:              now.Add(time.Hour * 24),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  false,
-		URIs:                  []*url.URL{arnUrl},
+	if !strong {
+		return nil, fmt.Errorf("key too weak")
 	}
 	caCert, err := x509.ParseCertificate(state.caCertDer)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, caCert,
+	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert,
 		publicKey, state.Signer)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	state.logger.Printf("Generated x509 Certificate for ARN=`%s`, expires=%s",
-		callerArn.parsedArn.String(), template.NotAfter)
 	metricLogCertDuration("x509", "granted",
 		float64(time.Until(template.NotAfter).Seconds()))
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
 		certGenCounter.WithLabelValues(username, certType).Inc()
-	}(commonName, "x509")
-	return certDER, commonName, nil
+	}(template.Subject.CommonName, "x509")
+	return certDER, nil
 }

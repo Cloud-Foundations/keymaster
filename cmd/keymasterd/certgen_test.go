@@ -52,7 +52,7 @@ const invalidSSHFileBadKeyData = `ssh-rsa AAAAB3NzaC1kc3dddMAAACBALd5BLQoXxeJHHM
 
 const testDuration = time.Duration(120 * time.Second)
 
-/// X509section (this is from certgen TODO: make public)
+// X509section (this is from certgen TODO: make public)
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
@@ -225,4 +225,83 @@ func TestGenSSHEd25519(t *testing.T) {
 		t.Fatal(err)
 	}
 
+}
+
+func TestExpandSSHExtensionsSimple(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
+		sshExtension{
+			Key:   "user:username",
+			Value: "$USERNAME",
+		},
+		sshExtension{
+			Key:   "key:$USERNAME",
+			Value: "value:userkey",
+		},
+	}
+	extensions, err := state.expandSSHExtensions("username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extensions == nil {
+		t.Fatal("nil extension")
+	}
+	compareMap := map[string]string{
+		"user:username": "username",
+		"key:username":  "value:userkey",
+	}
+	if len(state.Config.Base.SSHCertConfig.Extensions) != len(extensions) {
+		t.Fatal("incomplete expansion")
+	}
+	for key, value := range extensions {
+		cValue, ok := compareMap[key]
+		if !ok {
+			t.Fatal("key not found")
+		}
+		if value != cValue {
+			t.Fatal("value does not match")
+		}
+	}
+}
+
+func TestExpandSSHExtensionsReplace(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	expansionTest := map[string]string{
+		"username":  "username",
+		".username": "-username",
+		"username.": "username-",
+		"user.name": "user-name",
+	}
+	for username, expected := range expansionTest {
+		state.Config.Base.SSHCertConfig.Extensions = []sshExtension{
+			sshExtension{
+				Key:   "somekey",
+				Value: "${USERNAME/./-}",
+			},
+		}
+		extensions, err := state.expandSSHExtensions(username)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if extensions == nil {
+			t.Fatal("nil extension")
+		}
+		if len(state.Config.Base.SSHCertConfig.Extensions) != len(extensions) {
+			t.Fatal("incomplete expansion")
+		}
+		for _, value := range extensions {
+			if value != expected {
+				t.Fatalf("Expansion does not match got %s expected %s, username=%s", value, expected, username)
+			}
+		}
+	}
 }

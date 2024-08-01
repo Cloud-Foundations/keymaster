@@ -5,6 +5,11 @@ service code is able to assume (i.e. EC2 instance profile, EKS IRSA, Lambda
 role). The full AWS Role ARN is stored in a certificate URI SAN extension and a
 simplified form of the ARN is stored in the certificate CN.
 
+The full AWS Role ARN will reflect the actual role ARN, rather than an ARN
+showing how the credentials were obtained. This mirrors the way AWS policy
+documents are written. The ARN will have the form:
+arn:aws:iam::$AccountId:role/$RoleName
+
 The service code does not require any extra permissions. It uses the
 sts:GetCallerIdentity permission that is available to all AWS identities. Thus,
 no policy configuration is required.
@@ -13,6 +18,18 @@ This code uses the AWS IAM credentials to request a pre-signed URL from the AWS
 Security Token Service (STS). This pre-signed URL is passed to Keymaster which
 can make a request using the URL to verify the identity of the caller. No
 credentials are sent.
+
+The protocol is a simple HTTPS/REST interface, typically located on the path:
+/aws/requestRoleCertificate/v1
+The client issues a POST request with the following headers:
+
+Claimed-Arn:      the full AWS Role ARN
+Presigned-Method: the method type specified in the pre-signing response
+Presigned-URL:    the URL specified in the pre-signing response
+
+The body of the request must contain a PEM-encoded Public Key DER.
+On success, the response body will contain a signed, PEM-encoded X.509
+Certificate.
 */
 package aws_role
 
@@ -23,6 +40,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/Cloud-Foundations/golib/pkg/awsutil/presignauth/presigner"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -34,16 +52,16 @@ type Params struct {
 	KeymasterServer string
 	Logger          log.DebugLogger
 	// Optional parameters.
+	AwsConfig        *aws.Config
 	Context          context.Context
 	HttpClient       *http.Client
 	Signer           crypto.Signer
-	awsConfig        aws.Config
+	StsClient        *sts.Client
+	StsPresignClient *sts.PresignClient
 	derPubKey        []byte
 	isSetup          bool
 	pemPubKey        []byte
-	roleArn          string
-	stsClient        *sts.Client
-	stsPresignClient *sts.PresignClient
+	presigner        presigner.Presigner
 }
 
 type Manager struct {

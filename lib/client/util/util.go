@@ -14,6 +14,9 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/user"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
@@ -33,6 +36,25 @@ func getUserCreds(userName string) (password []byte, err error) {
 		// Handle gopass.ErrInterrupted or getch() read error
 	}
 	return password, nil
+}
+
+func getUserNameAndHomeDir() (string, string, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return "", "", fmt.Errorf("cannot get current user info")
+	}
+	userName := usr.Username
+	if runtime.GOOS == "windows" {
+		splitName := strings.Split(userName, "\\")
+		if len(splitName) == 2 {
+			userName = strings.ToLower(splitName[1])
+		}
+	}
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" {
+		return userName, homeDir, nil
+	}
+	return userName, usr.HomeDir, nil
 }
 
 // will encode key as pkcs8.... camilo needs to test for interop

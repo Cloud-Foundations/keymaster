@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"mvdan.cc/sh/v3/shell"
+
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
@@ -114,7 +116,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authData.Username != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("User %s asking for creds for %s",
+		logger.Debugf(1, "User %s asking for creds for %s",
 			authData.Username, targetUser)
 		return
 	}
@@ -206,6 +208,30 @@ func getValidSSHPublicKey(userPubKey string) (ssh.PublicKey, error, error) {
 	return userSSH, nil, nil
 }
 
+func (state *RuntimeState) expandSSHExtensions(username string) (map[string]string, error) {
+	mapper := func(placeholderName string) string {
+		switch placeholderName {
+		case "USERNAME":
+			return username
+		}
+		return ""
+	}
+	userExtensions := make(map[string]string)
+	for _, extension := range state.Config.Base.SSHCertConfig.Extensions {
+		key, err := shell.Expand(extension.Key, mapper)
+		if err != nil {
+			return nil, err
+		}
+		value, err := shell.Expand(extension.Value, mapper)
+		if err != nil {
+			return nil, err
+		}
+		userExtensions[key] = value
+	}
+
+	return userExtensions, nil
+}
+
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	duration time.Duration) {
@@ -230,7 +256,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 
 	sshUserPublicKey, userErr, err := getValidSSHPublicKey(userPubKey)
 	if err != nil {
-		logger.Println(err)
+		logger.Debugf(1, "postAuthSSHCertHandler:  getValidSSHPublicKey err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -257,8 +283,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		logger.Printf("Signer failed to load")
 		return
 	}
-
-	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
+	extensions, err := state.expandSSHExtensions(targetUser)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Extensions Failed to expand")
+		return
+	}
+	certString, cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration, extensions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("signUserPubkey Err")
@@ -336,6 +367,14 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 	return nil, nil
 }
 
+func (state *RuntimeState) getServiceMethods(username string) (
+	[]string, error) {
+	if state.gitDB == nil {
+		return nil, nil
+	}
+	return state.gitDB.GetUserServiceMethods(username)
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
@@ -349,7 +388,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		logger.Debugf(2, "Groups needed for cert")
 		userGroups, err = state.getUserGroups(targetUser)
 		if err != nil {
-			logger.Println(err)
+			logger.Printf("Cannot get user groups: %s\n", err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
@@ -361,6 +400,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	if kubernetesHack {
 		organizations = userGroups
 	}
+	serviceMethods, err := state.getServiceMethods(targetUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
 	var cert string
 	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
@@ -369,7 +414,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 
 	file, _, err := r.FormFile("pubkeyfile")
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("Cannot get public key from form: %s\n", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Missing public key file")
 		return
@@ -389,12 +434,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"Cannot parse public key")
-		logger.Printf("Cannot parse public key")
+		logger.Printf("Cannot parse public key: %s\n", err)
 		return
 	}
 	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("Cannot validate public key strength: %s\n", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
@@ -406,20 +451,21 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	caCert, err := x509.ParseCertificate(state.caCertDer)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot parse CA Der data")
+		logger.Printf("Cannot parse CA Der: %s\n data", err)
 		return
 	}
 	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-		keySigner, state.KerberosRealm, duration, groups, organizations)
+		keySigner, state.KerberosRealm, duration, groups, organizations,
+		serviceMethods, logger)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Generate x509cert")
+		logger.Printf("Cannot Generate x509cert: %s\n", err)
 		return
 	}
 	parsedCert, err := x509.ParseCertificate(derCert)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Parse Generated x509cert")
+		logger.Printf("Cannot Parse Generated x509cert: %s\n", err)
 		return
 	}
 

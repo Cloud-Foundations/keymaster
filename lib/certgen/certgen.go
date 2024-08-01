@@ -1,5 +1,5 @@
 /*
-  Package certgen id set of utilities used to generate ssh certificates
+Package certgen contains a set of utilities used to generate ssh certificates.
 */
 package certgen
 
@@ -22,8 +22,37 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
+
+const (
+	extensionSoftLimit = 10 << 10 // 10 KiB
+	extensionHardLimit = 12 << 10 // 12 KiB
+)
+
+// addExtraExtension will add an extra extension to a certificate template
+// provided the size limit is not exceeded.
+func addExtraExtension(template *x509.Certificate, extension *pkix.Extension,
+	name string, logger log.DebugLogger) {
+	if extension == nil {
+		return
+	}
+	totalExtensionSize := len(extension.Value)
+	for _, existingExtension := range template.ExtraExtensions {
+		totalExtensionSize += len(existingExtension.Value)
+	}
+	if totalExtensionSize > extensionHardLimit {
+		logger.Printf("%s extension for %s too large (%d), ignoring\n",
+			name, template.Subject.CommonName, name, totalExtensionSize)
+		return
+	}
+	if totalExtensionSize > extensionSoftLimit {
+		logger.Printf("warning: %s extension for %s is large: %d\n",
+			name, template.Subject.CommonName, name, totalExtensionSize)
+	}
+	template.ExtraExtensions = append(template.ExtraExtensions, *extension)
+}
 
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration
 func GetUserPubKeyFromSSSD(username string) (string, error) {
@@ -45,7 +74,7 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (certString string, cert ssh.Certificate, err error) {
+func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration, customExtensions map[string]string) (certString string, cert ssh.Certificate, err error) {
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
 		return "", cert, err
@@ -60,7 +89,23 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 		return "", cert, err
 	}
 	serial := (currentEpoch << 32) | nBig.Uint64()
-
+	// Here we add standard extensions
+	extensions := map[string]string{
+		"permit-X11-forwarding":   "",
+		"permit-agent-forwarding": "",
+		"permit-port-forwarding":  "",
+		"permit-pty":              "",
+		"permit-user-rc":          "",
+	}
+	if customExtensions != nil {
+		for key, value := range customExtensions {
+			//safeguard for invalid definition
+			if key == "" {
+				continue
+			}
+			extensions[key] = value
+		}
+	}
 	// The values of the permissions are taken from the default values used
 	// by ssh-keygen
 	cert = ssh.Certificate{
@@ -72,12 +117,8 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 		ValidAfter:      currentEpoch,
 		ValidBefore:     expireEpoch,
 		Serial:          serial,
-		Permissions: ssh.Permissions{Extensions: map[string]string{
-			"permit-X11-forwarding":   "",
-			"permit-agent-forwarding": "",
-			"permit-port-forwarding":  "",
-			"permit-pty":              "",
-			"permit-user-rc":          ""}}}
+		Permissions:     ssh.Permissions{Extensions: extensions},
+	}
 
 	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
@@ -96,16 +137,16 @@ func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, h
 	if err != nil {
 		return "", cert, err
 	}
-	return GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
+	return GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration, nil)
 }
 
-/// X509 section
+// X509 section
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
-		err := errors.New(fmt.Sprintf("Cannot decode user public Key '%s' rest='%s'", pubkey, string(rest)))
+		err := fmt.Errorf("Cannot decode user public Key '%s' rest='%s'", pubkey, string(rest))
 		if block != nil {
-			err = errors.New(fmt.Sprintf("public key bad type %s", block.Type))
+			err = fmt.Errorf("public key bad type %s", block.Type)
 		}
 		return nil, err
 	}
@@ -159,22 +200,6 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 	}
 }
 
-//copied from https://golang.org/src/crypto/tls/generate_cert.go
-func publicKey(priv interface{}) interface{} {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &k.PublicKey
-	case *ecdsa.PrivateKey:
-		return &k.PublicKey
-	case ed25519.PrivateKey:
-		return k.Public().(ed25519.PublicKey)
-	case *ed25519.PrivateKey:
-		return k.Public().(*ed25519.PublicKey)
-	default:
-		return nil
-	}
-}
-
 // ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
 // At this moment it checks for sizes of parameters only. For RSA it means bits>=2041 && exponent>=65537,
 // For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
@@ -214,6 +239,26 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 }
 */
 
+// On the initial version of keymaster we used the base64 encoding
+// of the sha256sum of the rsa signature of the sha256 of the
+// common name. This to have a stable, key dependent
+// serial number.
+// However this was a bad idea as:
+// 1. Not all signers can use sha256
+// 2. Not all signatures are stable.
+//
+// Thus we will keep the rsa behaviour for compatiblity reasons
+// But for all other keys we will just return the pkix asn1 encoding
+// of the public key
+func getKMCompatbileKeyStableBytesForSerial(signer crypto.Signer, commonName []byte) ([]byte, error) {
+	swRSA, ok := signer.(*rsa.PrivateKey)
+	if ok {
+		sum := sha256.Sum256(commonName)
+		return swRSA.Sign(rand.Reader, sum[:], crypto.SHA256)
+	}
+	return x509.MarshalPKIXPublicKey(signer.Public())
+}
+
 // return both an internal representation an the pem representation of the string
 // As long as the issuer value matches THEN the serial number can be different every time
 func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) ([]byte, error) {
@@ -226,12 +271,11 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256([]byte(commonName))
-	signedCN, err := caPriv.Sign(rand.Reader, sum[:], crypto.SHA256)
+	keyStableBytes, err := getKMCompatbileKeyStableBytesForSerial(caPriv, []byte(commonName))
 	if err != nil {
 		return nil, err
 	}
-	sigSum := sha256.Sum256(signedCN)
+	sigSum := sha256.Sum256(keyStableBytes)
 	sig := base64.StdEncoding.EncodeToString(sigSum[:])
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
@@ -248,7 +292,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		IsCA:                  true,
 	}
 
-	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
+	return x509.CreateCertificate(rand.Reader, &template, &template, caPriv.Public(), caPriv)
 }
 
 // From RFC 4120 section 5.2.2 (https://tools.ietf.org/html/rfc4120)
@@ -320,7 +364,7 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
-func getGroupListExtension(groups []string) (*pkix.Extension, error) {
+func makeGroupListExtension(groups []string) (*pkix.Extension, error) {
 	if len(groups) < 1 {
 		return nil, nil
 	}
@@ -336,13 +380,31 @@ func getGroupListExtension(groups []string) (*pkix.Extension, error) {
 	return &groupListExtension, nil
 }
 
+func makeServiceMethodListExtension(serviceMethods []string) (
+	*pkix.Extension, error) {
+	if len(serviceMethods) < 1 {
+		return nil, nil
+	}
+	encodedValue, err := asn1.Marshal(serviceMethods)
+	if err != nil {
+		return nil, err
+	}
+	serviceMethodListExtension := pkix.Extension{
+		// See github.com/Cloud-Foundations/Dominator/lib/constants.PermittedMethodListOID
+		Id:    []int{1, 3, 6, 1, 4, 1, 9586, 100, 7, 1},
+		Value: encodedValue,
+	}
+	return &serviceMethodListExtension, nil
+}
+
 // returns an x509 cert that has the username in the common name,
 // optionally if a kerberos Realm is present it will also add a kerberos
 // SAN exention for pkinit
 func GenUserX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	kerberosRealm *string, duration time.Duration,
-	groups []string, organizations []string) ([]byte, error) {
+	groups, organizations, serviceMethods []string,
+	logger log.DebugLogger) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
@@ -365,7 +427,12 @@ func GenUserX509Cert(userName string, userPub interface{},
 		CommonName:   userName,
 		Organization: organizations,
 	}
-	groupListExtension, err := getGroupListExtension(groups)
+	groupListExtension, err := makeGroupListExtension(groups)
+	if err != nil {
+		return nil, err
+	}
+	serviceMethodListExtension, err := makeServiceMethodListExtension(
+		serviceMethods)
 	if err != nil {
 		return nil, err
 	}
@@ -380,14 +447,10 @@ func GenUserX509Cert(userName string, userPub interface{},
 		BasicConstraintsValid: true,
 		IsCA:                  false,
 	}
-	if groupListExtension != nil {
-		template.ExtraExtensions = append(template.ExtraExtensions,
-			*groupListExtension)
-	}
-	if sanExtension != nil {
-		template.ExtraExtensions = append(template.ExtraExtensions,
-			*sanExtension)
-	}
+	addExtraExtension(&template, groupListExtension, "group list", logger)
+	addExtraExtension(&template, serviceMethodListExtension, "service methods",
+		logger)
+	addExtraExtension(&template, sanExtension, "Kerberos SAN", logger)
 
 	return x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 }

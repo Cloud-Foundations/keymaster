@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	stdlog "log"
 	"net/http"
@@ -69,6 +71,19 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// now add Ed25519 key to set of public keys
+	_, ed25519Priv, err := ed25519.GenerateKey(rand.Reader)
+	state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, ed25519Priv.Public())
+	req2, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req2, state.idpOpenIDCJWKSHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: verify contents returned
+
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
@@ -201,6 +216,67 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 }
 
+// Related to Issue 141: U2F redirect comes w/ semicolons
+func TestIDPOpenIDCAuthorizationInvalidURL(t *testing.T) {
+	badURLList := []string{
+		"/idp/oauth2/authorize?client_id=generc-purestorage&amp;redirect_uri=https%3Acloudgate.example.com%2Foauth2%2Fredirectendpoint&amp;response_type=code&amp;scope=openid+mail+profile&amp;state=eyJhbGciOiJIUzI1NiIsInR5cCI",
+	}
+
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
+
+	valid_client_id := "valid_client_id"
+	valid_client_secret := "secret_password"
+	//valid_redirect_uri := "https://localhost:12345"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+
+	//url := idpOpenIDCAuthorizationPath
+	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//First we do a simple request.. no auth should fail for now.. after build out it
+	// should be a redirect to the login page
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// now we add a cookie for auth
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+	// and we retry with no params... it should fail again
+	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, invalidURL := range badURLList {
+		req, err := http.NewRequest("GET", invalidURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&authCookie)
+		_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+}
+
 func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
@@ -210,7 +286,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 
 	weakREWithDomains := OpenIDConnectClientConfig{
 		ClientID:               "weakREWithDomains",
-		AllowedRedirectURLRE:   []string{"https://[^/]*\\.example\\.com"},
+		AllowedRedirectURLRE:   []string{"^https://[^/]*\\.example\\.com"},
 		AllowedRedirectDomains: []string{"example.com"},
 	}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, weakREWithDomains)
@@ -238,7 +314,7 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, mustFailURL := range attackerTestURLS {
-			resultMatch, err := client.CanRedirectToURL(mustFailURL)
+			resultMatch, _, err := client.CanRedirectToURL(mustFailURL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -247,12 +323,15 @@ func TestIdpOpenIDCClientCanRedirectFilters(t *testing.T) {
 			}
 		}
 		for _, mustPassURL := range expectedSuccessURLS {
-			resultMatch, err := client.CanRedirectToURL(mustPassURL)
+			resultMatch, parsedURL, err := client.CanRedirectToURL(mustPassURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if resultMatch == false {
 				t.Fatal("should have allowed this url")
+			}
+			if parsedURL == nil {
+				t.Fatal("should have parsed this url")
 			}
 		}
 	}

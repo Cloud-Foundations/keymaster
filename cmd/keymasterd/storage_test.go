@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/time/rate"
+
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
@@ -22,7 +24,10 @@ func newTestingState(t *testing.T) (*RuntimeState, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	state := &RuntimeState{logger: testlogger.New(t)}
+	state := &RuntimeState{
+		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
+		logger:                       testlogger.New(t),
+	}
 	state.Config.Base.DataDirectory = tmpdir
 	return state, tmpdir, nil
 }

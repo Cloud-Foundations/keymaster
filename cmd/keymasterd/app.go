@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -13,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	htmltemplate "html/template"
+	"io/fs"
 	"io/ioutil"
 	stdlog "log"
 	"net"
@@ -29,6 +31,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
 	"github.com/Cloud-Foundations/Dominator/lib/logbuf"
@@ -45,12 +48,14 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
+	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
 	"github.com/Cloud-Foundations/tricorder/go/healthserver"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -68,10 +73,12 @@ const (
 	AuthTypeBootstrapOTP
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
+	AuthTypeFIDO2
 )
 
 const (
 	AuthTypeAny                   = 0xFFFF
+	maxCacheLifetime              = time.Hour
 	maxWebauthForCliTokenLifetime = time.Hour * 24 * 366
 )
 
@@ -114,6 +121,13 @@ type u2fAuthData struct {
 	Registration *u2f.Registration
 }
 
+type webauthAuthData struct {
+	Enabled    bool
+	CreatedAt  time.Time
+	Name       string
+	Credential webauthn.Credential
+}
+
 type totpAuthData struct {
 	Enabled         bool
 	CreatedAt       time.Time
@@ -136,11 +150,18 @@ type userProfile struct {
 	TOTPAuthData               map[int64]*totpAuthData
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
+
+	WebauthnData        map[int64]*webauthAuthData
+	WebauthnID          uint64 // maybe more specific?
+	DisplayName         string
+	Username            string
+	WebauthnSessionData *webauthn.SessionData
 }
 
 type localUserData struct {
-	U2fAuthChallenge *u2f.Challenge
-	ExpiresAt        time.Time
+	U2fAuthChallenge  *u2f.Challenge
+	WebAuthnChallenge *webauthn.SessionData
+	ExpiresAt         time.Time
 }
 
 type pendingAuth2Request struct {
@@ -164,38 +185,40 @@ type totpRateLimitInfo struct {
 }
 
 type RuntimeState struct {
-	Config               AppConfigFile
-	SSHCARawFileContent  []byte
-	Signer               crypto.Signer
-	Ed25519CAFileContent []byte
-	Ed25519Signer        crypto.Signer
-	ClientCAPool         *x509.CertPool
-	HostIdentity         string
-	KerberosRealm        *string
-	caCertDer            []byte
-	certManager          *certmanager.CertificateManager
-	vipPushCookie        map[string]pushPollTransaction
-	localAuthData        map[string]localUserData
-	SignerIsReady        chan bool
-	oktaUsernameFilterRE *regexp.Regexp
-	Mutex                sync.Mutex
-	gitDB                *gitdb.UserInfo
-	pendingOauth2        map[string]pendingAuth2Request
-	storageRWMutex       sync.RWMutex
-	db                   *sql.DB
-	dbType               string
-	cacheDB              *sql.DB
-	remoteDBQueryTimeout time.Duration
-	htmlTemplate         *htmltemplate.Template
-	passwordChecker      pwauth.PasswordAuthenticator
-	KeymasterPublicKeys  []crypto.PublicKey
-	isAdminCache         *admincache.Cache
-	emailManager         configuredemail.EmailManager
-	textTemplates        *texttemplate.Template
-
-	totpLocalRateLimit      map[string]totpRateLimitInfo
-	totpLocalTateLimitMutex sync.Mutex
-	logger                  log.DebugLogger
+	Config                       AppConfigFile
+	SSHCARawFileContent          []byte
+	Signer                       crypto.Signer
+	Ed25519CAFileContent         []byte
+	Ed25519Signer                crypto.Signer
+	ClientCAPool                 *x509.CertPool
+	HostIdentity                 string
+	KerberosRealm                *string
+	caCertDer                    []byte
+	certManager                  *certmanager.CertificateManager
+	vipPushCookie                map[string]pushPollTransaction
+	localAuthData                map[string]localUserData
+	SignerIsReady                chan bool
+	oktaUsernameFilterRE         *regexp.Regexp
+	passwordAttemptGlobalLimiter *rate.Limiter
+	Mutex                        sync.Mutex
+	gitDB                        *gitdb.UserInfo
+	pendingOauth2                map[string]pendingAuth2Request
+	storageRWMutex               sync.RWMutex
+	db                           *sql.DB
+	dbType                       string
+	cacheDB                      *sql.DB
+	remoteDBQueryTimeout         time.Duration
+	htmlTemplate                 *htmltemplate.Template
+	passwordChecker              pwauth.PasswordAuthenticator
+	KeymasterPublicKeys          []crypto.PublicKey
+	isAdminCache                 *admincache.Cache
+	emailManager                 configuredemail.EmailManager
+	textTemplates                *texttemplate.Template
+	awsCertIssuer                *aws_identity_cert.Issuer
+	webAuthn                     *webauthn.WebAuthn
+	totpLocalRateLimit           map[string]totpRateLimitInfo
+	totpLocalTateLimitMutex      sync.Mutex
+	logger                       log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -226,6 +249,13 @@ var (
 		},
 		[]string{"client_type", "type", "result"},
 	)
+	passwordRateLimitExceededCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_password_rate_limit_exceeded_counter",
+			Help: "keymaster_password_rate_limit_exceeded_counter",
+		},
+		[]string{"username"},
+	)
 
 	externalServiceDurationTotal = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -252,6 +282,28 @@ var (
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier *eventnotifier.EventNotifier
 )
+
+//go:embed data/*
+var compiledData embed.FS
+
+// This function is just to "remove" the /data path of the embeddedFS
+func getCompiledDataFS() http.FileSystem {
+	fsys, err := fs.Sub(compiledData, "data")
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return http.FS(fsys)
+}
+
+func cacheControlHandler(h http.Handler) http.Handler {
+	maxAgeSeconds := maxCacheLifetime / time.Second
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				maxAgeSeconds))
+		h.ServeHTTP(w, r)
+	})
+}
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
 	validStr := strconv.FormatBool(success)
@@ -411,6 +463,7 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
+	logger.Debugf(3, "browser doest NOT support u2f")
 	return false
 }
 
@@ -433,6 +486,15 @@ func getClientType(r *http.Request) string {
 	}
 }
 
+// getOriginOrReferrer will return the value of the "Origin" header, or if
+// empty, the Referrer (misspelled as "Referer" in the HTML standards).
+func getOriginOrReferrer(r *http.Request) string {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin
+	}
+	return r.Referer()
+}
+
 // getUser will return the "user" value from the request form. If the username
 // contains invalid characters, the empty string is returned.
 func getUserFromRequest(r *http.Request) string {
@@ -453,10 +515,37 @@ func (ai *authInfo) expires() int64 {
 	return ai.ExpiresAt.Unix()
 }
 
+func ensureHTMLSafeLoginDestination(loginDestination string) string {
+	if loginDestination == "" {
+		return profilePath
+	}
+	parsedLoginDestination, err := url.Parse(loginDestination)
+	if err != nil {
+		return profilePath
+	}
+	return parsedLoginDestination.String()
+
+}
+
+// checkPasswordAttemptLimit will check if the limit on password attempts has
+// been reached. If the limit has been reached, an error response is written to
+// w and an error message is returned.
+func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
+	r *http.Request, username string) error {
+	if !state.passwordAttemptGlobalLimiter.Allow() {
+		state.writeFailureResponse(w, r, http.StatusTooManyRequests,
+			"Too many password attempts")
+		passwordRateLimitExceededCounter.WithLabelValues(username).Inc()
+		return fmt.Errorf("too many password attempts, host: %s user: %s",
+			r.RemoteAddr, username)
+	}
+	return nil
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
-	JSSources := []string{"/static/jquery-3.5.1.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-3.7.1.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
@@ -467,15 +556,17 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	if state.Config.Okta.Enable2FA {
 		JSSources = append(JSSources, "/static/webui-2fa-okta-push.js")
 	}
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
 	displayData := secondFactorAuthTemplateData{
-		Title:            "Keymaster 2FA Auth",
-		JSSources:        JSSources,
-		ShowBootstrapOTP: showBootstrapOTP,
-		ShowVIP:          state.Config.SymantecVIP.Enabled,
-		ShowU2F:          showU2F,
-		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
-		ShowOktaOTP:      state.Config.Okta.Enable2FA,
-		LoginDestination: loginDestination}
+		Title:                 "Keymaster 2FA Auth",
+		JSSources:             JSSources,
+		ShowBootstrapOTP:      showBootstrapOTP,
+		ShowVIP:               state.Config.SymantecVIP.Enabled,
+		ShowU2F:               showU2F,
+		ShowTOTP:              state.Config.Base.EnableLocalTOTP,
+		ShowOktaOTP:           state.Config.Okta.Enable2FA,
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage",
 		displayData)
 	if err != nil {
@@ -489,17 +580,22 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter,
 	r *http.Request, statusCode int,
 	defaultUsername, loginDestination, errorMessage string) {
-	if state.passwordChecker == nil && state.Config.Oauth2.Enabled {
-		http.Redirect(w, r, "/auth/oauth2/login", http.StatusTemporaryRedirect)
-		return
+	showBasicAuth := true
+	if state.Config.Oauth2.Enabled &&
+		(state.Config.Oauth2.ForceRedirect || state.passwordChecker == nil) {
+		showBasicAuth = false
 	}
 	w.WriteHeader(statusCode)
+
+	safeLoginDestination := ensureHTMLSafeLoginDestination(loginDestination)
 	displayData := loginPageTemplateData{
-		Title:            "Keymaster Login",
-		DefaultUsername:  defaultUsername,
-		ShowOauth2:       state.Config.Oauth2.Enabled,
-		LoginDestination: loginDestination,
-		ErrorMessage:     errorMessage}
+		Title:                 "Keymaster Login",
+		DefaultUsername:       defaultUsername,
+		ShowBasicAuth:         showBasicAuth,
+		ShowOauth2:            state.Config.Oauth2.Enabled,
+		LoginDestinationInput: htmltemplate.HTML("<INPUT TYPE=\"hidden\" id=\"login_destination_input\" NAME=\"login_destination\" VALUE=\"" + safeLoginDestination + "\">"),
+		ErrorMessage:          errorMessage,
+	}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
@@ -749,7 +845,7 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (*authInfo, error) {
 	// Check csrf
 	if r.Method != "GET" {
-		referer := r.Referer()
+		referer := getOriginOrReferrer(r)
 		if len(referer) > 0 && len(r.Host) > 0 {
 			state.logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
 			refererURL, err := url.Parse(referer)
@@ -822,7 +918,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		if !ok {
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
-			err := errors.New("check_Auth, Invalid or no auth header")
+			return nil, errors.New("checkAuth, Invalid or no auth header")
+		}
+		if err := state.checkPasswordAttemptLimit(w, r, user); err != nil {
 			return nil, err
 		}
 		state.Mutex.Lock()
@@ -950,8 +1048,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
-		//w.WriteHeader(200)
-		//fmt.Fprintf(w, "OK\n")
 	}
 }
 
@@ -963,11 +1059,18 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	registrations := getRegistrationArray(profile.U2fAuthData)
-	if len(registrations) < 1 {
-		return false, nil
+	for _, u2fRegistration := range profile.U2fAuthData {
+		if u2fRegistration.Enabled {
+			return true, nil
+		}
+
 	}
-	return true, nil
+	for _, webauthnRegustration := range profile.WebauthnData {
+		if webauthnRegustration.Enabled {
+			return true, nil
+		}
+	}
+	return false, nil
 
 }
 
@@ -1030,7 +1133,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				"Error parsing form")
 			return
 		}
-		logger.Debugf(2, "req =%+v", r)
+		logger.Debugf(4, "req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -1047,6 +1150,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 				return
 			}
 			username = val[0]
+			// Since we are getting username from Form we need some minimal sanitization
+			// TODO: actually whitelist the username characters
+			escapedUsername := strings.Replace(username, "\n", "", -1)
+			escapedUsername = strings.Replace(escapedUsername, "\r", "", -1)
+			username = escapedUsername
 		}
 		//var password string
 		if val, ok := r.Form["password"]; ok {
@@ -1062,6 +1170,10 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
 		}
+	}
+	if err := state.checkPasswordAttemptLimit(w, r, username); err != nil {
+		state.logger.Debugf(1, "%v", err)
+		return
 	}
 	username = state.reprocessUsername(username)
 	valid, err := checkUserPassword(username, password, state.Config,
@@ -1135,7 +1247,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter,
 			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
 		}
 	}
-	// logger.Printf("current backends=%+v", certBackends)
+	state.logger.Debugf(1, "current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}
@@ -1344,12 +1456,12 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 	JSSources := []string{
-		"/static/jquery-3.5.1.min.js",
+		"/static/jquery-3.7.1.min.js",
 		"/static/compiled/session.js",
 	}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js", "/static/keymaster-webauthn.js")
 	}
 
 	// TODO: move deviceinfo mapping/sorting to its own function
@@ -1362,6 +1474,18 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Index:      i}
 		u2fdevices = append(u2fdevices, deviceData)
 	}
+	// TODO: make some difference
+	// also add the webauthn devices...
+	for i, tokenInfo := range profile.WebauthnData {
+		deviceData := registeredU2FTokenDisplayInfo{
+			DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
+			Enabled:    tokenInfo.Enabled,
+			Name:       tokenInfo.Name, //Display name?
+			Index:      i,
+		}
+		u2fdevices = append(u2fdevices, deviceData)
+	}
+
 	sort.Slice(u2fdevices, func(i, j int) bool {
 		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
@@ -1391,6 +1515,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources:            JSSources,
 		ReadOnlyMsg:          readOnlyMsg,
 		UsersLink:            state.IsAdminUser(authData.Username),
+		ShowLegacyRegister:   state.passwordChecker != nil,
 		RegisteredU2FToken:   u2fdevices,
 		ShowTOTP:             showTOTP,
 		RegisteredTOTPDevice: totpdevices,
@@ -1411,7 +1536,6 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	//w.Write([]byte(indexHTML))
 }
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
@@ -1478,8 +1602,8 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	_, ok := profile.U2fAuthData[tokenIndex]
-	if !ok {
-		//if tokenIndex >= len(profile.U2fAuthData) {
+	_, ok2 := profile.WebauthnData[tokenIndex]
+	if !ok && !ok2 {
 		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
@@ -1495,13 +1619,30 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
-		profile.U2fAuthData[tokenIndex].Name = tokenName
+		if ok {
+			profile.U2fAuthData[tokenIndex].Name = tokenName
+		} else {
+			profile.WebauthnData[tokenIndex].Name = tokenName
+		}
+
 	case "Disable":
-		profile.U2fAuthData[tokenIndex].Enabled = false
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = false
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = false
+		}
 	case "Enable":
-		profile.U2fAuthData[tokenIndex].Enabled = true
+		if ok {
+			profile.U2fAuthData[tokenIndex].Enabled = true
+		} else {
+			profile.WebauthnData[tokenIndex].Enabled = true
+		}
 	case "Delete":
-		delete(profile.U2fAuthData, tokenIndex)
+		if ok {
+			delete(profile.U2fAuthData, tokenIndex)
+		} else {
+			delete(profile.WebauthnData, tokenIndex)
+		}
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return
@@ -1549,8 +1690,14 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 		//landing page
 		if err := r.ParseForm(); err != nil {
 			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError,
-				"Error parsing form")
+			errCode := http.StatusInternalServerError
+			errMessage := "Error parsing form"
+			if strings.Contains(err.Error(), "invalid") {
+				errCode = http.StatusBadRequest
+				errMessage = "invalid query"
+			}
+			state.writeFailureResponse(w, r, errCode,
+				errMessage)
 			return
 		}
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
@@ -1589,6 +1736,7 @@ func Usage() {
 func init() {
 	prometheus.MustRegister(certGenCounter)
 	prometheus.MustRegister(authOperationCounter)
+	prometheus.MustRegister(passwordRateLimitExceededCounter)
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
 	tricorder.RegisterMetric(
@@ -1685,16 +1833,19 @@ func main() {
 	staticFilesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"static_files")
-	serviceMux.Handle("/static/", http.StripPrefix("/static/",
-		http.FileServer(http.Dir(staticFilesPath))))
-	serviceMux.Handle("/static/compiled/",
-		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile())))
+	serviceMux.Handle("/static/", cacheControlHandler(
+		http.StripPrefix("/static/",
+			http.FileServer(http.Dir(staticFilesPath)))))
+	serviceMux.Handle("/static/compiled/", cacheControlHandler(
+		http.StripPrefix("/static/compiled/",
+			http.FileServer(getCompiledDataFS()))))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
 	if _, err = os.Stat(customWebResourcesPath); err == nil {
-		serviceMux.Handle("/custom_static/", http.StripPrefix("/custom_static/",
-			http.FileServer(http.Dir(customWebResourcesPath))))
+		serviceMux.Handle("/custom_static/", cacheControlHandler(
+			http.StripPrefix("/custom_static/",
+				http.FileServer(http.Dir(customWebResourcesPath)))))
 	}
 	serviceMux.HandleFunc(u2fRegustisterRequestPath,
 		runtimeState.u2fRegisterRequest)
@@ -1702,6 +1853,11 @@ func main() {
 		runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
+	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
+	serviceMux.HandleFunc(webAuthnAuthBeginPath, runtimeState.webauthnAuthLogin)
+	serviceMux.HandleFunc(webAuthnAuthFinishPath, runtimeState.webauthnAuthFinish)
+
 	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath,
 		runtimeState.u2fTokenManagerHandler)
@@ -1759,7 +1915,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
@@ -1775,7 +1930,7 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 	srpc.RegisterServerTlsConfig(
-		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool, MinVersion: tls.VersionTLS12},
 		true)
 	go func() {
 		err := adminSrv.ListenAndServeTLS("", "")
@@ -1827,7 +1982,6 @@ func main() {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 	serviceSrv := &http.Server{

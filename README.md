@@ -1,9 +1,8 @@
 # Keymaster
-[![Build Status](https://travis-ci.org/Cloud-Foundations/keymaster.svg?branch=master)](https://travis-ci.org/Cloud-Foundations/keymaster)
-[![Coverage Status](https://coveralls.io/repos/github/Cloud-Foundations/keymaster/badge.svg?branch=master)](https://coveralls.io/github/Cloud-Foundations/keymaster?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Cloud-Foundations/keymaster)](https://goreportcard.com/report/github.com/Cloud-Foundations/keymaster)
 
-Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/), [U2F](https://fidoalliance.org/specifications/overview/) tokens or [TOTP](https://en.wikipedia.org/wiki/Time-based_One-time_Password_algorithm) compatible apps ([FreeOTP](https://freeotp.github.io/)/google authenticator ) ) for CLI operations (both SSHD and TLS).
+[![Build Status](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml/badge.svg?query=branch%3Amaster)](https://github.com/Cloud-Foundations/keymaster/actions/workflows/test.yml?query=branch%3Amaster)
+
+Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/), [U2F](https://fidoalliance.org/specifications/overview/) tokens, [OKTA](https://developer.okta.com/docs/reference/api/authn/)  (requires using also using OKTA for password), or [TOTP](https://en.wikipedia.org/wiki/Time-based_One-time_Password_algorithm) compatible apps ([FreeOTP](https://freeotp.github.io/)/google authenticator ) ) for CLI operations (both SSHD and TLS).
 
 As a secondary role keymaster is compliant openidc provider intended for easy use for internal web based applications.
 
@@ -31,11 +30,15 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 ### Building from Source
 
 #### Prerequisites
-* go >= 1.13
+* go >= 1.21
 * make
 * gcc
 
-For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/).
+In addition for linux you will also need:
+* pkg-config
+* libudev-dev
+
+For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/). Recent windows builds fail  when using TDM-GCC 5.x. Successful builds are known with golang 1.21.X and gcc 10.X.
 
 #### Building
 1. make get-deps
@@ -68,6 +71,7 @@ Notice: Keymaster has a bug where the directory locations are not written correc
 ##### Supported backend authentication methods
 Several authentication methods are supported by the `keymasterd` service. You can separately specify which authentication methods you accept for the web backend (`allowed_auth_backends_for_webui`) and for obtaining certificates (`allowed_auth_backends_for_certs`).
 * **LDAP**: For LDAP the `bind_pattern` is a printf string where `%s` is the place where the username will be substituted. For example for an 389ds/openldap string might be: `"uid=%s,ou=People,dc=example,dc=com`. To leverage LDAP authentication set the appropriate `allowed_auth_*` setting to `["ldap"]`.
+* **OKTA** Keymasted can also use the public api for okta authentication, for both password and MFA (including both pushed and codes)
 * **Apache htpass**: The `passfile.htpass` file contains the usernames and their passwords allowed to access the `keymasterd` web interface. New users can be added via the following command: `htpasswd -B /etc/keymaster/passfile.htpass <username>`. `htpasswd` is distributed via the `httpd-tools` package. Keymaster will only accept htpass files that store BCRYPT encrypted credentials. To use Apache password files to authenticate users to the web interface set the following configuration item: `allowed_auth_*` to `["password"]`
 * **U2F tokens**: To enable U2F tokens set set the appropriate `allowed_auth_*` setting to `["U2F"]``
 * **VIP Manager**: To enable VIP Manager set set the appropriate `allowed_auth_*` setting to `["SymantecVIP"]`
@@ -78,6 +82,10 @@ Keymaster supports SQLite and PostgreSQL to store u2f tokens or username and pas
 ##### Openid Connect IDP
 To use keymasterd as an openid connect IDP please consult the documents
 [here](docs/website/openidc-idp.md)
+
+##### SSH Cerfificate exteansion expansion
+Some systems like github.com allow the use of ssh certificates to authenticate users. To do so it is required to have speficic extensions in the ssh certificate. To accomodate this we have a bash like extension mechanism for expanding the username (some deployments require prefixes and some require some character subsituttions). We use posix expression expanding system, but we also reserve the pipe "|" so that we can do some future expansions.
+As of Feb 2024 only character replacement is part of the test-suite, so any other more complicated replacements are not considered forward compatible (as in the configuration may as expected in future versions).
 
 #### keymaster-unlocker
 The `keymaster-unlocker` binary allows you to 'unseal' the Keymaster environment. This binary requires a client side certificate signed by the adminCA.
@@ -98,7 +106,7 @@ patents and contracts.
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019-2021 Cloud-Foundations.org
+Copyright 2019-2024 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
