@@ -15,8 +15,9 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/term"
-	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 const (
@@ -60,7 +61,7 @@ func authenticate(s state) (string, error) {
 }
 
 func parseToken(serialisedToken string) (*authInfoJWT, error) {
-	token, err := jwt.ParseSigned(serialisedToken)
+	token, err := jwt.ParseSigned(serialisedToken, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return nil, err
 	}

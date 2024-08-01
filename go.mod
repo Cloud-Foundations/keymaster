@@ -37,7 +37,6 @@ require (
 	golang.org/x/oauth2 v0.21.0
 	golang.org/x/term v0.22.0
 	gopkg.in/ldap.v2 v2.5.1
-	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 	mvdan.cc/sh/v3 v3.8.0
 )
