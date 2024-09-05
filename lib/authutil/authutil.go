@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cviecco/argon2"
 	"github.com/foomo/htpasswd"
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/ldap.v2"
 )
@@ -56,12 +56,8 @@ func Argon2MakeNewHash(password []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	key, err := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
-	if err != nil {
-		return "", err
-	}
+	key := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
 	return fmt.Sprintf("%s%s:%x", argon2dPrefix, salt, key), nil
-
 }
 
 // We only support argon2d as is the only pure golang implementation
@@ -73,11 +69,7 @@ func Argon2CompareHashAndPassword(hash string, password []byte) error {
 	splitHashString := strings.SplitN(hash, ":", 2)
 	hexKey := splitHashString[1]
 	salt := splitHashString[0][len(argon2dPrefix):]
-	//log.Printf("salt='%s' heykey=%s", salt, hexKey)
-	key, err := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
-	if err != nil {
-		return err
-	}
+	key := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
 	if hexKey == fmt.Sprintf("%x", key) {
 		return nil
 	}
