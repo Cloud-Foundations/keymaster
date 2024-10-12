@@ -55,6 +55,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/cviecco/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -74,6 +75,7 @@ const (
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
 	AuthTypeFIDO2
+	AuthTypeKeymasterSSHCert
 )
 
 const (
@@ -218,6 +220,7 @@ type RuntimeState struct {
 	webAuthn                     *webauthn.WebAuthn
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
+	sshCertAuthenticator         *sshcertauth.Authenticator
 	logger                       log.DebugLogger
 }
 
@@ -714,14 +717,21 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
 	username string, authlevel int) (string, error) {
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+		time.Second)
+	return state.setNewAuthCookieWithExpiration(w, username, authlevel, expiration)
+}
+
+func (state *RuntimeState) setNewAuthCookieWithExpiration(w http.ResponseWriter,
+	username string, authlevel int, expiration time.Time) (string, error) {
 	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
 		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
-		time.Second)
+	//expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+	//	time.Second)
 	authCookie := http.Cookie{
 		Name:    authCookieName,
 		Value:   cookieVal,
@@ -1948,6 +1958,11 @@ func main() {
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
 		panic("got bad signer ready data")
+	}
+
+	err = runtimeState.initialzeSelfSSHCertAuthenticator()
+	if err != nil {
+		logger.Fatalf("cannot inialize ssh identities for certauth %s", err)
 	}
 
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 && !runtimeState.Config.Ldap.DisablePasswordCache {
