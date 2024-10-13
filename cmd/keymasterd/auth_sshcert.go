@@ -27,7 +27,8 @@ func (state *RuntimeState) initialzeSelfSSHCertAuthenticator() error {
 
 // CreateChallengeHandler is an example of how to write a handler for
 // the path to create the challenge
-func (s *RuntimeState) CreateSSHCertAuthChallengeHandler(w http.ResponseWriter, r *http.Request) {
+func (s *RuntimeState) sshCertAuthCreateChallengeHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO: add some rate limiting
 	err := s.sshCertAuthenticator.CreateChallengeHandler(w, r)
 	if err != nil {
 		// we are assuming bad request
@@ -38,7 +39,7 @@ func (s *RuntimeState) CreateSSHCertAuthChallengeHandler(w http.ResponseWriter, 
 	}
 }
 
-func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.Request) {
+func (s *RuntimeState) sshCertAuthLoginWithChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	username, maxAge, userErrString, err := s.sshCertAuthenticator.LoginWithChallenge(r)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
@@ -46,7 +47,6 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 		if userErrString == "" {
 			errorCode = http.StatusInternalServerError
 		}
-		//http.Error(w, userErrString, errorCode)
 		s.writeFailureResponse(w, r, errorCode, userErrString)
 		return
 	}
@@ -74,5 +74,4 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(loginResponse)
 	}
-
 }

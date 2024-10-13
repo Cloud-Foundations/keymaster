@@ -1790,6 +1790,11 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Debugf(3, "After load verify")
+	startServerAfterLoad(runtimeState, realLogger)
+}
+
+func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.Logger) {
+	var err error
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
 	adminDashboard := newAdminDashboard(realLogger, publicLogs)
@@ -1909,6 +1914,12 @@ func main() {
 		serviceMux.HandleFunc(paths.VerifyAuthToken,
 			runtimeState.VerifyAuthTokenHandler)
 	}
+	// TODO: only enable these handlers if sshcertauth is enabled
+	serviceMux.HandleFunc(sshcertauth.DefaultCreateChallengePath,
+		runtimeState.sshCertAuthCreateChallengeHandler)
+	serviceMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath,
+		runtimeState.sshCertAuthLoginWithChallengeHandler)
+
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
