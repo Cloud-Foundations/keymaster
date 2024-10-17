@@ -60,18 +60,9 @@ func (s *RuntimeState) sshCertAuthLoginWithChallengeHandler(w http.ResponseWrite
 		return
 	}
 
-	returnAcceptType := getPreferredAcceptType(r)
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"}
-	switch returnAcceptType {
-	case "text/html":
-		loginDestination := getLoginDestination(r)
-		eventNotifier.PublishWebLoginEvent(username)
-		s.logger.Debugf(0, "redirecting to: %s\n", loginDestination)
-		http.Redirect(w, r, loginDestination, 302)
-	default:
-		// RODO needs eventnotifier?
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(loginResponse)
-	}
+	// TODO needs eventnotifier?
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(loginResponse)
 }
