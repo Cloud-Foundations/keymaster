@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/tls"
@@ -30,6 +31,7 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
@@ -195,7 +197,7 @@ type RuntimeState struct {
 	ClientCAPool                 *x509.CertPool
 	HostIdentity                 string
 	KerberosRealm                *string
-	caCertDer                    []byte
+	caCertDer                    [][]byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
 	localAuthData                map[string]localUserData
@@ -1043,6 +1045,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	target := r.URL.Path[len(publicPath):]
 
+	caPubMaxSeconds := 30
 	switch target {
 	case "loginForm":
 		//fmt.Fprintf(w, "%s", loginFormText)
@@ -1050,11 +1053,46 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
-		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
-
-		w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+		var outCABuf bytes.Buffer
+		for _, derCert := range state.caCertDer {
+			err := pem.Encode(&outCABuf, &pem.Block{Type: "CERTIFICATE", Bytes: derCert})
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing pemCA")
+				return
+			}
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymasterx509CA.pem"`)
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "%s", pemCert)
+		outCABuf.WriteTo(w)
+	case "sshca":
+		var outCABuf bytes.Buffer
+		for _, pub := range state.KeymasterPublicKeys {
+			sshPub, err := ssh.NewPublicKey(pub)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+			pubBytes := ssh.MarshalAuthorizedKey(sshPub)
+			_, err = fmt.Fprintf(&outCABuf, "%s", pubBytes)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymastersshCCA.pub"`)
+		w.WriteHeader(200)
+		outCABuf.WriteTo(w)
+
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
@@ -1985,11 +2023,13 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 	if runtimeState.ClientCAPool == nil {
 		runtimeState.ClientCAPool = x509.NewCertPool()
 	}
-	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
-	if err != nil {
-		panic(err)
+	for _, derCert := range runtimeState.caCertDer {
+		myCert, err := x509.ParseCertificate(derCert)
+		if err != nil {
+			panic(err)
+		}
+		runtimeState.ClientCAPool.AddCert(myCert)
 	}
-	runtimeState.ClientCAPool.AddCert(myCert)
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating

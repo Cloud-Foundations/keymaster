@@ -237,6 +237,13 @@ func (state *RuntimeState) expandSSHExtensions(username string) (map[string]stri
 	return userExtensions, nil
 }
 
+func (state *RuntimeState) getSignerX509CAForPublic(pub interface{}) (crypto.Signer, []byte, error) {
+	//v0... always returnt the primary signer
+	baseIndex := len(state.caCertDer) - 1
+	return state.Signer, state.caCertDer[baseIndex], nil
+
+}
+
 func (state *RuntimeState) postAuthSSHCertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	duration time.Duration) {
@@ -453,14 +460,20 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		logger.Printf("Invalid File, Check Key strength/key type")
 		return
 	}
-	caCert, err := x509.ParseCertificate(state.caCertDer)
+	signer, caCertDer, err := state.getSignerX509CAForPublic(userPub)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Error Finding Cert for public key: %s\n data", err)
+		return
+	}
+	caCert, err := x509.ParseCertificate(caCertDer)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		logger.Printf("Cannot parse CA Der: %s\n data", err)
 		return
 	}
 	derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-		keySigner, state.KerberosRealm, duration, groups, organizations,
+		signer, state.KerberosRealm, duration, groups, organizations,
 		serviceMethods, logger)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")

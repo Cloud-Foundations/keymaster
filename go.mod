@@ -2,7 +2,7 @@ module github.com/Cloud-Foundations/keymaster
 
 go 1.22.0
 
-toolchain go1.22.6
+toolchain go1.22.4
 
 replace github.com/bearsh/hid v1.3.0 => github.com/bearsh/hid v1.5.0
 
@@ -23,6 +23,7 @@ require (
 	github.com/duo-labs/webauthn v0.0.0-20221205164246-ebaf9b74c6ec
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
+	github.com/go-jose/go-jose/v4 v4.0.4
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
 	github.com/lib/pq v1.10.9
 	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
@@ -37,7 +38,6 @@ require (
 	golang.org/x/oauth2 v0.23.0
 	golang.org/x/term v0.25.0
 	gopkg.in/ldap.v2 v2.5.1
-	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 	mvdan.cc/sh/v3 v3.9.0
 )
@@ -98,5 +98,4 @@ require (
 	golang.org/x/time v0.7.0
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
-	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )
