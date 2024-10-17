@@ -732,8 +732,6 @@ func (state *RuntimeState) setNewAuthCookieWithExpiration(w http.ResponseWriter,
 		logger.Println(err)
 		return "", err
 	}
-	//expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
-	//	time.Second)
 	authCookie := http.Cookie{
 		Name:    authCookieName,
 		Value:   cookieVal,
