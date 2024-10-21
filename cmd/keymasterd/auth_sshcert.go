@@ -25,6 +25,15 @@ func (state *RuntimeState) initialzeSelfSSHCertAuthenticator() error {
 	return state.sshCertAuthenticator.UnsafeUpdateCaKeys(sshTrustedKeys)
 }
 
+func (state *RuntimeState) isSelfSSHCertAuthenticatorEnabled() bool {
+	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
+		if certPref == proto.AuthTypeSSHCert {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateChallengeHandler is an example of how to write a handler for
 // the path to create the challenge
 func (s *RuntimeState) sshCertAuthCreateChallengeHandler(w http.ResponseWriter, r *http.Request) {

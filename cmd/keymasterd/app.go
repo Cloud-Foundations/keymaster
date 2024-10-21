@@ -223,6 +223,10 @@ type RuntimeState struct {
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
 	sshCertAuthenticator         *sshcertauth.Authenticator
+	serviceMux                   *http.ServeMux
+	serviceAccessLogger          *serverlogger.Logger
+	adminAccessLogger            *serverlogger.Logger
+	adminDashboard               *adminDashboardType
 	logger                       log.DebugLogger
 }
 
@@ -1827,32 +1831,34 @@ func main() {
 	}
 	logger.Debugf(3, "After load verify")
 	startServerAfterLoad(runtimeState, realLogger)
+	logger.Debugf(3, "After server initbase")
+	startListenersAndWaitForUnsealing(runtimeState)
 }
 
 func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.Logger) {
 	var err error
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
-	adminDashboard := newAdminDashboard(realLogger, publicLogs)
+	runtimeState.adminDashboard = newAdminDashboard(realLogger, publicLogs)
 
 	logBufOptions := logbuf.GetStandardOptions()
 	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
 	logger.Debugf(1, "accesslogdir=%s\n", accessLogDirectory)
-	serviceAccessLogger := serverlogger.NewWithOptions("access",
+	runtimeState.serviceAccessLogger = serverlogger.NewWithOptions("access",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: accessLogDirectory},
 		stdlog.LstdFlags)
 
 	adminAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-admin")
-	adminAccessLogger := serverlogger.NewWithOptions("access-admin",
+	runtimeState.adminAccessLogger = serverlogger.NewWithOptions("access-admin",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: adminAccesLogDirectory},
 		stdlog.LstdFlags)
 
 	// Expose the registered metrics via HTTP.
-	http.Handle("/", adminDashboard)
+	http.Handle("/", runtimeState.adminDashboard)
 	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 	http.HandleFunc(readyzPath, runtimeState.readyzHandler)
@@ -1951,12 +1957,19 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 			runtimeState.VerifyAuthTokenHandler)
 	}
 	// TODO: only enable these handlers if sshcertauth is enabled
-	serviceMux.HandleFunc(sshcertauth.DefaultCreateChallengePath,
-		runtimeState.sshCertAuthCreateChallengeHandler)
-	serviceMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath,
-		runtimeState.sshCertAuthLoginWithChallengeHandler)
-
+	if runtimeState.isSelfSSHCertAuthenticatorEnabled() {
+		serviceMux.HandleFunc(sshcertauth.DefaultCreateChallengePath,
+			runtimeState.sshCertAuthCreateChallengeHandler)
+		serviceMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath,
+			runtimeState.sshCertAuthLoginWithChallengeHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
+	runtimeState.serviceMux = serviceMux
+}
+
+func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
+	var err error
+	publicLogs := runtimeState.Config.Base.PublicLogs
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
@@ -1976,8 +1989,8 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
 		runtimeState)
-	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
-	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
+	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.serviceAccessLogger}
+	adminHTTPLogger := httpLogger{AccessLogger: runtimeState.adminAccessLogger}
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
@@ -2050,7 +2063,7 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 	}
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
+		Handler:      instrumentedwriter.NewLoggingHandler(runtimeState.serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -2061,7 +2074,7 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 	go func() {
 		time.Sleep(time.Millisecond * 10)
 		healthserver.SetReady()
-		adminDashboard.setReady()
+		runtimeState.adminDashboard.setReady()
 	}()
 	err = serviceSrv.ListenAndServeTLS("", "")
 	if err != nil {

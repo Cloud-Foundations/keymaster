@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/cviecco/webauth-sshcert/lib/server/sshcertauth"
 )
 
@@ -19,6 +21,17 @@ func TestInitializeSSHAuthenticator(t *testing.T) {
 	err = state.initialzeSelfSSHCertAuthenticator()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIsSelfSSHCertAuthenticatorEnabled(t *testing.T) {
+	state := RuntimeState{}
+	if state.isSelfSSHCertAuthenticatorEnabled() {
+		t.Fatal("it should not be enabled on empty state")
+	}
+	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypeSSHCert)
+	if !state.isSelfSSHCertAuthenticatorEnabled() {
+		t.Fatal("it should be enabled on empty state")
 	}
 }
 
@@ -53,5 +66,17 @@ func TestSshCertAuthCreateChallengeHandlert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
 
+func TestSshCertAuthLoginWithChallengeHandler(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypeSSHCert)
+	realLogger := serverlogger.New("") //TODO, we need to find a simulator for this
+	startServerAfterLoad(state, realLogger)
+
+	//TODO: write the actual test, at this point we only have the endpoints initalized
 }

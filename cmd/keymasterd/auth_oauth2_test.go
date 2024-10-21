@@ -67,11 +67,16 @@ func init() {
 	//logger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	slogger := stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	logger = debuglogger.New(slogger)
-	http.HandleFunc("/userinfo", userinfoHandler)
-	http.HandleFunc("/token", tokenHandler)
-	http.HandleFunc("/", handler)
+	testMux := http.NewServeMux()
+	testMux.HandleFunc("/userinfo", userinfoHandler)
+	testMux.HandleFunc("/token", tokenHandler)
+	testMux.HandleFunc("/", handler)
+	testServer := http.Server{
+		Handler: testMux,
+		Addr:    "127.0.0.1:12345",
+	}
 	logger.Printf("about to start server")
-	go http.ListenAndServe("127.0.0.1:12345", nil)
+	go testServer.ListenAndServe()
 	time.Sleep(20 * time.Millisecond)
 	_, err := http.Get("http://localhost:12345")
 	if err != nil {
