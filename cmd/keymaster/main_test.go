@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -273,8 +274,23 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(privateKeyPath)
+	defer os.Remove(privateKeyPath)
+
 	// TODO: on linux/macos create agent + unix socket and pass that
+	if oldSSHSock != "" && runtime.GOOS == "darwin" {
+		//reset the socket
+		err = os.Setenv("SSH_AUTH_SOCK", oldSSHSock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("ssh-add", "-t", "10", privateKeyPath)
+		err := cmd.Run()
+		if err != nil {
+
+			t.Fatalf("Command finished with error: %v", err)
+		}
+
+	}
 
 }
 
