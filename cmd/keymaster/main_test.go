@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -21,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
@@ -203,12 +203,14 @@ func TestMost(t *testing.T) {
 
 }
 
+/*
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 	certBytes := c.Marshal()
 	encoded := base64.StdEncoding.EncodeToString(certBytes)
 	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
-	return c.Type() + " " + encoded + " " + fileComment, nil
+	return c.Type() + " " + encoded + " " + fileComment + "\n", nil
 }
+*/
 
 func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	//step 1: generate
@@ -216,28 +218,23 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	sshPublic, err := ssh.NewPublicKey(publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert := ssh.Certificate{
-		Key:             sshPublic,
-		ValidPrincipals: []string{"username"},
-		ValidAfter:      uint64(time.Now().Unix()) - 10,
-		ValidBefore:     uint64(time.Now().Unix()) + 10,
-	}
+	sshPublicBytes := ssh.MarshalAuthorizedKey(sshPublic)
+
 	sshSigner, err := ssh.NewSignerFromKey(privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cert.SignCert(rand.Reader, sshSigner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	certString, err := goCertToFileString(cert, "username")
-	if err != nil {
-		t.Fatal(err)
-	}
+	seconds := 10
+	certDuration := time.Duration(seconds) * time.Second
+	extensions := make(map[string]string)
+
+	certString, _, err := certgen.GenSSHCertFileString("username", string(sshPublicBytes), sshSigner, "km.example.com", certDuration, extensions)
+
 	// This test needs a running agent... and remote windows
 	// builders do NOT have this... thus we need to abort this test
 	// until we have a way to NOT timeout on missing agent in
@@ -276,6 +273,8 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	}
 	defer os.Remove(privateKeyPath)
 
+	//t.Logf("certString='%s'", certString)
+
 	// TODO: on linux/macos create agent + unix socket and pass that
 	if oldSSHSock != "" && runtime.GOOS == "darwin" {
 		//reset the socket
@@ -283,15 +282,13 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cmd := exec.Command("ssh-add", "-t", "10", privateKeyPath)
+		cmd := exec.Command("ssh-add", "-t", "30", privateKeyPath)
 		err := cmd.Run()
 		if err != nil {
 
 			t.Fatalf("Command finished with error: %v", err)
 		}
-
 	}
-
 }
 
 func TestMainSimple(t *testing.T) {

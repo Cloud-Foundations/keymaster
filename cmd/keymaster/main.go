@@ -311,7 +311,7 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 		return err
 	}
 	// now we need to write the certificate
-	sshCertPath := privateKeyPath + ".pub"
+	sshCertPath := privateKeyPath + "-cert.pub"
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
