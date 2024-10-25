@@ -224,6 +224,8 @@ type RuntimeState struct {
 	totpLocalTateLimitMutex      sync.Mutex
 	sshCertAuthenticator         *sshcertauth.Authenticator
 	serviceMux                   *http.ServeMux
+	serviceServer                *http.Server
+	adminServer                  *http.Server
 	serviceAccessLogger          *serverlogger.Logger
 	adminAccessLogger            *serverlogger.Logger
 	adminDashboard               *adminDashboardType
@@ -1832,7 +1834,10 @@ func main() {
 	logger.Debugf(3, "After load verify")
 	startServerAfterLoad(runtimeState, realLogger)
 	logger.Debugf(3, "After server initbase")
-	startListenersAndWaitForUnsealing(runtimeState)
+	err = startListenersAndWaitForUnsealing(runtimeState)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.Logger) {
@@ -1967,7 +1972,7 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 	runtimeState.serviceMux = serviceMux
 }
 
-func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
+func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) error {
 	var err error
 	publicLogs := runtimeState.Config.Base.PublicLogs
 
@@ -1991,7 +1996,7 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 		runtimeState)
 	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: runtimeState.adminAccessLogger}
-	adminSrv := &http.Server{
+	runtimeState.adminServer = &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
 		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, adminHTTPLogger),
@@ -2003,8 +2008,8 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 		&tls.Config{ClientCAs: runtimeState.ClientCAPool, MinVersion: tls.VersionTLS12},
 		true)
 	go func() {
-		err := adminSrv.ListenAndServeTLS("", "")
-		if err != nil {
+		err := runtimeState.adminServer.ListenAndServeTLS("", "")
+		if err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
 
@@ -2017,18 +2022,18 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 	}
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
-		panic("got bad signer ready data")
+		return fmt.Errorf("got bad signer ready data")
 	}
 
 	err = runtimeState.initialzeSelfSSHCertAuthenticator()
 	if err != nil {
-		logger.Fatalf("cannot inialize ssh identities for certauth %s", err)
+		return fmt.Errorf("cannot inialize ssh identities for certauth %s", err)
 	}
 
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 && !runtimeState.Config.Ldap.DisablePasswordCache {
 		err = runtimeState.passwordChecker.UpdateStorage(runtimeState)
 		if err != nil {
-			logger.Fatalf("Cannot update password checker")
+			return fmt.Errorf("Cannot update password checker %s", err)
 		}
 	}
 	if runtimeState.ClientCAPool == nil {
@@ -2037,7 +2042,7 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 	for _, derCert := range runtimeState.caCertDer {
 		myCert, err := x509.ParseCertificate(derCert)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		runtimeState.ClientCAPool.AddCert(myCert)
 	}
@@ -2061,7 +2066,7 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 			tls.TLS_AES_256_GCM_SHA384,
 		},
 	}
-	serviceSrv := &http.Server{
+	runtimeState.serviceServer = &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		Handler:      instrumentedwriter.NewLoggingHandler(runtimeState.serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
@@ -2076,8 +2081,9 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) {
 		healthserver.SetReady()
 		runtimeState.adminDashboard.setReady()
 	}()
-	err = serviceSrv.ListenAndServeTLS("", "")
-	if err != nil {
+	err = runtimeState.serviceServer.ListenAndServeTLS("", "")
+	if err != nil && err != http.ErrServerClosed {
 		panic(err)
 	}
+	return err
 }
