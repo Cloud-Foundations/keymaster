@@ -299,19 +299,19 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 		return nil
 	}
 	logger.Debugf(1, "Non fatal, failed to insert into agent without expiration")
-	encodedSigner, err := x509.MarshalPKCS8PrivateKey(signer)
+	encodedSigner, err := ssh.MarshalPrivateKey(signer, "")
 	if err != nil {
 		return err
 	}
 	err = ioutil.WriteFile(
 		privateKeyPath,
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedSigner}),
+		pem.EncodeToMemory(encodedSigner),
 		0600)
 	if err != nil {
 		return err
 	}
 	// now we need to write the certificate
-	sshCertPath := privateKeyPath + ".pub"
+	sshCertPath := privateKeyPath + "-cert.pub"
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
