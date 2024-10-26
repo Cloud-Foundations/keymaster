@@ -8,8 +8,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Thus function can only be called after all known keymaster public keys
-// have been loaded, that is after the server is ready
+// This function can only be called after all known keymaster public keys
+// have been loaded, that is, after the server is ready
 func (state *RuntimeState) initialzeSelfSSHCertAuthenticator() error {
 
 	// build ssh pubkey list
@@ -49,7 +49,7 @@ func (s *RuntimeState) sshCertAuthCreateChallengeHandler(w http.ResponseWriter, 
 }
 
 func (s *RuntimeState) sshCertAuthLoginWithChallengeHandler(w http.ResponseWriter, r *http.Request) {
-	username, maxAge, userErrString, err := s.sshCertAuthenticator.LoginWithChallenge(r)
+	username, expiration, userErrString, err := s.sshCertAuthenticator.LoginWithChallenge(r)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
 		errorCode := http.StatusBadRequest
@@ -59,9 +59,8 @@ func (s *RuntimeState) sshCertAuthLoginWithChallengeHandler(w http.ResponseWrite
 		s.writeFailureResponse(w, r, errorCode, userErrString)
 		return
 	}
-	// TODO: make the maxAge the smaller of maxAge and now + 60s
 	// Make new auth cookie
-	_, err = s.setNewAuthCookieWithExpiration(w, username, AuthTypeKeymasterSSHCert, maxAge)
+	_, err = s.setNewAuthCookieWithExpiration(w, username, AuthTypeKeymasterSSHCert, expiration)
 	if err != nil {
 		s.writeFailureResponse(w, r, http.StatusInternalServerError,
 			"error internal")
