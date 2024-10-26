@@ -203,15 +203,6 @@ func TestMost(t *testing.T) {
 
 }
 
-/*
-func goCertToFileString(c ssh.Certificate, username string) (string, error) {
-	certBytes := c.Marshal()
-	encoded := base64.StdEncoding.EncodeToString(certBytes)
-	fileComment := "/tmp/" + username + "-" + c.SignatureKey.Type() + "-cert.pub"
-	return c.Type() + " " + encoded + " " + fileComment + "\n", nil
-}
-*/
-
 func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 	//step 1: generate
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
@@ -285,7 +276,6 @@ func TestInsertSSHCertIntoAgentORWriteToFilesystem(t *testing.T) {
 		cmd := exec.Command("ssh-add", "-t", "30", privateKeyPath)
 		err := cmd.Run()
 		if err != nil {
-
 			t.Fatalf("Command finished with error: %v", err)
 		}
 	}
