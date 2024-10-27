@@ -76,7 +76,8 @@ func TestSshCertAuthLoginWithChallengeHandler(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypeSSHCert)
 	realLogger := serverlogger.New("") //TODO, we need to find a simulator for this
-	startServerAfterLoad(state, realLogger)
+	adminMux := http.NewServeMux()
+	startServerAfterLoad(state, adminMux, realLogger)
 
 	//TODO: write the actual test, at this point we only have the endpoints initalized
 }

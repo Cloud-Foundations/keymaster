@@ -223,6 +223,7 @@ type RuntimeState struct {
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
 	sshCertAuthenticator         *sshcertauth.Authenticator
+	adminMux                     *http.ServeMux
 	serviceMux                   *http.ServeMux
 	serviceServer                *http.Server
 	adminServer                  *http.Server
@@ -1832,7 +1833,7 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Debugf(3, "After load verify")
-	startServerAfterLoad(runtimeState, realLogger)
+	startServerAfterLoad(runtimeState, http.DefaultServeMux, realLogger)
 	logger.Debugf(3, "After server initbase")
 	err = startListenersAndWaitForUnsealing(runtimeState)
 	if err != nil {
@@ -1840,7 +1841,10 @@ func main() {
 	}
 }
 
-func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.Logger) {
+// This function inializes paths and application loggers.
+// However since the grpc lib uses the defaultservermux we need to pass it in
+// actual production code as we cannot register the same path to a mux
+func startServerAfterLoad(runtimeState *RuntimeState, adminMux *http.ServeMux, realLogger *serverlogger.Logger) {
 	var err error
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
@@ -1863,10 +1867,11 @@ func startServerAfterLoad(runtimeState *RuntimeState, realLogger *serverlogger.L
 		stdlog.LstdFlags)
 
 	// Expose the registered metrics via HTTP.
-	http.Handle("/", runtimeState.adminDashboard)
-	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
-	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
-	http.HandleFunc(readyzPath, runtimeState.readyzHandler)
+	adminMux.Handle("/", runtimeState.adminDashboard)
+	adminMux.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
+	adminMux.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
+	adminMux.HandleFunc(readyzPath, runtimeState.readyzHandler)
+	runtimeState.adminMux = adminMux
 
 	serviceMux := http.NewServeMux()
 	serviceMux.HandleFunc(certgenPath, runtimeState.certGenHandler)
@@ -1992,7 +1997,7 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) error {
 			tls.TLS_AES_256_GCM_SHA384,
 		},
 	}
-	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
+	logFilterHandler := NewLogFilterHandler(runtimeState.adminMux, publicLogs,
 		runtimeState)
 	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: runtimeState.adminAccessLogger}
@@ -2075,7 +2080,7 @@ func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	http.Handle(eventmon.HttpPath, eventNotifier)
+	runtimeState.adminMux.Handle(eventmon.HttpPath, eventNotifier)
 	go func() {
 		time.Sleep(time.Millisecond * 10)
 		healthserver.SetReady()
