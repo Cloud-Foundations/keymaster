@@ -22,18 +22,6 @@ func init() {
 	//logger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	slogger := stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	logger = debuglogger.New(slogger)
-	/*
-		http.HandleFunc("/userinfo", userinfoHandler)
-		http.HandleFunc("/token", tokenHandler)
-		http.HandleFunc("/", handler)
-		logger.Printf("about to start server")
-		go http.ListenAndServe(":12345", nil)
-		time.Sleep(20 * time.Millisecond)
-		_, err := http.Get("http://localhost:12345")
-		if err != nil {
-			logger.Fatal(err)
-		}
-	*/
 }
 
 func TestIDPOpenIDCMetadataHandler(t *testing.T) {

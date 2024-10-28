@@ -100,6 +100,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 				AuthTypeWebauthForCLI) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeSSHCert &&
+			((authData.AuthType & AuthTypeKeymasterSSHCert) ==
+				AuthTypeKeymasterSSHCert) {
+			sufficientAuthLevel = true
+		}
 	}
 	// if you have u2f you can always get the cert
 	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {

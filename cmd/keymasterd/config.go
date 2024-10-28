@@ -40,6 +40,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
+	"github.com/cviecco/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
@@ -430,6 +431,9 @@ func loadVerifyConfigFile(configFilename string,
 	runtimeState.localAuthData = make(map[string]localUserData)
 	runtimeState.vipPushCookie = make(map[string]pushPollTransaction)
 	runtimeState.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
+
+	runtimeState.sshCertAuthenticator = sshcertauth.NewAuthenticator(
+		[]string{runtimeState.HostIdentity}, []string{})
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {

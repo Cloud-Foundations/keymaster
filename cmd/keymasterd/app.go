@@ -57,6 +57,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/cviecco/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/duo-labs/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -76,6 +77,7 @@ const (
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
 	AuthTypeFIDO2
+	AuthTypeKeymasterSSHCert
 )
 
 const (
@@ -220,6 +222,14 @@ type RuntimeState struct {
 	webAuthn                     *webauthn.WebAuthn
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
+	sshCertAuthenticator         *sshcertauth.Authenticator
+	adminMux                     *http.ServeMux
+	serviceMux                   *http.ServeMux
+	serviceServer                *http.Server
+	adminServer                  *http.Server
+	serviceAccessLogger          *serverlogger.Logger
+	adminAccessLogger            *serverlogger.Logger
+	adminDashboard               *adminDashboardType
 	logger                       log.DebugLogger
 }
 
@@ -716,14 +726,19 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
 	username string, authlevel int) (string, error) {
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
+		time.Second)
+	return state.setNewAuthCookieWithExpiration(w, username, authlevel, expiration)
+}
+
+func (state *RuntimeState) setNewAuthCookieWithExpiration(w http.ResponseWriter,
+	username string, authlevel int, expiration time.Time) (string, error) {
 	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel,
 		maxAgeSecondsAuthCookie)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
-		time.Second)
 	authCookie := http.Cookie{
 		Name:    authCookieName,
 		Value:   cookieVal,
@@ -1818,31 +1833,45 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Debugf(3, "After load verify")
+	startServerAfterLoad(runtimeState, http.DefaultServeMux, realLogger)
+	logger.Debugf(3, "After server initbase")
+	err = startListenersAndWaitForUnsealing(runtimeState)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// This function inializes paths and application loggers.
+// However since the grpc lib uses the defaultservermux we need to pass it in
+// actual production code as we cannot register the same path to a mux
+func startServerAfterLoad(runtimeState *RuntimeState, adminMux *http.ServeMux, realLogger *serverlogger.Logger) {
+	var err error
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
-	adminDashboard := newAdminDashboard(realLogger, publicLogs)
+	runtimeState.adminDashboard = newAdminDashboard(realLogger, publicLogs)
 
 	logBufOptions := logbuf.GetStandardOptions()
 	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
 	logger.Debugf(1, "accesslogdir=%s\n", accessLogDirectory)
-	serviceAccessLogger := serverlogger.NewWithOptions("access",
+	runtimeState.serviceAccessLogger = serverlogger.NewWithOptions("access",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: accessLogDirectory},
 		stdlog.LstdFlags)
 
 	adminAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-admin")
-	adminAccessLogger := serverlogger.NewWithOptions("access-admin",
+	runtimeState.adminAccessLogger = serverlogger.NewWithOptions("access-admin",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: adminAccesLogDirectory},
 		stdlog.LstdFlags)
 
 	// Expose the registered metrics via HTTP.
-	http.Handle("/", adminDashboard)
-	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
-	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
-	http.HandleFunc(readyzPath, runtimeState.readyzHandler)
+	adminMux.Handle("/", runtimeState.adminDashboard)
+	adminMux.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
+	adminMux.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
+	adminMux.HandleFunc(readyzPath, runtimeState.readyzHandler)
+	runtimeState.adminMux = adminMux
 
 	serviceMux := http.NewServeMux()
 	serviceMux.HandleFunc(certgenPath, runtimeState.certGenHandler)
@@ -1937,7 +1966,20 @@ func main() {
 		serviceMux.HandleFunc(paths.VerifyAuthToken,
 			runtimeState.VerifyAuthTokenHandler)
 	}
+	// TODO: only enable these handlers if sshcertauth is enabled
+	if runtimeState.isSelfSSHCertAuthenticatorEnabled() {
+		serviceMux.HandleFunc(sshcertauth.DefaultCreateChallengePath,
+			runtimeState.sshCertAuthCreateChallengeHandler)
+		serviceMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath,
+			runtimeState.sshCertAuthLoginWithChallengeHandler)
+	}
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
+	runtimeState.serviceMux = serviceMux
+}
+
+func startListenersAndWaitForUnsealing(runtimeState *RuntimeState) error {
+	var err error
+	publicLogs := runtimeState.Config.Base.PublicLogs
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
@@ -1955,11 +1997,11 @@ func main() {
 			tls.TLS_AES_256_GCM_SHA384,
 		},
 	}
-	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs,
+	logFilterHandler := NewLogFilterHandler(runtimeState.adminMux, publicLogs,
 		runtimeState)
-	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
-	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
-	adminSrv := &http.Server{
+	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.serviceAccessLogger}
+	adminHTTPLogger := httpLogger{AccessLogger: runtimeState.adminAccessLogger}
+	runtimeState.adminServer = &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
 		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, adminHTTPLogger),
@@ -1971,8 +2013,8 @@ func main() {
 		&tls.Config{ClientCAs: runtimeState.ClientCAPool, MinVersion: tls.VersionTLS12},
 		true)
 	go func() {
-		err := adminSrv.ListenAndServeTLS("", "")
-		if err != nil {
+		err := runtimeState.adminServer.ListenAndServeTLS("", "")
+		if err != nil && err != http.ErrServerClosed {
 			panic(err)
 		}
 
@@ -1985,13 +2027,18 @@ func main() {
 	}
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
-		panic("got bad signer ready data")
+		return fmt.Errorf("got bad signer ready data")
+	}
+
+	err = runtimeState.initialzeSelfSSHCertAuthenticator()
+	if err != nil {
+		return fmt.Errorf("cannot inialize ssh identities for certauth %s", err)
 	}
 
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 && !runtimeState.Config.Ldap.DisablePasswordCache {
 		err = runtimeState.passwordChecker.UpdateStorage(runtimeState)
 		if err != nil {
-			logger.Fatalf("Cannot update password checker")
+			return fmt.Errorf("Cannot update password checker %s", err)
 		}
 	}
 	if runtimeState.ClientCAPool == nil {
@@ -2000,7 +2047,7 @@ func main() {
 	for _, derCert := range runtimeState.caCertDer {
 		myCert, err := x509.ParseCertificate(derCert)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		runtimeState.ClientCAPool.AddCert(myCert)
 	}
@@ -2024,23 +2071,24 @@ func main() {
 			tls.TLS_AES_256_GCM_SHA384,
 		},
 	}
-	serviceSrv := &http.Server{
+	runtimeState.serviceServer = &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
+		Handler:      instrumentedwriter.NewLoggingHandler(runtimeState.serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
-	http.Handle(eventmon.HttpPath, eventNotifier)
+	runtimeState.adminMux.Handle(eventmon.HttpPath, eventNotifier)
 	go func() {
 		time.Sleep(time.Millisecond * 10)
 		healthserver.SetReady()
-		adminDashboard.setReady()
+		runtimeState.adminDashboard.setReady()
 	}()
-	err = serviceSrv.ListenAndServeTLS("", "")
-	if err != nil {
+	err = runtimeState.serviceServer.ListenAndServeTLS("", "")
+	if err != nil && err != http.ErrServerClosed {
 		panic(err)
 	}
+	return err
 }
