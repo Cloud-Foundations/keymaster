@@ -1,11 +1,26 @@
 on: [push, pull_request]
 name: Test
 jobs:
-  test:
+  testlinux:
     strategy:
       matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest, macos-latest]
+        go-version: [1.23.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@v3
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev    
+    - uses: actions/checkout@v3
+    - run: make test
+  testmacos:
+    strategy:
+      matrix:
+        go-version: [1.23.x]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/setup-go@v3
@@ -13,10 +28,11 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3
     - run: make test
+
   buildlinuxpackage:
     strategy:
       matrix:
-        go-version: [1.22.x]
+        go-version: [1.23.x]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-go@v3
@@ -24,7 +40,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: gcc rpm alien rsync pkg-config libudev-dev
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev
     - uses: actions/checkout@v3
     - run: make rpm
 
