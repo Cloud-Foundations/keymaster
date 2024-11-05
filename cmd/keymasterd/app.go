@@ -209,6 +209,7 @@ type RuntimeState struct {
 	db                           *sql.DB
 	dbType                       string
 	cacheDB                      *sql.DB
+	dbDone                       chan struct{}
 	remoteDBQueryTimeout         time.Duration
 	htmlTemplate                 *htmltemplate.Template
 	passwordChecker              pwauth.PasswordAuthenticator
