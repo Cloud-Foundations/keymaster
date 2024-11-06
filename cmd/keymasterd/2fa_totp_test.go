@@ -127,6 +127,7 @@ func TestGenerateNewTOTPSuccess(t *testing.T) {
 	if valid {
 		t.Fatal("should NOT have been valid")
 	}
+	state.dbDone <- struct{}{}
 
 }
 
@@ -213,6 +214,7 @@ func TestVerifyTOTPHandlerSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestAuthTOTPHandlerSuccess(t *testing.T) {
@@ -259,6 +261,7 @@ func TestAuthTOTPHandlerSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestTOTPTokenManagerHandlerUpdateSuccess(t *testing.T) {
@@ -327,4 +330,5 @@ func TestTOTPTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	if profile.TOTPAuthData[0].Name != newName {
 		t.Fatal("update not successul")
 	}
+	state.dbDone <- struct{}{}
 }
