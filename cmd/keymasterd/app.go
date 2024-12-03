@@ -1938,6 +1938,7 @@ func main() {
 			runtimeState.VerifyAuthTokenHandler)
 	}
 	serviceMux.HandleFunc(getRoleRequestingPath, runtimeState.roleRequetingCertGenHandler)
+	serviceMux.HandleFunc(refreshRoleRequestingCertPath, runtimeState.refreshRoleRequetingCertGenHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{

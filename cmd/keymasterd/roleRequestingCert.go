@@ -17,6 +17,7 @@ import (
 //const svcPrefixList= string ["svc-","role-"]
 
 const getRoleRequestingPath = "/v1/getRoleRequestingCert"
+const refreshRoleRequestingCertPath = "/v1/refreshRoleRequestingCert"
 const maxRoleRequestingCertDuration = time.Hour * 24 * 45
 
 type roleRequestingCertGenParams struct {
