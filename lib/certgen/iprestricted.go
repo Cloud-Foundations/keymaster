@@ -9,6 +9,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	"fmt"
+
 	//"log"
 	"math/big"
 	"net"
@@ -26,7 +28,7 @@ type IpAdressFamily struct {
 var oidIPAddressDelegation = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 7}
 var ipV4FamilyEncoding = []byte{0, 1, 1}
 
-//For now ipv4 only
+// For now ipv4 only
 func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 	ones, bits := netBlock.Mask.Size()
 	if bits != 32 {
@@ -90,7 +92,6 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	return netBlock, nil
 }
 
-//
 type subjectPublicKeyInfo struct {
 	Algorithm        pkix.AlgorithmIdentifier
 	SubjectPublicKey asn1.BitString
@@ -194,4 +195,38 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 		}
 	}
 	return false, nil
+}
+
+func ExtractIPNetsFromIPRestrictedX509(userCert *x509.Certificate) ([]net.IPNet, error) {
+	var extension *pkix.Extension = nil
+	var err error
+	for _, certExtension := range userCert.Extensions {
+		if certExtension.Id.Equal(oidIPAddressDelegation) {
+			extension = &certExtension
+			break
+		}
+	}
+	if extension == nil {
+		return nil, fmt.Errorf("externsion not found")
+	}
+	var ipAddressFamilyList []IpAdressFamily
+	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
+	if err != nil {
+		return nil, err
+	}
+	var rvalue []net.IPNet
+	for _, addressList := range ipAddressFamilyList {
+		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
+			//continue
+			return nil, fmt.Errorf("We only support ipv4 netblocks")
+		}
+		for _, encodedNetblock := range addressList.Addresses {
+			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+			if err != nil {
+				return nil, err
+			}
+			rvalue = append(rvalue, decoded)
+		}
+	}
+	return rvalue, nil
 }

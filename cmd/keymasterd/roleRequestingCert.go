@@ -231,3 +231,135 @@ func (state *RuntimeState) postAuthRoleRequetingCertGenProcessor(w http.Response
 
 	return "", 200, nil
 }
+
+func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *http.Request) (*roleRequestingCertGenParams, error, error) {
+
+	logger.Debugf(3, "Got client POST connection")
+	err := r.ParseForm()
+	if err != nil {
+		state.logger.Println(err)
+		return nil, err, nil
+	}
+	var rvalue roleRequestingCertGenParams
+	/*
+	   Role name: role
+	   Public Key (PEM): pubkey
+	   Requestor (Hypervisor) netblock: requestor_netblock
+	   Target (VM) netblock: target_netblock
+	   Optional duration: duration (i.e. 730h: :golang: time format)
+	*/
+	// Role
+
+	identityName := authData.Username
+	if identityName == "" {
+		return nil, fmt.Errorf("Missing identity parameter"), nil
+	}
+	ok, err := state.isAutomationUser(identityName)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("requested role is not automation user"), nil
+		//return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
+	}
+	rvalue.Role = identityName
+
+	//Duration
+	rvalue.Duration = maxRoleRequestingCertDuration
+
+	// publickey
+	b64pubkey := r.Form.Get("pubkey")
+	if b64pubkey == "" {
+		return nil, fmt.Errorf("Missing pubkey parameter"), nil
+	}
+	pkixDerPub, err := base64.RawURLEncoding.DecodeString(b64pubkey)
+	if err != nil {
+		state.logger.Printf("%s", err)
+		return nil, fmt.Errorf("Invalid encoding for pubkey"), nil
+	}
+	userPub, err := x509.ParsePKIXPublicKey(pkixDerPub)
+	if err != nil {
+		state.logger.Printf("%s", err)
+		return nil, fmt.Errorf("pubkey is not valid PKIX public key"), nil
+	}
+	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !validKey {
+		return nil, fmt.Errorf("Invalid File, Check Key strength/key type"), nil
+	}
+	rvalue.UserPub = userPub
+
+	// networks
+	if r.TLS == nil {
+		return nil, fmt.Errorf("MUST only come form certificate"), nil
+	}
+	if len(r.TLS.VerifiedChains) < 1 {
+		return nil, fmt.Errorf("MUST only come form certificate"), nil
+	}
+	userCert := r.TLS.VerifiedChains[0][0]
+	certNets, err := certgen.ExtractIPNetsFromIPRestrictedX509(userCert)
+	if err != nil {
+		return nil, nil, err
+	}
+	rvalue.RequestorNetblocks = certNets
+	return &rvalue, nil, nil
+}
+
+func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
+
+	var signerIsNull bool
+	//var keySigner crypto.Signer
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	/*
+	   if !signerIsNull {
+	           keySigner = state.Signer
+	   }
+	*/
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("Signer not loaded")
+		return
+	}
+
+	authData, err := state.checkAuth(w, r, AuthTypeIPCertificate)
+	if err != nil {
+		state.logger.Debugf(1, "%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	// TODO: we need to do denylist checks here against the cert/certkey
+
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
+
+	/// Now we parse the inputs
+	if r.Method != "POST" {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	params, userError, err := state.parseRefreshRoleCertGenParams(authData, r)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if userError != nil {
+		state.writeFailureResponse(w, r, http.StatusBadRequest,
+			userError.Error())
+		return
+	}
+	message, code, err := state.postAuthRoleRequetingCertGenProcessor(w, r, params)
+	if err != nil {
+		state.writeFailureResponse(w, r, code, message)
+		if code >= 500 {
+			state.logger.Printf("Error generating cert", err)
+		}
+		return
+	}
+}
