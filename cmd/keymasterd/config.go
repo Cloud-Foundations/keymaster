@@ -91,6 +91,7 @@ type baseConfig struct {
 	SecsBetweenDependencyChecks     int           `yaml:"secs_between_dependency_checks"`
 	AutomationUserGroups            []string      `yaml:"automation_user_groups"`
 	AutomationUsers                 []string      `yaml:"automation_users"`
+	AutomationAdmins                []string      `yaml:"automation_admins"`
 	DisableUsernameNormalization    bool          `yaml:"disable_username_normalization"`
 	EnableLocalTOTP                 bool          `yaml:"enable_local_totp"`
 	EnableBootstrapOTP              bool          `yaml:"enable_bootstrapotp"`

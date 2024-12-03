@@ -1937,6 +1937,7 @@ func main() {
 		serviceMux.HandleFunc(paths.VerifyAuthToken,
 			runtimeState.VerifyAuthTokenHandler)
 	}
+	serviceMux.HandleFunc(getRoleRequestingPath, runtimeState.roleRequetingCertGenHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{

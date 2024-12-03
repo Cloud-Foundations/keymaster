@@ -16,6 +16,7 @@ import (
 
 //const svcPrefixList= string ["svc-","role-"]
 
+const getRoleRequestingPath = "/v1/getRoleRequestingCert"
 const maxRoleRequestingCertDuration = time.Hour * 24 * 45
 
 type roleRequestingCertGenParams struct {
@@ -23,11 +24,9 @@ type roleRequestingCertGenParams struct {
 	Duration           time.Duration
 	RequestorNetblocks []net.IPNet
 	UserPub            interface{}
-	//targetNetblocks
 }
 
 func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequestingCertGenParams, error, error) {
-
 	logger.Debugf(3, "Got client POST connection")
 	err := r.ParseMultipartForm(1e7)
 	if err != nil {
@@ -73,6 +72,20 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		}
 		rvalue.RequestorNetblocks = append(rvalue.RequestorNetblocks, *parsedNetBlock)
 	}
+	//TargetNetblocks
+	targetNetblockStrings, ok := r.Form["target_netblock"]
+	if !ok {
+		return nil, fmt.Errorf("missing required requestor_netblock param"), nil
+	}
+	for _, netBlock := range targetNetblockStrings {
+		_, _, err := net.ParseCIDR(netBlock)
+		if err != nil {
+			state.logger.Printf("%s", err)
+			return nil, fmt.Errorf("invalid netblock %s", netBlock), nil
+		}
+		//rvalue.RequestorNetblocks = append(rvalue.RequestorNetblocks, *parsedNetBlock)
+	}
+
 	// publickey
 	b64pubkey := r.Form.Get("pubkey")
 	if b64pubkey == "" {
@@ -88,11 +101,30 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		state.logger.Printf("%s", err)
 		return nil, fmt.Errorf("pubkey is not valid PKIX public key"), nil
 	}
-	// TODO: validate key strength
+	validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !validKey {
+		return nil, fmt.Errorf("Invalid File, Check Key strength/key type"), nil
+	}
 	rvalue.UserPub = userPub
 
 	return &rvalue, nil, nil
-	//return nil, nil, fmt.Errorf("not implemented")
+}
+
+func (state *RuntimeState) isAutomationAdmin(user string) bool {
+	isAdmin := state.IsAdminUser(user)
+	if isAdmin {
+		return true
+	}
+	for _, adminUser := range state.Config.Base.AutomationAdmins {
+		if user == adminUser {
+			return true
+		}
+	}
+	return false
+
 }
 
 func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +158,15 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	// TODO: this should be a different check, for now keep it to admin users
-	if !state.IsAdminUser(authData.Username) {
+	if !state.isAutomationAdmin(authData.Username) {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized,
 			"Not an admin user")
 		return
 	}
+
+	// TODO: maybe add a check to ensure role certs cannot get role certs?
 	//
+
 	/// Now we parse the inputs
 	if r.Method != "POST" {
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
@@ -147,32 +182,38 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 			userError.Error())
 		return
 	}
+	message, code, err := state.postAuthRoleRequetingCertGenProcessor(w, r, params)
+	if err != nil {
+		state.writeFailureResponse(w, r, code, message)
+		if code >= 500 {
+			state.logger.Printf("Error generating cert", err)
+		}
+		return
+	}
+
+}
+func (state *RuntimeState) postAuthRoleRequetingCertGenProcessor(w http.ResponseWriter, r *http.Request, params *roleRequestingCertGenParams) (string, int, error) {
 	signer, caCertDer, err := state.getSignerX509CAForPublic(params.UserPub)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Error Finding Cert for public key: %s\n data", err)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
+		//state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		//state.logger.Printf("Error Finding Cert for public key: %s\n data", err)
+		//return
 	}
 	caCert, err := x509.ParseCertificate(caCertDer)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot parse CA Der: %s\n data", err)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("Cannot parse CA Der: %s\n data", err)
 	}
 
 	derCert, err := certgen.GenIPRestrictedX509Cert(params.Role, params.UserPub,
 		caCert, signer, params.RequestorNetblocks, params.Duration, nil, nil)
 
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Parse Generated x509cert: %s\n", err)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("Cannot Generate x509cert: %s\n", err)
 	}
 	parsedCert, err := x509.ParseCertificate(derCert)
 	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Cannot Parse Generated x509cert: %s\n", err)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("Cannot Parse Generated x509cert: %s\n", err)
 	}
 
 	eventNotifier.PublishX509(derCert)
@@ -185,7 +226,8 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
+	state.logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
 		params.Role, clientIpAddress, parsedCert.SerialNumber.String())
 
+	return "", 200, nil
 }
