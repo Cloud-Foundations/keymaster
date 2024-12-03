@@ -28,7 +28,7 @@ type roleRequestingCertGenParams struct {
 
 func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequestingCertGenParams, error, error) {
 	logger.Debugf(3, "Got client POST connection")
-	err := r.ParseMultipartForm(1e7)
+	err := r.ParseForm()
 	if err != nil {
 		state.logger.Println(err)
 		return nil, err, nil
@@ -42,9 +42,9 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		Optional duration: duration (i.e. 730h: :golang: time format)
 	*/
 	// Role
-	roleName := r.Form.Get("role")
+	roleName := r.Form.Get("identity")
 	if roleName == "" {
-		return nil, fmt.Errorf("Missing role parameter"), nil
+		return nil, fmt.Errorf("Missing identity parameter"), nil
 	}
 	ok, err := state.isAutomationUser(roleName)
 	if err != nil {
@@ -91,7 +91,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 	if b64pubkey == "" {
 		return nil, fmt.Errorf("Missing pubkey parameter"), nil
 	}
-	pkixDerPub, err := base64.URLEncoding.DecodeString(b64pubkey)
+	pkixDerPub, err := base64.RawURLEncoding.DecodeString(b64pubkey)
 	if err != nil {
 		state.logger.Printf("%s", err)
 		return nil, fmt.Errorf("Invalid encoding for pubkey"), nil
