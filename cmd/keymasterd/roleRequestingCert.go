@@ -27,7 +27,7 @@ type roleRequestingCertGenParams struct {
 }
 
 func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequestingCertGenParams, error, error) {
-	logger.Debugf(3, "Got client POST connection")
+	state.logger.Debugf(3, "Got client POST connection")
 	err := r.ParseForm()
 	if err != nil {
 		state.logger.Println(err)
@@ -144,7 +144,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	//local sanity tests
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Signer not loaded")
+		state.logger.Printf("Signer not loaded")
 		return
 	}
 
@@ -182,64 +182,61 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 			userError.Error())
 		return
 	}
-	message, code, err := state.postAuthRoleRequetingCertGenProcessor(w, r, params)
+	pemCert, cert, err := state.withParamsGenegneratRoleRequetingCert(params)
 	if err != nil {
-		state.writeFailureResponse(w, r, code, message)
-		if code >= 500 {
-			state.logger.Printf("Error generating cert", err)
-		}
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.logger.Printf("Error generating cert", err)
 		return
 	}
+	clientIpAddress := util.GetRequestRealIp(r)
+
+	w.Header().Set("Content-Disposition", `attachment; filename="roleRequstingCert.pem"`)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "%s", pemCert)
+	state.logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
+		params.Role, clientIpAddress, cert.SerialNumber.String())
+
+	return
 
 }
-func (state *RuntimeState) postAuthRoleRequetingCertGenProcessor(w http.ResponseWriter, r *http.Request, params *roleRequestingCertGenParams) (string, int, error) {
+func (state *RuntimeState) withParamsGenegneratRoleRequetingCert(params *roleRequestingCertGenParams) (string, *x509.Certificate, error) {
 	signer, caCertDer, err := state.getSignerX509CAForPublic(params.UserPub)
 	if err != nil {
-		return "", http.StatusInternalServerError, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
-		//state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		//state.logger.Printf("Error Finding Cert for public key: %s\n data", err)
-		//return
+		return "", nil, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
 	}
 	caCert, err := x509.ParseCertificate(caCertDer)
 	if err != nil {
-		return "", http.StatusInternalServerError, fmt.Errorf("Cannot parse CA Der: %s\n data", err)
+		return "", nil, fmt.Errorf("Cannot parse CA Der: %s\n data", err)
 	}
 
 	derCert, err := certgen.GenIPRestrictedX509Cert(params.Role, params.UserPub,
 		caCert, signer, params.RequestorNetblocks, params.Duration, nil, nil)
 
 	if err != nil {
-		return "", http.StatusInternalServerError, fmt.Errorf("Cannot Generate x509cert: %s\n", err)
+		return "", nil, fmt.Errorf("Cannot Generate x509cert: %s\n", err)
 	}
 	parsedCert, err := x509.ParseCertificate(derCert)
 	if err != nil {
-		return "", http.StatusInternalServerError, fmt.Errorf("Cannot Parse Generated x509cert: %s\n", err)
+		return "", nil, fmt.Errorf("Cannot Parse Generated x509cert: %s\n", err)
 	}
 
 	eventNotifier.PublishX509(derCert)
 	cert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
 		Bytes: derCert}))
+	return cert, parsedCert, nil
 
-	// add logging + metrics
-	clientIpAddress := util.GetRequestRealIp(r)
-
-	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
-	w.WriteHeader(200)
-	fmt.Fprintf(w, "%s", cert)
-	state.logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
-		params.Role, clientIpAddress, parsedCert.SerialNumber.String())
-
-	return "", 200, nil
 }
 
 func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *http.Request) (*roleRequestingCertGenParams, error, error) {
 
-	logger.Debugf(3, "Got client POST connection")
+	state.logger.Debugf(4, "Got client POST connection")
 	err := r.ParseForm()
 	if err != nil {
 		state.logger.Println(err)
 		return nil, err, nil
 	}
+	state.logger.Debugf(4, "parseRefreshRoleCertGenParams past postform r=%+v", r)
+
 	var rvalue roleRequestingCertGenParams
 	/*
 	   Role name: role
@@ -268,7 +265,7 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 	rvalue.Duration = maxRoleRequestingCertDuration
 
 	// publickey
-	b64pubkey := r.Form.Get("pubkey")
+	b64pubkey := r.PostForm.Get("pubkey")
 	if b64pubkey == "" {
 		return nil, fmt.Errorf("Missing pubkey parameter"), nil
 	}
@@ -325,10 +322,11 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 	//local sanity tests
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		logger.Printf("Signer not loaded")
+		state.logger.Printf("Signer not loaded")
 		return
 	}
 
+	state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler before auth")
 	authData, err := state.checkAuth(w, r, AuthTypeIPCertificate)
 	if err != nil {
 		state.logger.Debugf(1, "%v", err)
@@ -336,6 +334,7 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 	// TODO: we need to do denylist checks here against the cert/certkey
+	state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler: authenticated")
 
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
@@ -350,16 +349,24 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 	if userError != nil {
+		state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler: error parsing params err=%s", userError)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			userError.Error())
 		return
 	}
-	message, code, err := state.postAuthRoleRequetingCertGenProcessor(w, r, params)
+	pemCert, cert, err := state.withParamsGenegneratRoleRequetingCert(params)
 	if err != nil {
-		state.writeFailureResponse(w, r, code, message)
-		if code >= 500 {
-			state.logger.Printf("Error generating cert", err)
-		}
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.logger.Printf("Error generating cert", err)
 		return
 	}
+	clientIpAddress := util.GetRequestRealIp(r)
+
+	w.Header().Set("Content-Disposition", `attachment; filename="roleRequstingCert.pem"`)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "%s", pemCert)
+	state.logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
+		params.Role, clientIpAddress, cert.SerialNumber.String())
+
+	return
 }
