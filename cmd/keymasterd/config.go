@@ -41,11 +41,11 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	"github.com/duo-labs/webauthn/webauthn"
-	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
+	"golang.org/x/term"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
 )
@@ -208,6 +208,7 @@ const (
 	defaultRSAKeySize                  = 3072
 	defaultSecsBetweenDependencyChecks = 60
 	defaultOktaUsernameFilterRegexp    = "@.*"
+	maxPasswordLength                  = 512
 )
 
 func (state *RuntimeState) loadTemplates() (err error) {
@@ -795,15 +796,29 @@ func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 func getPassphrase() ([]byte, error) {
 	///matching := false
 	for {
+		// Prompt for the passphrase 1
 		fmt.Printf("Please enter your passphrase:\n")
-		passphrase1, err := gopass.GetPasswd()
+		passphrase1, err := term.ReadPassword(int(os.Stdin.Fd()))
+		// Add a newline after the password input
+		fmt.Println()
+
 		if err != nil {
 			return nil, err
 		}
+
+		// Prompt for the passphrase 2
 		fmt.Printf("Please re-enter your passphrase:\n")
-		passphrase2, err := gopass.GetPasswd()
+		passphrase2, err := term.ReadPassword(int(os.Stdin.Fd()))
+		// Add a newline after the password input
+		fmt.Println()
+
 		if err != nil {
 			return nil, err
+		}
+
+		// Check passphrases length
+		if len(passphrase1) > maxPasswordLength || len(passphrase2) > maxPasswordLength {
+			return nil, errors.New("maximum length exceeded")
 		}
 		if bytes.Equal(passphrase1, passphrase2) {
 			return passphrase1, nil
