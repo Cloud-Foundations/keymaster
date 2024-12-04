@@ -131,15 +131,9 @@ func (state *RuntimeState) isAutomationAdmin(user string) bool {
 func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	//var keySigner crypto.Signer
-
 	// copy runtime singer if not nil
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
-	/*
-		if !signerIsNull {
-			keySigner = state.Signer
-		}
-	*/
 	state.Mutex.Unlock()
 
 	//local sanity tests

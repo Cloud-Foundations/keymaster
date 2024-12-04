@@ -102,9 +102,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		}
 	}
 	// temporary hack
-	if (authData.AuthType & AuthTypeKeymasterX509) == AuthTypeKeymasterX509 {
-		sufficientAuthLevel = true
-	}
+	//if (authData.AuthType & AuthTypeKeymasterX509) == AuthTypeKeymasterX509 {
+	//	sufficientAuthLevel = true
+	//}
 
 	// if you have u2f you can always get the cert
 	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {

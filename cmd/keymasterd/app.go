@@ -869,36 +869,46 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.logger.Debugf(3,
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
-			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
-				tlsAuthUser, notBefore, err :=
-					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
-				if err == nil && tlsAuthUser != "" {
-					return &authInfo{
-						AuthType: AuthTypeKeymasterX509,
-						IssuedAt: notBefore,
-						Username: tlsAuthUser,
-					}, nil
-				}
+			var authData authInfo
+			//if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
+			tlsAuthUser, notBefore, err :=
+				state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
+			if err == nil && tlsAuthUser != "" {
+				state.logger.Debugf(4, "Auth, Is keymastercert")
+				authData.AuthType = authData.AuthType | AuthTypeKeymasterX509
+				authData.IssuedAt = notBefore
+				authData.Username = tlsAuthUser
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
 				clientName, notBefore, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
-				if userErr != nil {
-					state.writeFailureResponse(w, r, http.StatusForbidden,
-						fmt.Sprintf("%s", userErr))
-					return nil, userErr
+				// if not keymasterd cert AND not ipcert either then we return
+				// moe explicit errors
+				if authData.Username == "" {
+					state.logger.Printf("after eval, but username is empty")
+					if userErr != nil {
+						state.writeFailureResponse(w, r, http.StatusForbidden,
+							fmt.Sprintf("%s", userErr))
+						return nil, userErr
+					}
+					if err != nil {
+						state.writeFailureResponse(w, r,
+							http.StatusInternalServerError, "")
+						return nil, err
+					}
 				}
-				if err != nil {
-					state.writeFailureResponse(w, r,
-						http.StatusInternalServerError, "")
-					return nil, err
+
+				if err == nil && userErr == nil {
+					authData.AuthType = authData.AuthType | AuthTypeIPCertificate
+					authData.IssuedAt = notBefore
+					authData.Username = clientName
 				}
-				return &authInfo{
-					AuthType: AuthTypeIPCertificate,
-					IssuedAt: notBefore,
-					Username: clientName,
-				}, nil
 			}
+			if authData.Username != "" {
+				state.logger.Debugf(4, "returning tls cert authinfo")
+				return &authData, nil
+			}
+			state.logger.Debugf(4, "NOT returning tls cert authinfo authData=%+v", authData)
 		}
 	}
 	// Next we check for cookies
