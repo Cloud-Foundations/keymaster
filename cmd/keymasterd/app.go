@@ -794,6 +794,15 @@ func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509
 		if err != nil {
 			return "", time.Time{}, err
 		}
+		userPubKeyFP, err := getKeyFingerprint(chain[0].PublicKey)
+		if err != nil {
+			return "", time.Time{}, err
+		}
+		for _, revokedKeyFP := range state.Config.DenyTrustData.KeyDenyFPsshSha256 {
+			if userPubKeyFP == revokedKeyFP {
+				return "", time.Time{}, fmt.Errorf("revoked key with FP:%s", revokedKeyFP)
+			}
+		}
 		for _, key := range state.KeymasterPublicKeys {
 			fp, err := getKeyFingerprint(key)
 			if err != nil {
@@ -870,7 +879,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
 			var authData authInfo
-			//if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
 			tlsAuthUser, notBefore, err :=
 				state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 			if err == nil && tlsAuthUser != "" {

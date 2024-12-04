@@ -190,6 +190,10 @@ type SymantecVIPConfig struct {
 	RequireAppAproval bool   `yaml:"require_app_approval"`
 }
 
+type DenyKeyConfig struct {
+	KeyDenyFPsshSha256 []string `yaml:"key_deny_list_ssh_sha256"`
+}
+
 type AppConfigFile struct {
 	Base             baseConfig
 	AwsCerts         awsCertsConfig  `yaml:"aws_certs"`
@@ -203,6 +207,7 @@ type AppConfigFile struct {
 	OpenIDConnectIDP OpenIDConnectIDPConfig `yaml:"openid_connect_idp"`
 	SymantecVIP      SymantecVIPConfig
 	ProfileStorage   ProfileStorageConfig
+	DenyTrustData    DenyKeyConfig
 }
 
 const (
