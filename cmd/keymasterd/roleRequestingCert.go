@@ -28,7 +28,7 @@ type roleRequestingCertGenParams struct {
 }
 
 func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequestingCertGenParams, error, error) {
-	state.logger.Debugf(3, "Got client POST connection")
+	state.logger.Debugf(3, "parseRoleCertGenParams: Got client POST connection")
 	err := r.ParseForm()
 	if err != nil {
 		state.logger.Println(err)
@@ -154,7 +154,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 
 	// TODO: this should be a different check, for now keep it to admin users
 	if !state.isAutomationAdmin(authData.Username) {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized,
+		state.writeFailureResponse(w, r, http.StatusForbidden,
 			"Not an admin user")
 		return
 	}
@@ -302,16 +302,9 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
 
 	var signerIsNull bool
-	//var keySigner crypto.Signer
 
-	// copy runtime singer if not nil
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
-	/*
-	   if !signerIsNull {
-	           keySigner = state.Signer
-	   }
-	*/
 	state.Mutex.Unlock()
 
 	//local sanity tests
