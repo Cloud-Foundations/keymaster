@@ -891,7 +891,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				clientName, notBefore, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
 				// if not keymasterd cert AND not ipcert either then we return
-				// moe explicit errors
+				// more explicit errors
 				if authData.Username == "" {
 					state.logger.Printf("after eval, but username is empty")
 					if userErr != nil {

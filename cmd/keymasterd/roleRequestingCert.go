@@ -14,8 +14,6 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/util"
 )
 
-//const svcPrefixList= string ["svc-","role-"]
-
 const getRoleRequestingPath = "/v1/getRoleRequestingCert"
 const refreshRoleRequestingCertPath = "/v1/refreshRoleRequestingCert"
 const maxRoleRequestingCertDuration = time.Hour * 24 * 45
@@ -42,7 +40,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		Target (VM) netblock: target_netblock
 		Optional duration: duration (i.e. 730h: :golang: time format)
 	*/
-	// Role
+	// Role/Identity
 	roleName := r.Form.Get("identity")
 	if roleName == "" {
 		return nil, fmt.Errorf("Missing identity parameter"), nil
@@ -53,7 +51,6 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 	}
 	if !ok {
 		return nil, fmt.Errorf("requested role is not automation user"), nil
-		//return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
 	}
 	rvalue.Role = roleName
 
@@ -84,7 +81,6 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 			state.logger.Printf("%s", err)
 			return nil, fmt.Errorf("invalid netblock %s", netBlock), nil
 		}
-		//rvalue.RequestorNetblocks = append(rvalue.RequestorNetblocks, *parsedNetBlock)
 	}
 
 	// publickey
@@ -125,13 +121,10 @@ func (state *RuntimeState) isAutomationAdmin(user string) bool {
 		}
 	}
 	return false
-
 }
 
 func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
-	//var keySigner crypto.Signer
-	// copy runtime singer if not nil
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
 	state.Mutex.Unlock()
@@ -152,7 +145,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
-	// TODO: this should be a different check, for now keep it to admin users
+	// TODO: this should be a different check, for now keep it to automationadmin users
 	if !state.isAutomationAdmin(authData.Username) {
 		state.writeFailureResponse(w, r, http.StatusForbidden,
 			"Not an admin user")
@@ -223,7 +216,6 @@ func (state *RuntimeState) withParamsGenegneratRoleRequetingCert(params *roleReq
 }
 
 func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *http.Request) (*roleRequestingCertGenParams, error, error) {
-
 	state.logger.Debugf(4, "Got client POST connection")
 	err := r.ParseForm()
 	if err != nil {
@@ -241,7 +233,6 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 	   Optional duration: duration (i.e. 730h: :golang: time format)
 	*/
 	// Role
-
 	identityName := authData.Username
 	if identityName == "" {
 		return nil, fmt.Errorf("Missing identity parameter"), nil
@@ -252,11 +243,11 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 	}
 	if !ok {
 		return nil, fmt.Errorf("requested role is not automation user"), nil
-		//return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
 	}
 	rvalue.Role = identityName
 
 	//Duration
+	// TODO: actually parse to allow smaller valjues
 	rvalue.Duration = maxRoleRequestingCertDuration
 
 	// publickey
@@ -300,13 +291,10 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 }
 
 func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
-
 	var signerIsNull bool
-
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
 	state.Mutex.Unlock()
-
 	//local sanity tests
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -349,12 +337,10 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 	clientIpAddress := util.GetRequestRealIp(r)
-
 	w.Header().Set("Content-Disposition", `attachment; filename="roleRequstingCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", pemCert)
 	state.logger.Printf("Generated x509 role Requesting Certificate for %s (from %s). Serial: %s",
 		params.Role, clientIpAddress, cert.SerialNumber.String())
-
 	return
 }
