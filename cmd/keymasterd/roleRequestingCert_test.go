@@ -47,7 +47,6 @@ func TestParseRoleCertGenParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//req.AddCookie(&authCookie)
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
@@ -57,6 +56,22 @@ func TestParseRoleCertGenParams(t *testing.T) {
 	}
 	if userErr != nil {
 		t.Fatal(userErr)
+	}
+
+	// now test with broken public key
+	form.Set("pubkey", "aGVsbG8gdGhpcyBpcyBzb21laGl0bmcK")
+	req2, err := http.NewRequest("POST", getRoleRequestingPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req2.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	_, userErr, err = state.parseRoleCertGenParams(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if userErr == nil {
+		t.Fatal("should have failed because Public key is not valid")
 	}
 
 }
@@ -107,6 +122,22 @@ func TestRoleRequetingCertGenHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	// TODO: check body content is actually pem
+
+	//now disable the role as automation use and it should fail
+	state.Config.Base.AutomationUsers = []string{}
+	req2, err := http.NewRequest("POST", getRoleRequestingPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.AddCookie(&authCookie)
+	req2.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req2.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	_, err = checkRequestHandlerCode(req, state.roleRequetingCertGenHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func TestRoleRequetingCertGenHandlerTLSAuth(t *testing.T) {

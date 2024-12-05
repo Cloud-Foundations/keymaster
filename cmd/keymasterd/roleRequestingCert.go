@@ -41,7 +41,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		Optional duration: duration (i.e. 730h: :golang: time format)
 	*/
 	// Role/Identity
-	roleName := r.Form.Get("identity")
+	roleName := r.PostForm.Get("identity")
 	if roleName == "" {
 		return nil, fmt.Errorf("Missing identity parameter"), nil
 	}
@@ -58,7 +58,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 	rvalue.Duration = maxRoleRequestingCertDuration
 
 	//RequestorNetblocks
-	requestorNetblockStrings, ok := r.Form["requestor_netblock"]
+	requestorNetblockStrings, ok := r.PostForm["requestor_netblock"]
 	if !ok {
 		return nil, fmt.Errorf("missing required requestor_netblock param"), nil
 	}
@@ -71,7 +71,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		rvalue.RequestorNetblocks = append(rvalue.RequestorNetblocks, *parsedNetBlock)
 	}
 	//TargetNetblocks
-	targetNetblockStrings, ok := r.Form["target_netblock"]
+	targetNetblockStrings, ok := r.PostForm["target_netblock"]
 	if !ok {
 		return nil, fmt.Errorf("missing required requestor_netblock param"), nil
 	}
@@ -84,7 +84,7 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 	}
 
 	// publickey
-	b64pubkey := r.Form.Get("pubkey")
+	b64pubkey := r.PostForm.Get("pubkey")
 	if b64pubkey == "" {
 		return nil, fmt.Errorf("Missing pubkey parameter"), nil
 	}
