@@ -52,7 +52,7 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3
-    - run: test -v  ./lib/client/util/...
+    - run: go test -v  ./lib/client/util/...
 
   buildlinuxpackage:
     strategy:
