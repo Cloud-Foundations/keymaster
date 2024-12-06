@@ -209,6 +209,7 @@ type RuntimeState struct {
 	db                           *sql.DB
 	dbType                       string
 	cacheDB                      *sql.DB
+	dbDone                       chan struct{}
 	remoteDBQueryTimeout         time.Duration
 	htmlTemplate                 *htmltemplate.Template
 	passwordChecker              pwauth.PasswordAuthenticator
@@ -1944,7 +1945,7 @@ func main() {
 		ClientAuth:               tls.VerifyClientCertIfGiven,
 		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -2013,7 +2014,7 @@ func main() {
 		ClientAuth:               tls.VerifyClientCertIfGiven,
 		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,

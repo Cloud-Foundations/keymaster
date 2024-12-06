@@ -622,6 +622,7 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestLoginAPIFormAuth(t *testing.T) {
@@ -707,6 +708,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestProfileHandlerTemplate(t *testing.T) {
@@ -752,6 +754,8 @@ func TestProfileHandlerTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	//TODO: verify HTML output
+
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
@@ -821,10 +825,12 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	if profile.U2fAuthData[0].Name != newName {
 		t.Fatal("update not successul")
 	}
+
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -888,6 +894,7 @@ func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
 	if len(profile.U2fAuthData) != 2 {
 		t.Fatal("delete should not have succeeded")
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
@@ -955,4 +962,5 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	if len(profile.U2fAuthData) != 1 {
 		t.Fatal("update not successul")
 	}
+	state.dbDone <- struct{}{}
 }
