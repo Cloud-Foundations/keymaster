@@ -22,6 +22,7 @@ type roleRequestingCertGenParams struct {
 	Role               string
 	Duration           time.Duration
 	RequestorNetblocks []net.IPNet
+	TargetNetblocks    []net.IPNet
 	UserPub            interface{}
 }
 
@@ -152,8 +153,8 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 		return
 	}
 
-	// TODO: maybe add a check to ensure role certs cannot get role certs?
-	//
+	// TODO: maybe add a check to ensure no self-replication
+	// We dont anything to request a rolerequsting role for itself
 
 	/// Now we parse the inputs
 	if r.Method != "POST" {
@@ -170,7 +171,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 			userError.Error())
 		return
 	}
-	pemCert, cert, err := state.withParamsGenegneratRoleRequetingCert(params)
+	pemCert, cert, err := state.withParamsGenerateRoleRequestingCert(params)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		state.logger.Printf("Error generating cert", err)
@@ -187,7 +188,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	return
 
 }
-func (state *RuntimeState) withParamsGenegneratRoleRequetingCert(params *roleRequestingCertGenParams) (string, *x509.Certificate, error) {
+func (state *RuntimeState) withParamsGenerateRoleRequestingCert(params *roleRequestingCertGenParams) (string, *x509.Certificate, error) {
 	signer, caCertDer, err := state.getSignerX509CAForPublic(params.UserPub)
 	if err != nil {
 		return "", nil, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
@@ -276,10 +277,10 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 
 	// networks
 	if r.TLS == nil {
-		return nil, fmt.Errorf("MUST only come form certificate"), nil
+		return nil, fmt.Errorf("MUST only come from certificate"), nil
 	}
 	if len(r.TLS.VerifiedChains) < 1 {
-		return nil, fmt.Errorf("MUST only come form certificate"), nil
+		return nil, fmt.Errorf("MUST only come from certificate"), nil
 	}
 	userCert := r.TLS.VerifiedChains[0][0]
 	certNets, err := certgen.ExtractIPNetsFromIPRestrictedX509(userCert)
@@ -290,7 +291,7 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 	return &rvalue, nil, nil
 }
 
-func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) refreshRoleRequestingCertGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
@@ -302,7 +303,7 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 
-	state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler before auth")
+	state.logger.Debugf(1, "refreshRoleRequestingCertGenHandler before auth")
 	authData, err := state.checkAuth(w, r, AuthTypeIPCertificate)
 	if err != nil {
 		state.logger.Debugf(1, "%v", err)
@@ -310,7 +311,7 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 	// TODO: we need to do denylist checks here against the cert/certkey
-	state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler: authenticated")
+	state.logger.Debugf(1, "refreshRoleRequestingCertGenHandler: authenticated")
 
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
@@ -325,12 +326,12 @@ func (state *RuntimeState) refreshRoleRequetingCertGenHandler(w http.ResponseWri
 		return
 	}
 	if userError != nil {
-		state.logger.Debugf(1, "refreshRoleRequetingCertGenHandler: error parsing params err=%s", userError)
+		state.logger.Debugf(1, "refreshRoleRequestingCertGenHandler: error parsing params err=%s", userError)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			userError.Error())
 		return
 	}
-	pemCert, cert, err := state.withParamsGenegneratRoleRequetingCert(params)
+	pemCert, cert, err := state.withParamsGenerateRoleRequestingCert(params)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		state.logger.Printf("Error generating cert", err)

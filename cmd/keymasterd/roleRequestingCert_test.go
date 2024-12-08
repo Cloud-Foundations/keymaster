@@ -257,7 +257,7 @@ func TestRefreshRoleRequetingCertGenHandler(t *testing.T) {
 		RequestorNetblocks: netblockList,
 		UserPub:            userPub,
 	}
-	_, rrcert, err := state.withParamsGenegneratRoleRequetingCert(&initialrrParams)
+	_, rrcert, err := state.withParamsGenerateRoleRequestingCert(&initialrrParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestRefreshRoleRequetingCertGenHandler(t *testing.T) {
 	req.TLS = connectionState
 
 	//TODO add fail value
-	_, err = checkRequestHandlerCode(req, state.refreshRoleRequetingCertGenHandler, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.refreshRoleRequestingCertGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}

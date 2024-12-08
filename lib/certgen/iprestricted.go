@@ -207,7 +207,7 @@ func ExtractIPNetsFromIPRestrictedX509(userCert *x509.Certificate) ([]net.IPNet,
 		}
 	}
 	if extension == nil {
-		return nil, fmt.Errorf("externsion not found")
+		return nil, fmt.Errorf("extension not found")
 	}
 	var ipAddressFamilyList []IpAdressFamily
 	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
