@@ -200,22 +200,6 @@ func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 	}
 }
 
-// copied from https://golang.org/src/crypto/tls/generate_cert.go
-func publicKey(priv interface{}) interface{} {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &k.PublicKey
-	case *ecdsa.PrivateKey:
-		return &k.PublicKey
-	case ed25519.PrivateKey:
-		return k.Public().(ed25519.PublicKey)
-	case *ed25519.PrivateKey:
-		return k.Public().(*ed25519.PublicKey)
-	default:
-		return nil
-	}
-}
-
 // ValidatePublicKeyStrenght checks if the "strength" of the key is good enough to be considered secure
 // At this moment it checks for sizes of parameters only. For RSA it means bits>=2041 && exponent>=65537,
 // For EC curves it means bitsize>=256. ec25519 is considered secure. All other public keys are not
@@ -255,6 +239,26 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 }
 */
 
+// On the initial version of keymaster we used the base64 encoding
+// of the sha256sum of the rsa signature of the sha256 of the
+// common name. This to have a stable, key dependent
+// serial number.
+// However this was a bad idea as:
+// 1. Not all signers can use sha256
+// 2. Not all signatures are stable.
+//
+// Thus we will keep the rsa behaviour for compatiblity reasons
+// But for all other keys we will just return the pkix asn1 encoding
+// of the public key
+func getKMCompatbileKeyStableBytesForSerial(signer crypto.Signer, commonName []byte) ([]byte, error) {
+	swRSA, ok := signer.(*rsa.PrivateKey)
+	if ok {
+		sum := sha256.Sum256(commonName)
+		return swRSA.Sign(rand.Reader, sum[:], crypto.SHA256)
+	}
+	return x509.MarshalPKIXPublicKey(signer.Public())
+}
+
 // return both an internal representation an the pem representation of the string
 // As long as the issuer value matches THEN the serial number can be different every time
 func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) ([]byte, error) {
@@ -267,12 +271,11 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256([]byte(commonName))
-	signedCN, err := caPriv.Sign(rand.Reader, sum[:], crypto.SHA256)
+	keyStableBytes, err := getKMCompatbileKeyStableBytesForSerial(caPriv, []byte(commonName))
 	if err != nil {
 		return nil, err
 	}
-	sigSum := sha256.Sum256(signedCN)
+	sigSum := sha256.Sum256(keyStableBytes)
 	sig := base64.StdEncoding.EncodeToString(sigSum[:])
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
@@ -289,7 +292,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		IsCA:                  true,
 	}
 
-	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
+	return x509.CreateCertificate(rand.Reader, &template, &template, caPriv.Public(), caPriv)
 }
 
 // From RFC 4120 section 5.2.2 (https://tools.ietf.org/html/rfc4120)

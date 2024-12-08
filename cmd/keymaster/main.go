@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -40,30 +41,34 @@ const (
 
 const userAgentAppName = "keymaster"
 const defaultVersionNumber = "No version provided"
+const defaultConfigHost = ""
 
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
 	// binary. Use only from the Usage() function.
 	Version         = defaultVersionNumber
+	defaultHost     = defaultConfigHost
 	userAgentString = userAgentAppName
 )
 
 var (
+	checkDevices = flag.Bool("checkDevices", false,
+		"CheckU2F devices in your system")
 	configFilename = flag.String("config",
 		filepath.Join(getUserHomeDir(), keymasterSubdir, "client_config.yml"),
 		"The filename of the configuration")
-	rootCAFilename = flag.String("rootCAFilename", "",
-		"(optional) name for using non OS root CA to verify TLS connections")
 	configHost = flag.String("configHost", "",
 		"Get a bootstrap config from this host")
-	cliUsername  = flag.String("username", "", "username for keymaster")
-	checkDevices = flag.Bool("checkDevices", false,
-		"CheckU2F devices in your system")
 	cliFilePrefix = flag.String("fileprefix", "",
 		"Prefix for the output files")
+	rootCAFilename = flag.String("rootCAFilename", "",
+		"(optional) name for using non OS root CA to verify TLS connections")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
+	cliUsername  = flag.String("username", "", "username for keymaster")
+	printVersion = flag.Bool("version", false,
+		"Print version and exit")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
 
@@ -110,10 +115,10 @@ func loadConfigFile(client *http.Client, logger log.Logger) (
 		if err != nil {
 			logger.Fatal(err)
 		}
-	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
+	} else if len(defaultHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, client, logger)
+				*configFilename, defaultHost, client, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -143,6 +148,16 @@ func preConnectToHost(baseUrl string, client *http.Client, logger log.DebugLogge
 		logger.Debugf(1, "bad response code on pre-connect status=%d", response.StatusCode)
 		return err
 	}
+	logger.Debugf(3, "Success pre-connecting to: '%s'\n", baseUrl)
+	if response.TLS != nil {
+		logger.Debugf(3, "Preconnect is https")
+		for chainIndex, chainList := range response.TLS.VerifiedChains {
+			for index, cert := range chainList {
+				logger.Debugf(3, "Pre-connect VerifiedChain[%d]Subject[%d] = %s",
+					chainIndex, index, cert.Subject.String())
+			}
+		}
+	}
 	return nil
 }
 
@@ -170,7 +185,7 @@ func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Cli
 	return fmt.Errorf("Cannot connect to any keymaster Server")
 }
 
-const rsaKeySize = 2048
+const rsaKeySize = 3072
 
 func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
@@ -284,19 +299,19 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 		return nil
 	}
 	logger.Debugf(1, "Non fatal, failed to insert into agent without expiration")
-	encodedSigner, err := x509.MarshalPKCS8PrivateKey(signer)
+	encodedSigner, err := ssh.MarshalPrivateKey(signer, "")
 	if err != nil {
 		return err
 	}
 	err = ioutil.WriteFile(
 		privateKeyPath,
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedSigner}),
+		pem.EncodeToMemory(encodedSigner),
 		0600)
 	if err != nil {
 		return err
 	}
 	// now we need to write the certificate
-	sshCertPath := privateKeyPath + ".pub"
+	sshCertPath := privateKeyPath + "-cert.pub"
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
@@ -359,6 +374,7 @@ func setupCerts(
 
 		}
 	}
+	logger.Debugf(1, "SetupCerts: authentication Complete")
 	if err := signers.Wait(); err != nil {
 		return err
 	}
@@ -462,7 +478,7 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	}
 	if *roundRobinDialer {
 		if rrDialer, err := rrdialer.New(rawDialer, "", logger); err != nil {
-			logger.Fatalln(err)
+			return nil, err
 		} else {
 			defer rrDialer.WaitForBackgroundResults(time.Second)
 			dialer = rrDialer
@@ -480,26 +496,31 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
+// We assume here flags are parsed
+func mainWithError(stdout io.Writer, logger log.DebugLogger) error {
+	if *printVersion {
+		fmt.Fprintln(stdout, Version)
+		return nil
+	}
 	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	client, err := getHttpClient(rootCAs, logger)
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
-		return
+		err = u2f.CheckU2FDevices(logger)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	computeUserAgent()
 	userName, homeDir, err := util.GetUserNameAndHomeDir()
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	config := loadConfigFile(client, logger)
 	logger.Debugf(3, "loaded Config=%+v", config)
@@ -523,7 +544,19 @@ func main() {
 		err = setupCerts(userName, homeDir, config, client, logger)
 	}
 	if err != nil {
-		logger.Fatal(err)
+		return err
 	}
 	logger.Printf("Success")
+	return nil
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+	err := mainWithError(os.Stdout, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 }

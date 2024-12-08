@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -13,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	htmltemplate "html/template"
+	"io/fs"
 	"io/ioutil"
 	stdlog "log"
 	"net"
@@ -28,6 +31,7 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
@@ -191,7 +195,7 @@ type RuntimeState struct {
 	ClientCAPool                 *x509.CertPool
 	HostIdentity                 string
 	KerberosRealm                *string
-	caCertDer                    []byte
+	caCertDer                    [][]byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
 	localAuthData                map[string]localUserData
@@ -205,6 +209,7 @@ type RuntimeState struct {
 	db                           *sql.DB
 	dbType                       string
 	cacheDB                      *sql.DB
+	dbDone                       chan struct{}
 	remoteDBQueryTimeout         time.Duration
 	htmlTemplate                 *htmltemplate.Template
 	passwordChecker              pwauth.PasswordAuthenticator
@@ -280,6 +285,18 @@ var (
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	eventNotifier *eventnotifier.EventNotifier
 )
+
+//go:embed data/*
+var compiledData embed.FS
+
+// This function is just to "remove" the /data path of the embeddedFS
+func getCompiledDataFS() http.FileSystem {
+	fsys, err := fs.Sub(compiledData, "data")
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return http.FS(fsys)
+}
 
 func cacheControlHandler(h http.Handler) http.Handler {
 	maxAgeSeconds := maxCacheLifetime / time.Second
@@ -531,7 +548,7 @@ func (state *RuntimeState) checkPasswordAttemptLimit(w http.ResponseWriter,
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter,
 	r *http.Request, loginDestination string, tryShowU2f bool,
 	showBootstrapOTP bool) error {
-	JSSources := []string{"/static/jquery-3.6.4.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-3.7.1.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
@@ -1019,6 +1036,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	target := r.URL.Path[len(publicPath):]
 
+	caPubMaxSeconds := 30
 	switch target {
 	case "loginForm":
 		//fmt.Fprintf(w, "%s", loginFormText)
@@ -1026,11 +1044,46 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
-		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
-
-		w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+		var outCABuf bytes.Buffer
+		for _, derCert := range state.caCertDer {
+			err := pem.Encode(&outCABuf, &pem.Block{Type: "CERTIFICATE", Bytes: derCert})
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing pemCA")
+				return
+			}
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymasterx509CA.pem"`)
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "%s", pemCert)
+		outCABuf.WriteTo(w)
+	case "sshca":
+		var outCABuf bytes.Buffer
+		for _, pub := range state.KeymasterPublicKeys {
+			sshPub, err := ssh.NewPublicKey(pub)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+			pubBytes := ssh.MarshalAuthorizedKey(sshPub)
+			_, err = fmt.Fprintf(&outCABuf, "%s", pubBytes)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymastersshCCA.pub"`)
+		w.WriteHeader(200)
+		outCABuf.WriteTo(w)
+
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
@@ -1442,7 +1495,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 	JSSources := []string{
-		"/static/jquery-3.6.4.min.js",
+		"/static/jquery-3.7.1.min.js",
 		"/static/compiled/session.js",
 	}
 	showU2F := browserSupportsU2F(r)
@@ -1823,7 +1876,8 @@ func main() {
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir(staticFilesPath)))))
 	serviceMux.Handle("/static/compiled/", cacheControlHandler(
-		http.StripPrefix("/static/compiled/", http.FileServer(AssetFile()))))
+		http.StripPrefix("/static/compiled/",
+			http.FileServer(getCompiledDataFS()))))
 	customWebResourcesPath :=
 		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
 			"customization_data", "web_resources")
@@ -1891,7 +1945,7 @@ func main() {
 		ClientAuth:               tls.VerifyClientCertIfGiven,
 		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -1944,11 +1998,13 @@ func main() {
 	if runtimeState.ClientCAPool == nil {
 		runtimeState.ClientCAPool = x509.NewCertPool()
 	}
-	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
-	if err != nil {
-		panic(err)
+	for _, derCert := range runtimeState.caCertDer {
+		myCert, err := x509.ParseCertificate(derCert)
+		if err != nil {
+			panic(err)
+		}
+		runtimeState.ClientCAPool.AddCert(myCert)
 	}
-	runtimeState.ClientCAPool.AddCert(myCert)
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating
@@ -1958,7 +2014,7 @@ func main() {
 		ClientAuth:               tls.VerifyClientCertIfGiven,
 		GetCertificate:           runtimeState.certManager.GetCertificate,
 		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,

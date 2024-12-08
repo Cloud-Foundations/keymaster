@@ -13,6 +13,7 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/awsutil/metadata"
 	"github.com/Cloud-Foundations/golib/pkg/awsutil/secretsmgr"
+	"github.com/Cloud-Foundations/golib/pkg/log"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -82,38 +83,39 @@ func (state *RuntimeState) expandStorageUrl() error {
 }
 
 func initDB(state *RuntimeState) (err error) {
-	logger.Debugf(3, "Top of initDB")
+	state.logger.Debugf(3, "Top of initDB")
 	state.Config.ProfileStorage.setSyncLimits()
 	//open/create cache DB first
 	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory,
 		cachedDBFilename)
 	state.cacheDB, err = initFileDBSQLite(cacheDBFilename, state.cacheDB)
 	if err != nil {
-		logger.Printf("Failure on creation of cacheDB")
+		state.logger.Printf("Failure on creation of cacheDB")
 		return err
 	}
-	logger.Debugf(3, "storage=%s", state.Config.ProfileStorage.StorageUrl)
+	state.logger.Debugf(3, "storage=%s", state.Config.ProfileStorage.StorageUrl)
 	storageURL := state.Config.ProfileStorage.StorageUrl
 	if storageURL == "" {
 		storageURL = "sqlite:"
 	}
 	splitString := strings.SplitN(storageURL, ":", 2)
 	if len(splitString) < 1 {
-		logger.Printf("invalid string")
+		state.logger.Printf("invalid string")
 		err := errors.New("Bad storage url string")
 		return err
 	}
 	state.remoteDBQueryTimeout = time.Second * 2
-	go state.BackgroundDBCopy(state.Config.ProfileStorage.SyncDelay)
+	state.dbDone = make(chan struct{})
+	go state.BackgroundDBCopy(state.Config.ProfileStorage.SyncDelay, state.dbDone, state.logger)
 	switch splitString[0] {
 	case "sqlite":
-		logger.Printf("doing sqlite")
+		state.logger.Printf("doing sqlite")
 		return initDBSQlite(state)
 	case "postgresql":
-		logger.Printf("doing postgres")
+		state.logger.Printf("doing postgres")
 		return initDBPostgres(state)
 	default:
-		logger.Printf("invalid storage url string")
+		state.logger.Printf("invalid storage url string")
 		err := errors.New("Bad storage url string")
 		return err
 	}
@@ -130,13 +132,13 @@ func initDBPostgres(state *RuntimeState) (err error) {
 		sqlStmt := `create table if not exists user_profile (id serial not null primary key, username text unique, profile_data bytea);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
+			state.logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
 			return err
 		}
 		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer not null, UNIQUE(username,type));`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
+			state.logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
 			return err
 		}
 	}
@@ -207,8 +209,16 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 	return currentDB, nil
 }
 
-func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
-	time.Sleep(initialSleep)
+func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration, done chan struct{}, logger log.DebugLogger) {
+	select {
+	case <-done:
+		//fmt.Println("Received:", v)
+		logger.Debugf(0, "Cancelled before first copy")
+		return
+	case <-time.After(initialSleep):
+		logger.Debugf(1, "BackgroundDBCopy, initial sleep done")
+
+	}
 	for {
 		logger.Debugf(0, "starting db copy")
 		err := copyDBIntoSQLite(state.db, state.cacheDB, "sqlite")
@@ -219,7 +229,17 @@ func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 		}
 		cleanupDBData(state.db)
 		cleanupDBData(state.cacheDB)
-		time.Sleep(state.Config.ProfileStorage.SyncInterval)
+
+		select {
+		case <-done:
+			//fmt.Println("Received:", v)
+			logger.Debugf(0, "Cancelled after copy")
+			return
+		case <-time.After(state.Config.ProfileStorage.SyncInterval):
+			logger.Debugf(1, "BackgroundDBCopy, sleep complete  sleep done")
+
+		}
+		//time.Sleep(state.Config.ProfileStorage.SyncInterval)
 	}
 }
 

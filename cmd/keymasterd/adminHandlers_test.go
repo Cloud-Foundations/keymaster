@@ -46,10 +46,11 @@ func testCreateRuntimeStateWithBothCAs(t *testing.T) (
 		return nil, "", err
 	}
 	state.Signer = signer
-	state.caCertDer, err = generateCADer(state, state.Signer)
+	caCertDer, err := generateCADer(state, state.Signer)
 	if err != nil {
 		return nil, "", err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
 	state.signerPublicKeyToKeymasterKeys()
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	if err := initDB(state); err != nil {

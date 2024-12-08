@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/square/go-jose.v2"
-	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 // This actually gets the SSH key fingerprint
@@ -46,6 +46,8 @@ func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (
 	return err
 }
 
+//func (state *RuntimeState) getJoseSignerFromSigner(
+
 func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authLevel int, durationSeconds int64) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
@@ -59,7 +61,7 @@ func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
 	authToken.Expiration = authToken.IssuedAt + durationSeconds
-	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
+	return jwt.Signed(signer).Claims(authToken).Serialize()
 }
 
 func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (
@@ -69,7 +71,7 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (
 
 func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	tokenType string) (rvalue authInfo, err error) {
-	tok, err := jwt.ParseSigned(serializedToken)
+	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return rvalue, err
 	}
@@ -100,7 +102,7 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 		return "", err
 	}
 
-	tok, err := jwt.ParseSigned(intoken)
+	tok, err := jwt.ParseSigned(intoken, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +119,7 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 		return "", err
 	}
 	parsedJWT.AuthType = newAuthLevel
-	return jwt.Signed(signer).Claims(parsedJWT).CompactSerialize()
+	return jwt.Signed(signer).Claims(parsedJWT).Serialize()
 }
 
 func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string, dataType int, data string, expiration int64) (string, error) {
@@ -134,11 +136,11 @@ func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string,
 	storageToken.IssuedAt = storageToken.NotBefore
 	storageToken.Expiration = expiration
 
-	return jwt.Signed(signer).Claims(storageToken).CompactSerialize()
+	return jwt.Signed(signer).Claims(storageToken).Serialize()
 }
 
 func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToken string) (rvalue storageStringDataJWT, err error) {
-	tok, err := jwt.ParseSigned(serializedToken)
+	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil {
 		return rvalue, err
 	}

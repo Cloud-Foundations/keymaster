@@ -185,10 +185,11 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 	state.signerPublicKeyToKeymasterKeys()
 
 	//for x509
-	state.caCertDer, err = generateCADer(&state, signer)
+	caCertDer, err := generateCADer(&state, signer)
 	if err != nil {
 		return nil, nil, err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
@@ -512,7 +513,7 @@ func TestPublicHandleLoginForm(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	urlList := []string{"/public/loginForm", "/public/x509ca"}
+	urlList := []string{"/public/loginForm", "/public/x509ca", "/public/sshca"}
 	err = state.loadTemplates()
 	if err != nil {
 		t.Fatal(err)
@@ -621,6 +622,7 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestLoginAPIFormAuth(t *testing.T) {
@@ -706,6 +708,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestProfileHandlerTemplate(t *testing.T) {
@@ -751,6 +754,8 @@ func TestProfileHandlerTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	//TODO: verify HTML output
+
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
@@ -820,10 +825,12 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	if profile.U2fAuthData[0].Name != newName {
 		t.Fatal("update not successul")
 	}
+
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
-	var state RuntimeState
+	state := RuntimeState{logger: testlogger.New(t)}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
@@ -887,6 +894,7 @@ func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
 	if len(profile.U2fAuthData) != 2 {
 		t.Fatal("delete should not have succeeded")
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
@@ -954,4 +962,5 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	if len(profile.U2fAuthData) != 1 {
 		t.Fatal("update not successul")
 	}
+	state.dbDone <- struct{}{}
 }

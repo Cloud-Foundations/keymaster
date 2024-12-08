@@ -34,7 +34,7 @@ const webAutnRegististerRequestPath = "/webauthn/RegisterRequest/"
 
 // RegisterRequest?
 func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf(3, "top of webauthnBeginRegistration")
+	state.logger.Debugf(3, "top of webauthnBeginRegistration")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -47,16 +47,18 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	if len(pieces) >= 4 {
 		assumedUser = pieces[3]
 	} else {
-		logger.Debugf(1, "webauthnBeginRegistration: bad number of pieces")
+		state.logger.Debugf(1, "webauthnBeginRegistration: bad number of pieces")
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 	}
+	state.logger.Debugf(3, "top of webauthnBeginRegistration: after piece processing ")
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Debugf(1, "%v", err)
+		state.logger.Debugf(1, "webauthnBeginRegistration: checkAuth Failed %v", err)
 		return
 	}
+	state.logger.Debugf(3, "top of webauthnBeginRegistration: after authentication ")
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	// Check that they can change other users
@@ -68,20 +70,21 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 
 	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
-		logger.Printf("webauthnBeginRegistration: loading profile error: %v", err)
+		state.logger.Printf("webauthnBeginRegistration: loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
 	}
 	if fromCache {
-		logger.Printf("DB is being cached and requesting registration aborting it")
+		state.logger.Printf("DB is being cached and requesting registration aborting it")
 		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
+	state.logger.Debugf(3, "top of webauthnBeginRegistration: after profile loadingn ")
 
 	profile.FixupCredential(assumedUser, assumedUser)
-	logger.Debugf(2, "webauthnBeginRegistration profile=%+v", profile)
-	logger.Debugf(2, "webauthnBeginRegistration: About to begin BeginRegistration")
+	state.logger.Debugf(2, "webauthnBeginRegistration profile=%+v", profile)
+	state.logger.Debugf(2, "webauthnBeginRegistration: About to begin BeginRegistration")
 	options, sessionData, err := state.webAuthn.BeginRegistration(profile)
 	if err != nil {
 		state.logger.Printf("webauthnBeginRegistration: begin login failed %s", err)

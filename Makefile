@@ -10,51 +10,75 @@ endif
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION=1.15.1
+VERSION?=1.15.5
+DEFAULT_HOST?=
+VERSION_FLAVOUR?=
+EXTRA_LDFLAGS?=
+PRINTVERSION=${VERSION}
+ifneq ($(VERSION_FLAVOUR),)
+PRINTVERSION=${VERSION}-${VERSION_FLAVOUR}
+endif
+DEFAULT_LDFLAGS=-X main.Version=${PRINTVERSION} ${EXTRA_LDFLAGS}
+CLIENT_LDFLAGS=${DEFAULT_LDFLAGS} -X main.defaultHost=${DEFAULT_HOST}
 #BUILD_TIME=`date +%FT%T%z`
 
 # keymaster client requires special tags on linux
-#EXTRA_BUILD_FLAGS 
+EXTRA_BUILD_FLAGS?=
 ifneq ($(OS),Windows_NT)
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
 		EXTRA_BUILD_FLAGS+= -tags=hidraw
 	endif
+	CLIENT_DEST?="./cmd/keymaster/"
+	OUTPUT_DIR?=bin/
+else
+	CLIENT_DEST?=".\\\\cmd\\\\keymaster\\\\"
+	OUTPUT_DIR?=bin\\
 endif
 
 
 # Setup the -ldflags option for go build here, interpolate the variable values
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
-all:	init-config-host cmd/keymasterd/binData.go
-	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymasterd; go install -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-unlocker; go install -ldflags "-X main.Version=${VERSION}"
-	cd cmd/keymaster-eventmond;  go install -ldflags "-X main.Version=${VERSION}"
+all:	install-client
+	cd cmd/keymasterd; go install -ldflags "${DEFAULT_LDFLAGS}"
+	cd cmd/keymaster-unlocker; go install -ldflags "${DEFAULT_LDFLAGS}"
+	cd cmd/keymaster-eventmond;  go install -ldflags "${DEFAULT_LDFLAGS}"
 
-build:	cmd/keymasterd/binData.go
-	go build ${EXTRA_BUILD_FLAGS} -ldflags "-X main.Version=${VERSION}" -o bin/   ./...
+build:	prebuild
+	go build ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) ./...
 
-cmd/keymasterd/binData.go:
-	-go-bindata -fs -o cmd/keymasterd/binData.go -prefix cmd/keymasterd/data cmd/keymasterd/data/...
+
+keymaster.spec:
+    ifeq ($(OS), Windows_NT)
+		powershell -Command "Get-Content keymaster.spec.tpl | ForEach-Object { \$$_.Replace('{{VERSION}}', '$(VERSION)') } | Set-Content keymaster.spec"
+    else
+		sed 's/{{VERSION}}/$(VERSION)/g' keymaster.spec.tpl > keymaster.spec;
+    endif
+
+prebuild: keymaster.spec
+
+install-client:	prebuild
+	cd cmd/keymaster; go install ${EXTRA_BUILD_FLAGS} -ldflags "${CLIENT_LDFLAGS}"
+
+build-client:	prebuild
+	go build -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) $(CLIENT_DEST)
 
 win-client: client-test
-	 go build -ldflags "-X main.Version=${VERSION}" -o bin .\cmd\keymaster\
+	 go build -ldflags "${CLIENT_LDFLAGS}" -o $(OUTPUT_DIR) .\cmd\keymaster\
 
 client-test:
 	go test -v  ./cmd/keymaster/...
 
-get-deps:	init-config-host
+get-deps:
 	go get -t ./...
 
 clean:
 	rm -f bin/*
 	rm -f keymaster-*.tar.gz
+	rm -f keymaster.spec
 
-init-config-host:
-	@test -f cmd/keymaster/config_host.go || (cp -p templates/config_host_go cmd/keymaster/config_host.go && echo 'Created initial cmd/keymaster/config_host.go')
-
-${BINARY}-${VERSION}.tar.gz:
+${BINARY}-${VERSION}.tar.gz:	prebuild
 	mkdir ${BINARY}-${VERSION}
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" lib/ ${BINARY}-${VERSION}/lib/
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" --exclude="*.key" cmd/ ${BINARY}-${VERSION}/cmd/
@@ -71,11 +95,11 @@ rpm:	${BINARY}-${VERSION}.tar.gz
 
 tar:	${BINARY}-${VERSION}.tar.gz
 
-test:	init-config-host
+test:
 	make -f makefile.certs
 	go test ./...
 
-verbose-test:	init-config-host
+verbose-test:
 	go test -v ./...
 
 format:

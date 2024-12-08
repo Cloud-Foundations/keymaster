@@ -11,7 +11,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 )
 
-//openssl genpkey  -algorithm ED25519 -out key.pem
+// openssl genpkey  -algorithm ED25519 -out key.pem
 const pkcs8Ed25519PrivateKey = `-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIHoHbl2RwHwmyWtXVLroUZEI+d/SqL3RKmECM5P7o7D5
 -----END PRIVATE KEY-----`
