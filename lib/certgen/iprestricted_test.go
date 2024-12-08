@@ -104,3 +104,36 @@ func TestGenIPRestrictedX509Cert(t *testing.T) {
 		t.Fatal("should have failed extension not found")
 	}
 }
+
+func TestExtractIPNetsFromIPRestrictedX509(t *testing.T) {
+	userPub, caCert, caPriv := setupX509Generator(t)
+	netblock := net.IPNet{
+		IP:   net.ParseIP("127.0.0.0"),
+		Mask: net.CIDRMask(8, 32),
+	}
+	netblock2 := net.IPNet{
+		IP:   net.ParseIP("10.0.0.0"),
+		Mask: net.CIDRMask(8, 32),
+	}
+	netblockList := []net.IPNet{netblock, netblock2}
+	derCert, err := GenIPRestrictedX509Cert("username", userPub, caCert, caPriv, netblockList, testDuration, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, _, err := derBytesCertToCertAndPem(derCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certNets, err := ExtractIPNetsFromIPRestrictedX509(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certNets) != len(netblockList) {
+		t.Fatalf("lenghts should match")
+	}
+	for i, certNet := range certNets {
+		if certNet.String() != netblockList[i].String() {
+			t.Fatalf("nets dont match")
+		}
+	}
+}
