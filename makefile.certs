@@ -23,6 +23,7 @@ misc/testcerts/root.pem: misc/testcerts/root.csr misc/testcerts/rootkey.pem
 misc/testcerts/root.csr: misc/testcerts/rootkey.pem
 	openssl req -new -key misc/testcerts/rootkey.pem  -out misc/testcerts/root.csr -utf8 -subj '/C=US/O=TestOrg/OU=Test CA'
 
+#note dec 2024: the extesions for the root certificate are not sufficent anymore. To fix later 
 misc/testcerts/root.ext:
 	echo "basicConstraints = CA:TRUE\n" > misc/testcerts/root.ext
 
