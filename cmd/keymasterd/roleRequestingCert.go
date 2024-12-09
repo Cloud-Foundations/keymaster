@@ -77,11 +77,12 @@ func (state *RuntimeState) parseRoleCertGenParams(r *http.Request) (*roleRequest
 		return nil, fmt.Errorf("missing required requestor_netblock param"), nil
 	}
 	for _, netBlock := range targetNetblockStrings {
-		_, _, err := net.ParseCIDR(netBlock)
+		_, parsedNetBlock, err := net.ParseCIDR(netBlock)
 		if err != nil {
 			state.logger.Printf("%s", err)
 			return nil, fmt.Errorf("invalid netblock %s", netBlock), nil
 		}
+		rvalue.TargetNetblocks = append(rvalue.TargetNetblocks, *parsedNetBlock)
 	}
 
 	// publickey
@@ -154,7 +155,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	}
 
 	// TODO: maybe add a check to ensure no self-replication
-	// We dont anything to request a rolerequsting role for itself
+	// We dont anything to request a rolerequesting role for itself
 
 	/// Now we parse the inputs
 	if r.Method != "POST" {
