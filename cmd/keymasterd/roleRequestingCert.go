@@ -155,7 +155,7 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 	}
 
 	// TODO: maybe add a check to ensure no self-replication
-	// We dont anything to request a rolerequesting role for itself
+	// We don't want anything to request a rolerequesting role for itself
 
 	/// Now we parse the inputs
 	if r.Method != "POST" {
