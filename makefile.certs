@@ -1,26 +1,24 @@
 #this is macos/linux makefile to build the test keys
 
 
-all: cmd/keymaster/testcerts_test.go cmd/keymasterd/testcerts_test.go lib/vip/testcerts_test.go lib/authutil/testcerts_test.go lib/pwauth/ldap/testcerts_test.go lib/client/twofa/testcerts_test.go
+define DEFAULTEXT
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName =DNS:localhost
+endef
+export DEFAULTEXT
+
+define CAEXT
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:TRUE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment, keyCertSign
+endef
+export CAEXT
+
+all: misc/testcerts/localhost.pem
 	
-lib/client/twofa/testcerts_test.go:
-	echo "package twofa\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/client/twofa/testcerts_test.go
-
-lib/pwauth/ldap/testcerts_test.go:
-	echo "package ldap\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/pwauth/ldap/testcerts_test.go
-
-lib/authutil/testcerts_test.go:
-	echo "package authutil\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/authutil/testcerts_test.go
-
-lib/vip/testcerts_test.go:
-	echo "package vip\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > lib/vip/testcerts_test.go
-
-cmd/keymasterd/testcerts_test.go: misc/testcerts/localhost.pem misc/testcerts/root.pem misc/testcerts/eekey.pem
-	echo "package main\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > cmd/keymasterd/testcerts_test.go
-
-
-cmd/keymaster/testcerts_test.go: misc/testcerts/localhost.pem misc/testcerts/root.pem misc/testcerts/eekey.pem
-	echo "package main\n\nconst rootCAPem = \``cat misc/testcerts/root.pem`\`\n\nconst localhostCertPem = \``cat misc/testcerts/localhost.pem`\`\n\nconst localhostKeyPem = \``cat misc/testcerts/eekey.pem`\`\n\n" > cmd/keymaster/testcerts_test.go
 
 misc/testcerts/localhost.pem: misc/testcerts/localhost.csr misc/testcerts/localhost.ext misc/testcerts/root.pem
 	openssl  x509 -req -sha256 -days 730 -CAkey misc/testcerts/rootkey.pem -CA misc/testcerts/root.pem -set_serial 12312389324 -out misc/testcerts/localhost.pem -in misc/testcerts/localhost.csr  -extfile misc/testcerts/localhost.ext
@@ -30,19 +28,19 @@ misc/testcerts/localhost.csr: misc/testcerts/eekey.pem
 	openssl req -new -key misc/testcerts/eekey.pem -batch -out misc/testcerts/localhost.csr -utf8 -subj '/CN=localhost'
 
 misc/testcerts/localhost.ext:
-	echo "basicConstraints = CA:FALSE\nsubjectAltName =DNS:localhost\nextendedKeyUsage =serverAuth\n" > misc/testcerts/localhost.ext
+	echo "$$DEFAULTEXT" >> $@
 
 misc/testcerts/eekey.pem:
 	openssl genpkey -algorithm RSA -out misc/testcerts/eekey.pem -pkeyopt rsa_keygen_bits:2048
 
-misc/testcerts/root.pem: misc/testcerts/root.csr misc/testcerts/rootkey.pem   
-	openssl x509 -req -sha256 -days 7300 -in misc/testcerts/root.csr -signkey misc/testcerts/rootkey.pem -set_serial 10  -out misc/testcerts/root.pem
+misc/testcerts/root.pem: misc/testcerts/root.csr misc/testcerts/rootkey.pem   misc/testcerts/root.ext
+	openssl x509 -req -sha256 -days 7300 -in misc/testcerts/root.csr -signkey misc/testcerts/rootkey.pem -set_serial 10  -out misc/testcerts/root.pem -extfile misc/testcerts/root.ext
 
 misc/testcerts/root.csr: misc/testcerts/rootkey.pem
 	openssl req -new -key misc/testcerts/rootkey.pem  -out misc/testcerts/root.csr -utf8 -subj '/C=US/O=TestOrg/OU=Test CA'
 
 misc/testcerts/root.ext:
-	echo "basicConstraints = CA:TRUE\n" > misc/testcerts/root.ext
+	echo "$$CAEXT" > $@
 
 misc/testcerts/rootkey.pem:
 	openssl genpkey -algorithm RSA -out misc/testcerts/rootkey.pem -pkeyopt rsa_keygen_bits:4096
