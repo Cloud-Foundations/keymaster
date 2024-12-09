@@ -1,6 +1,22 @@
 #this is macos/linux makefile to build the test keys
 
 
+define DEFAULTEXT
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName =DNS:localhost
+endef
+export DEFAULTEXT
+
+define CAEXT
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:TRUE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment, keyCertSign
+endef
+export CAEXT
+
 all: misc/testcerts/localhost.pem
 	
 
@@ -12,20 +28,19 @@ misc/testcerts/localhost.csr: misc/testcerts/eekey.pem
 	openssl req -new -key misc/testcerts/eekey.pem -batch -out misc/testcerts/localhost.csr -utf8 -subj '/CN=localhost'
 
 misc/testcerts/localhost.ext:
-	echo "basicConstraints = CA:FALSE\nsubjectAltName =DNS:localhost\nextendedKeyUsage =serverAuth\n" > misc/testcerts/localhost.ext
+	echo "$$DEFAULTEXT" >> $@
 
 misc/testcerts/eekey.pem:
 	openssl genpkey -algorithm RSA -out misc/testcerts/eekey.pem -pkeyopt rsa_keygen_bits:2048
 
-misc/testcerts/root.pem: misc/testcerts/root.csr misc/testcerts/rootkey.pem   
-	openssl x509 -req -sha256 -days 7300 -in misc/testcerts/root.csr -signkey misc/testcerts/rootkey.pem -set_serial 10  -out misc/testcerts/root.pem
+misc/testcerts/root.pem: misc/testcerts/root.csr misc/testcerts/rootkey.pem   misc/testcerts/root.ext
+	openssl x509 -req -sha256 -days 7300 -in misc/testcerts/root.csr -signkey misc/testcerts/rootkey.pem -set_serial 10  -out misc/testcerts/root.pem -extfile misc/testcerts/root.ext
 
 misc/testcerts/root.csr: misc/testcerts/rootkey.pem
 	openssl req -new -key misc/testcerts/rootkey.pem  -out misc/testcerts/root.csr -utf8 -subj '/C=US/O=TestOrg/OU=Test CA'
 
-#note dec 2024: the extesions for the root certificate are not sufficent anymore. To fix later 
 misc/testcerts/root.ext:
-	echo "basicConstraints = CA:TRUE\n" > misc/testcerts/root.ext
+	echo "$$CAEXT" > $@
 
 misc/testcerts/rootkey.pem:
 	openssl genpkey -algorithm RSA -out misc/testcerts/rootkey.pem -pkeyopt rsa_keygen_bits:4096
