@@ -129,7 +129,7 @@ func TestGetUserCreds(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			password, err := getUserCreds("username")
+			password, err := getUserCreds("username", false)
 
 			if tt.wantErr {
 				if err == nil {
@@ -151,6 +151,35 @@ func TestGetUserCreds(t *testing.T) {
 	}
 }
 
+func TestGetUserCredsFromStdin(t *testing.T) {
+	// Save old stdin
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+
+	// Create a pipe
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+
+	// Write test password to pipe
+	testPassword := "test-password-123\n"
+	go func() {
+		w.Write([]byte(testPassword))
+		w.Close()
+	}()
+
+	password, err := getUserCreds("username", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(password) != "test-password-123" {
+		t.Errorf("got password %q, want %q", string(password), "test-password-123")
+	}
+}
+
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
 //
 //	gopass checks
@@ -159,7 +188,7 @@ func TestPipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	password, err := GetUserCreds("userame")
+	password, err := GetUserCreds("userame", false)
 	if err != nil {
 		t.Fatal(err)
 	}
