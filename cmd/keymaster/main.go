@@ -69,6 +69,8 @@ var (
 	cliUsername  = flag.String("username", "", "username for keymaster")
 	printVersion = flag.Bool("version", false,
 		"Print version and exit")
+	passwordStdin = flag.Bool("password-stdin", false,
+		"Read password from stdin (requires U2F as second factor, disables TOTP and VIPAccess)")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
 
@@ -362,10 +364,21 @@ func setupCerts(
 		}
 	} else {
 		// Authenticate using password and possible 2nd factor.
-		password, err := util.GetUserCreds(userName)
+		password, err := util.GetUserCreds(userName, *passwordStdin)
 		if err != nil {
 			return err
 		}
+
+		// Enforce U2F when using password-stdin
+		if *passwordStdin {
+			twofa.SetNoTOTP(true)
+			twofa.SetNoVIPAccess(true)
+
+			if twofa.GetNoU2F() {
+				return fmt.Errorf("U2F must be enabled when using --password-stdin")
+			}
+		}
+
 		baseUrl, err = twofa.AuthenticateToTargetUrls(userName, password,
 			targetURLs, false, client,
 			userAgentString, logger)
