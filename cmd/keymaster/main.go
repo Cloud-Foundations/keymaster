@@ -249,9 +249,7 @@ func generateAwsRoleCert(homeDir string,
 		}
 		defer os.Remove(tempPath)
 		return os.Rename(tempPath, x509CertPath)
-
 	}
-	return nil
 }
 
 // Beware, this function has inverted path.... at the beggining

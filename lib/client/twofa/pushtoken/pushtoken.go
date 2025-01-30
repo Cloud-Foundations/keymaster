@@ -254,5 +254,4 @@ func doGenericTokenPushAuthenticate(
 		err := fmt.Errorf("%s timeout", pushType)
 		return err
 	}
-	return nil
 }
