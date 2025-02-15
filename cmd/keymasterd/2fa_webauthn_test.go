@@ -9,7 +9,7 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 func TestWebAuthnRegistrationBegin(t *testing.T) {
