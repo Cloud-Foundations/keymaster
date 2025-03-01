@@ -69,6 +69,14 @@ RQ9Re2rAo1N/ZZUAnFPxxsj8puX2tvTbm8NHc2WVxmVFRWpcaNNmDDOz/SOmY3gr
 LwIDAQAB
 -----END PUBLIC KEY-----`
 
+// copied from lib/certgen/certgen_test.go
+const pkcs8ecPrivateKey = `-----BEGIN PRIVATE KEY-----
+MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDA0fA/C+NNTaTx9/q2N
+FerrGHqvHsEiecRKJbs3idQVmy1CNwTuvpkWRvIj2BtamuKhZANiAATHX6b2L3WD
+/trT/Emgw/11Ihy7cR2ya9mkX1GgogceX6UACg8OSX96ZD93vZ3Do/NrGq3LvAet
+IGODZM6zCMhJ4bfLYDt66LtwEiHpQEiftLqU2tZDYBrGLEcBCKKIsTw=
+-----END PRIVATE KEY-----`
+
 // This DB has user 'username' with password 'password'
 const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
 
@@ -170,13 +178,19 @@ func setupPasswdFile() (f *os.File, err error) {
 
 func setupValidRuntimeStateSigner(t *testing.T) (
 	*RuntimeState, *os.File, error) {
+	return setupValidRuntimeStateSignerGeneric(testSignerPrivateKey, t)
+
+}
+
+func setupValidRuntimeStateSignerGeneric(signerPrivate string, t *testing.T) (
+	*RuntimeState, *os.File, error) {
 	logger := testlogger.New(t)
 	state := RuntimeState{
 		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
 		logger:                       logger,
 	}
 	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	signer, err := getSignerFromPEMBytes([]byte(signerPrivate))
 	if err != nil {
 		//log.Printf("Cannot parse Priave Key file")
 		return nil, nil, err
