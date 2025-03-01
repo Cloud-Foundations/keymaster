@@ -11,7 +11,11 @@ import (
 
 func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int, issuer string, audience []string) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return "", err
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}

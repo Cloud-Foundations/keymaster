@@ -57,9 +57,9 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 		TokenEndoint:           issuer + idpOpenIDCTokenPath,
 		UserInfoEndpoint:       issuer + idpOpenIDCUserinfoPath,
 		JWKSURI:                issuer + idpOpenIDCJWKSPath,
-		ResponseTypesSupported: []string{"code"},               // We only support authorization code flow
-		SubjectTypesSupported:  []string{"pairwise", "public"}, // WHAT is THIS?
-		IDTokenSigningAlgValue: []string{"RS256"}}
+		ResponseTypesSupported: []string{"code"},                    // We only support authorization code flow
+		SubjectTypesSupported:  []string{"pairwise", "public"},      // WHAT is THIS?
+		IDTokenSigningAlgValue: []string{"RS256", "ES256", "ES384"}} // Adding ECDSA even tough we dont use it now
 	// need to agree on what scopes we will support
 
 	b, err := json.Marshal(metadata)
@@ -467,7 +467,12 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -592,7 +597,12 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 
 	}
-	tok, err := jwt.ParseSigned(codeString, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	tok, err := jwt.ParseSigned(codeString, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
@@ -731,7 +741,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 
 	signerOptions = signerOptions.WithHeader("kid", kid)
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -927,7 +937,12 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 			"Missing access token")
 		return
 	}
-	tok, err := jwt.ParseSigned(accessToken, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	tok, err := jwt.ParseSigned(accessToken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,

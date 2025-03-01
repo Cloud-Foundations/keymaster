@@ -14,8 +14,12 @@ import (
 )
 
 func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return "", err
+	}
 	signer, err := jose.NewSigner(jose.SigningKey{
-		Algorithm: jose.RS256,
+		Algorithm: sigAlgo,
 		Key:       state.Signer,
 	}, (&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {

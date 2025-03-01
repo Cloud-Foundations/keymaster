@@ -160,7 +160,11 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	}
 	rCode := location.Query().Get("code")
 	t.Logf("rCode=%s", rCode)
-	tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,9 +588,12 @@ func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("resultAccessToken='%+v'", resultAccessToken)
-
 	// lets parse the access token to ensure the requested audience is there.
-	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		t.Fatal(err)
 	}
