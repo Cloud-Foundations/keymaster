@@ -285,6 +285,9 @@ func (state *RuntimeState) parseRefreshRoleCertGenParams(authData *authInfo, r *
 		return nil, nil, err
 	}
 	rvalue.RequestorNetblocks = certNets
+
+	//TODO: ensure issuer of userCert is NOT the std CA
+
 	return &rvalue, nil, nil
 }
 
