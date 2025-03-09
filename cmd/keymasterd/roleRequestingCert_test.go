@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -117,11 +118,31 @@ func TestRoleRequetingCertGenHandler(t *testing.T) {
 	}
 
 	resp := rr.Result()
-	_, err = ioutil.ReadAll(resp.Body)
+	certPem, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// TODO: check body content is actually pem
+	block, _ := pem.Decode([]byte(certPem))
+	if block == nil || block.Type != "CERTIFICATE" {
+		log.Fatal("failed to decode PEM block containing certificate")
+	}
+	parsedRRCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(parsedRRCert.Issuer.CommonName, "role-requesting-CA") {
+		t.Fatal("shoule have been issued by role-requesting ca")
+	}
+	for _, cert := range state.caCertDer {
+		stdCaCert, err := x509.ParseCertificate(cert)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parsedRRCert.Issuer.String() == stdCaCert.Subject.String() {
+			t.Fatal("should not be issuing role certs with std ca cert")
+		}
+	}
 
 	//now disable the role as automation use and it should fail
 	state.Config.Base.AutomationUsers = []string{}
