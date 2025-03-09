@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -125,7 +124,7 @@ func TestRoleRequetingCertGenHandler(t *testing.T) {
 	// TODO: check body content is actually pem
 	block, _ := pem.Decode([]byte(certPem))
 	if block == nil || block.Type != "CERTIFICATE" {
-		log.Fatal("failed to decode PEM block containing certificate")
+		t.Fatal("failed to decode PEM block containing certificate")
 	}
 	parsedRRCert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
