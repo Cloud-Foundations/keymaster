@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 )
 
@@ -51,6 +52,11 @@ func testCreateRuntimeStateWithBothCAs(t *testing.T) (
 		return nil, "", err
 	}
 	state.caCertDer = append(state.caCertDer, caCertDer)
+	state.selfRoleCaCertDer, err = certgen.GenSelfSignedCACert(state.HostIdentity, "role-requesting-CA", signer)
+	if err != nil {
+		return nil, "", err
+	}
+
 	state.signerPublicKeyToKeymasterKeys()
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	if err := initDB(state); err != nil {

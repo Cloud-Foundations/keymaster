@@ -190,17 +190,17 @@ func (state *RuntimeState) roleRequetingCertGenHandler(w http.ResponseWriter, r 
 
 }
 func (state *RuntimeState) withParamsGenerateRoleRequestingCert(params *roleRequestingCertGenParams) (string, *x509.Certificate, error) {
-	signer, caCertDer, err := state.getSignerX509CAForPublic(params.UserPub)
-	if err != nil {
-		return "", nil, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
-	}
-	caCert, err := x509.ParseCertificate(caCertDer)
+	//signer, caCertDer, err := state.getSignerX509CAForPublic(params.UserPub)
+	//if err != nil {
+	//	return "", nil, fmt.Errorf("Error Finding Cert for public key: %s\n data", err)
+	//}
+	caCert, err := x509.ParseCertificate(state.selfRoleCaCertDer)
 	if err != nil {
 		return "", nil, fmt.Errorf("Cannot parse CA Der: %s\n data", err)
 	}
 
 	derCert, err := certgen.GenIPRestrictedX509Cert(params.Role, params.UserPub,
-		caCert, signer, params.RequestorNetblocks, params.Duration, nil, nil)
+		caCert, state.Signer, params.RequestorNetblocks, params.Duration, nil, nil)
 
 	if err != nil {
 		return "", nil, fmt.Errorf("Cannot Generate x509cert: %s\n", err)
