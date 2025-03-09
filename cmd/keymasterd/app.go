@@ -368,6 +368,11 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
+func generateSelfRoleRequestingCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error) {
+	const rrCAorgName = "role-requesting-CA"
+	return certgen.GenSelfSignedCACert(rrCAorgName+"."+state.HostIdentity, rrCAorgName, keySigner)
+}
+
 func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 	for {
 		state.Mutex.Lock()

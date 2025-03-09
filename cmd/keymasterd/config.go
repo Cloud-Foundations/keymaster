@@ -35,7 +35,6 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
-	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
@@ -353,7 +352,7 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 		state.logger.Printf("Cannot generate CA DER")
 		return err
 	}
-	state.selfRoleCaCertDer, err = certgen.GenSelfSignedCACert(state.HostIdentity, "role-requesting-CA", signer)
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
 	if err != nil {
 		state.logger.Printf("Cannot generate role requesting CA DER")
 		return err

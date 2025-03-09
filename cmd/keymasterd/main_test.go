@@ -22,7 +22,6 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
-	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
@@ -191,7 +190,10 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 		return nil, nil, err
 	}
 	state.caCertDer = append(state.caCertDer, caCertDer)
-	state.selfRoleCaCertDer, err = certgen.GenSelfSignedCACert(state.HostIdentity, "role-requesting-CA", signer)
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(&state, signer)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
