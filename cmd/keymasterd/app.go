@@ -196,6 +196,7 @@ type RuntimeState struct {
 	HostIdentity                 string
 	KerberosRealm                *string
 	caCertDer                    [][]byte
+	selfRoleCaCertDer            []byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
 	localAuthData                map[string]localUserData
@@ -365,6 +366,11 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 		organizationName = *state.KerberosRealm
 	}
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
+}
+
+func generateSelfRoleRequestingCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error) {
+	const rrCAorgName = "role-requesting-CA"
+	return certgen.GenSelfSignedCACert(rrCAorgName+"."+state.HostIdentity, rrCAorgName, keySigner)
 }
 
 func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
@@ -2025,6 +2031,12 @@ func main() {
 		}
 		runtimeState.ClientCAPool.AddCert(myCert)
 	}
+	parsedCert, err := x509.ParseCertificate(runtimeState.selfRoleCaCertDer)
+	if err != nil {
+		panic(err)
+	}
+	runtimeState.ClientCAPool.AddCert(parsedCert)
+
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating

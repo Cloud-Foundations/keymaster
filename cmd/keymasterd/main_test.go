@@ -190,6 +190,10 @@ func setupValidRuntimeStateSigner(t *testing.T) (
 		return nil, nil, err
 	}
 	state.caCertDer = append(state.caCertDer, caCertDer)
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(&state, signer)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {

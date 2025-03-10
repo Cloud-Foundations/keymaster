@@ -51,6 +51,11 @@ func testCreateRuntimeStateWithBothCAs(t *testing.T) (
 		return nil, "", err
 	}
 	state.caCertDer = append(state.caCertDer, caCertDer)
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
+	if err != nil {
+		return nil, "", err
+	}
+
 	state.signerPublicKeyToKeymasterKeys()
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	if err := initDB(state); err != nil {

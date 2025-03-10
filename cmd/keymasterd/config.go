@@ -352,6 +352,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 		state.logger.Printf("Cannot generate CA DER")
 		return err
 	}
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
+	if err != nil {
+		state.logger.Printf("Cannot generate role requesting CA DER")
+		return err
+	}
+
 	state.caCertDer = append(state.caCertDer, caCertDer)
 	// Assignment of signer MUST be the last operation after
 	// all error checks

@@ -117,11 +117,34 @@ func TestRoleRequetingCertGenHandler(t *testing.T) {
 	}
 
 	resp := rr.Result()
-	_, err = ioutil.ReadAll(resp.Body)
+	certPem, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TODO: check body content is actually pem
+	block, _ := pem.Decode([]byte(certPem))
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatal("failed to decode PEM block containing certificate")
+	}
+	parsedRRCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This ensures we are signing with the role-requesting CA, but this
+	// test is not great, as it depends on a contant matching the code
+	if !strings.Contains(parsedRRCert.Issuer.CommonName, "role-requesting-CA") {
+		t.Fatal("shoule have been issued by role-requesting ca")
+	}
+	// Ensure this cert is NOT signed by our standard CA certs
+	for _, cert := range state.caCertDer {
+		stdCaCert, err := x509.ParseCertificate(cert)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parsedRRCert.Issuer.String() == stdCaCert.Subject.String() {
+			t.Fatal("should not be issuing role certs with std ca cert")
+		}
+	}
+	// TODO: add more checks on duration + names of the cert
 
 	//now disable the role as automation use and it should fail
 	state.Config.Base.AutomationUsers = []string{}
