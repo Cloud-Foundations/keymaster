@@ -88,131 +88,142 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 }
 
 func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-	state.pendingOauth2 = make(map[string]pendingAuth2Request)
-	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
-	state.signerPublicKeyToKeymasterKeys()
-	state.HostIdentity = "localhost"
 
-	valid_client_id := "valid_client_id"
-	valid_client_secret := "secret_password"
-	valid_redirect_uri := "https://localhost:12345"
-	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
-	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+	privatePEM := []string{testSignerPrivateKey, pkcs8ecPrivateKey} // thats rsa, p384
 
-	//url := idpOpenIDCAuthorizationPath
-	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, private := range privatePEM {
 
-	//First we do a simple request.. no auth should fail for now.. after build out it
-	// should be a redirect to the login page
-	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusUnauthorized)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// now we add a cookie for auth
-	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
-	if err != nil {
-		t.Fatal(err)
-	}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	req.AddCookie(&authCookie)
-	// and we retry with no params... it should fail again
-	_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// add the required params
-	form := url.Values{}
-	form.Add("scope", "openid")
-	form.Add("response_type", "code")
-	form.Add("client_id", valid_client_id)
-	form.Add("redirect_uri", valid_redirect_uri)
-	form.Add("nonce", "123456789")
-	form.Add("state", "this is my state")
+		state, passwdFile, err := setupValidRuntimeStateSignerGeneric(private, t)
+		//setupValidRuntimeStateSigner(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(passwdFile.Name()) // clean up
+		state.pendingOauth2 = make(map[string]pendingAuth2Request)
+		state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+		state.signerPublicKeyToKeymasterKeys()
+		state.HostIdentity = "localhost"
 
-	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
-	postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		valid_client_id := "valid_client_id"
+		valid_client_secret := "secret_password"
+		valid_redirect_uri := "https://localhost:12345"
+		clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
+		state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
 
-	postReq.AddCookie(&authCookie)
+		//url := idpOpenIDCAuthorizationPath
+		req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
-	if err != nil {
-		t.Logf("bad handler code %+v", rr)
-		t.Fatal(err)
-	}
-	t.Logf("%+v", rr)
-	locationText := rr.Header().Get("Location")
-	t.Logf("location=%s", locationText)
-	location, err := url.Parse(locationText)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rCode := location.Query().Get("code")
-	t.Logf("rCode=%s", rCode)
-	tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{jose.RS256})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("tok=%+v", tok)
-	//out := jwt.Claims{}
-	out := keymasterdCodeToken{}
-	if err := tok.Claims(state.Signer.Public(), &out); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("out=%+v", out)
+		//First we do a simple request.. no auth should fail for now.. after build out it
+		// should be a redirect to the login page
+		_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusUnauthorized)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// now we add a cookie for auth
+		cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+		if err != nil {
+			t.Fatal(err)
+		}
+		authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+		req.AddCookie(&authCookie)
+		// and we retry with no params... it should fail again
+		_, err = checkRequestHandlerCode(req, state.idpOpenIDCAuthorizationHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// add the required params
+		form := url.Values{}
+		form.Add("scope", "openid")
+		form.Add("response_type", "code")
+		form.Add("client_id", valid_client_id)
+		form.Add("redirect_uri", valid_redirect_uri)
+		form.Add("nonce", "123456789")
+		form.Add("state", "this is my state")
 
-	//now we do a token request
-	tokenForm := url.Values{}
-	tokenForm.Add("grant_type", "authorization_code")
-	tokenForm.Add("redirect_uri", valid_redirect_uri)
-	tokenForm.Add("code", rCode)
+		postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		postReq.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+		postReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
-	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	tokenReq.SetBasicAuth(valid_client_id, valid_client_secret)
-	//idpOpenIDCTokenHandler
+		postReq.AddCookie(&authCookie)
 
-	tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resultAccessToken := tokenResponse{}
-	body := tokenRR.Result().Body
-	err = json.NewDecoder(body).Decode(&resultAccessToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("resultAccessToken='%+v'", resultAccessToken)
+		rr, err := checkRequestHandlerCode(postReq, state.idpOpenIDCAuthorizationHandler, http.StatusFound)
+		if err != nil {
+			t.Logf("bad handler code %+v", rr)
+			t.Fatal(err)
+		}
+		t.Logf("%+v", rr)
+		locationText := rr.Header().Get("Location")
+		t.Logf("location=%s", locationText)
+		location, err := url.Parse(locationText)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rCode := location.Query().Get("code")
+		t.Logf("rCode=%s", rCode)
+		sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{sigAlgo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("tok=%+v", tok)
+		//out := jwt.Claims{}
+		out := keymasterdCodeToken{}
+		if err := tok.Claims(state.Signer.Public(), &out); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("out=%+v", out)
 
-	//now the userinfo
-	userinfoForm := url.Values{}
-	userinfoForm.Add("access_token", resultAccessToken.AccessToken)
+		//now we do a token request
+		tokenForm := url.Values{}
+		tokenForm.Add("grant_type", "authorization_code")
+		tokenForm.Add("redirect_uri", valid_redirect_uri)
+		tokenForm.Add("code", rCode)
 
-	userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
-	userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
+		tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		tokenReq.SetBasicAuth(valid_client_id, valid_client_secret)
+		//idpOpenIDCTokenHandler
 
-	_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
+		tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resultAccessToken := tokenResponse{}
+		body := tokenRR.Result().Body
+		err = json.NewDecoder(body).Decode(&resultAccessToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("resultAccessToken='%+v'", resultAccessToken)
+
+		//now the userinfo
+		userinfoForm := url.Values{}
+		userinfoForm.Add("access_token", resultAccessToken.AccessToken)
+
+		userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
+		userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+		_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 }
@@ -584,9 +595,12 @@ func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("resultAccessToken='%+v'", resultAccessToken)
-
 	// lets parse the access token to ensure the requested audience is there.
-	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		t.Fatal(err)
 	}

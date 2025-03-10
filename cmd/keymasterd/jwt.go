@@ -2,6 +2,10 @@ package main
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -11,6 +15,29 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/crypto/ssh"
 )
+
+func publicToPreferedJoseSigAlgo(pubkey crypto.PublicKey) (jose.SignatureAlgorithm, error) {
+	switch key := pubkey.(type) {
+	case ed25519.PublicKey:
+		return jose.EdDSA, nil
+	case *ecdsa.PublicKey:
+		switch key.Curve {
+		case elliptic.P256():
+			return jose.ES256, nil
+		case elliptic.P384():
+			return jose.ES384, nil
+		case elliptic.P521():
+			//	return []jose.SignatureAlgorithm{jose.ES512}
+			return jose.ES512, nil
+		default:
+			return jose.HS256, fmt.Errorf("invalid pub key")
+		}
+	case *rsa.PublicKey:
+		return jose.RS256, nil
+	default:
+		return jose.HS256, fmt.Errorf("invalid pub key")
+	}
+}
 
 // This actually gets the SSH key fingerprint
 func getKeyFingerprint(key crypto.PublicKey) (string, error) {
@@ -51,7 +78,11 @@ func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (
 func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authLevel int, durationSeconds int64) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return "", err
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +102,11 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (
 
 func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	tokenType string) (rvalue authInfo, err error) {
-	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return rvalue, err
+	}
+	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		return rvalue, err
 	}
@@ -97,12 +132,16 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 
 func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuthLevel int) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return "", err
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}
 
-	tok, err := jwt.ParseSigned(intoken, []jose.SignatureAlgorithm{jose.RS256})
+	tok, err := jwt.ParseSigned(intoken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		return "", err
 	}
@@ -124,7 +163,11 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 
 func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string, dataType int, data string, expiration int64) (string, error) {
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return "", err
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +183,11 @@ func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string,
 }
 
 func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToken string) (rvalue storageStringDataJWT, err error) {
-	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{jose.RS256})
+	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	if err != nil {
+		return rvalue, err
+	}
+	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{sigAlgo})
 	if err != nil {
 		return rvalue, err
 	}
