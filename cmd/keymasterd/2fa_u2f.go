@@ -13,7 +13,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
-	"github.com/duo-labs/webauthn/protocol/webauthncose"
+	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	"github.com/tstranex/u2f"
 )
 
