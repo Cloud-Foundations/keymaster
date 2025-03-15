@@ -31,6 +31,7 @@ require (
 	github.com/tstranex/u2f v1.0.0
 	github.com/vjeantet/ldapserver v1.0.1
 	golang.org/x/crypto v0.28.0
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/net v0.30.0
 	golang.org/x/oauth2 v0.23.0
 	golang.org/x/term v0.26.0

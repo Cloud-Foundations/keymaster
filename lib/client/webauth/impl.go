@@ -61,7 +61,13 @@ func authenticate(s state) (string, error) {
 }
 
 func parseToken(serialisedToken string) (*authInfoJWT, error) {
-	token, err := jwt.ParseSigned(serialisedToken, []jose.SignatureAlgorithm{jose.RS256})
+	AllowedJoseAlgorithms := []jose.SignatureAlgorithm{
+		jose.RS256,
+		jose.ES256,
+		jose.ES384,
+		jose.EdDSA,
+	}
+	token, err := jwt.ParseSigned(serialisedToken, AllowedJoseAlgorithms)
 	if err != nil {
 		return nil, err
 	}

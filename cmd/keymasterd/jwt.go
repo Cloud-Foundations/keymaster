@@ -14,6 +14,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/exp/maps"
 )
 
 func publicToPreferedJoseSigAlgo(pubkey crypto.PublicKey) (jose.SignatureAlgorithm, error) {
@@ -27,7 +28,6 @@ func publicToPreferedJoseSigAlgo(pubkey crypto.PublicKey) (jose.SignatureAlgorit
 		case elliptic.P384():
 			return jose.ES384, nil
 		case elliptic.P521():
-			//	return []jose.SignatureAlgorithm{jose.ES512}
 			return jose.ES512, nil
 		default:
 			return jose.HS256, fmt.Errorf("invalid pub key")
@@ -37,6 +37,20 @@ func publicToPreferedJoseSigAlgo(pubkey crypto.PublicKey) (jose.SignatureAlgorit
 	default:
 		return jose.HS256, fmt.Errorf("invalid pub key")
 	}
+}
+
+// TODO: optimize to call this just once, once all keys are known
+func (state *RuntimeState) getJoseKeymastedVerifierList() ([]jose.SignatureAlgorithm, error) {
+	algorithmSet := make(map[jose.SignatureAlgorithm]struct{})
+	for _, pubKey := range state.KeymasterPublicKeys {
+		keyAlg, err := publicToPreferedJoseSigAlgo(pubKey)
+		if err != nil {
+			return nil, err
+		}
+		algorithmSet[keyAlg] = struct{}{}
+
+	}
+	return maps.Keys(algorithmSet), nil
 }
 
 // This actually gets the SSH key fingerprint
@@ -102,11 +116,11 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (
 
 func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	tokenType string) (rvalue authInfo, err error) {
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	sigAlgos, err := state.getJoseKeymastedVerifierList()
 	if err != nil {
 		return rvalue, err
 	}
-	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{sigAlgo})
+	tok, err := jwt.ParseSigned(serializedToken, sigAlgos)
 	if err != nil {
 		return rvalue, err
 	}
@@ -136,12 +150,16 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 	if err != nil {
 		return "", err
 	}
+	incomingAlgos, err := state.getJoseKeymastedVerifierList()
+	if err != nil {
+		return "", err
+	}
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}
 
-	tok, err := jwt.ParseSigned(intoken, []jose.SignatureAlgorithm{sigAlgo})
+	tok, err := jwt.ParseSigned(intoken, incomingAlgos)
 	if err != nil {
 		return "", err
 	}
@@ -183,11 +201,11 @@ func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string,
 }
 
 func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToken string) (rvalue storageStringDataJWT, err error) {
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	incomingAlgos, err := state.getJoseKeymastedVerifierList()
 	if err != nil {
 		return rvalue, err
 	}
-	tok, err := jwt.ParseSigned(serializedToken, []jose.SignatureAlgorithm{sigAlgo})
+	tok, err := jwt.ParseSigned(serializedToken, incomingAlgos)
 	if err != nil {
 		return rvalue, err
 	}
