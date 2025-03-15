@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
-	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	cv "github.com/nirasan/go-oauth-pkce-code-verifier"
 )
@@ -166,11 +165,11 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 		}
 		rCode := location.Query().Get("code")
 		t.Logf("rCode=%s", rCode)
-		sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+		incomingAlgos, err := state.getJoseKeymastedVerifierList()
 		if err != nil {
 			t.Fatal(err)
 		}
-		tok, err := jwt.ParseSigned(rCode, []jose.SignatureAlgorithm{sigAlgo})
+		tok, err := jwt.ParseSigned(rCode, incomingAlgos)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -596,11 +595,11 @@ func TestIDPOpenIDCPKCEFlowWithAudienceSuccess(t *testing.T) {
 	}
 	t.Logf("resultAccessToken='%+v'", resultAccessToken)
 	// lets parse the access token to ensure the requested audience is there.
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	incomingAlgos, err := state.getJoseKeymastedVerifierList()
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, []jose.SignatureAlgorithm{sigAlgo})
+	tok, err := jwt.ParseSigned(resultAccessToken.AccessToken, incomingAlgos)
 	if err != nil {
 		t.Fatal(err)
 	}
