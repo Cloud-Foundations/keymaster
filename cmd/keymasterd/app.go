@@ -1967,11 +1967,12 @@ func main() {
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
-		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
-		GetCertificate:           runtimeState.certManager.GetCertificate,
-		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
+		ClientCAs:      runtimeState.ClientCAPool,
+		ClientAuth:     tls.VerifyClientCertIfGiven,
+		GetCertificate: runtimeState.certManager.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256,
+			tls.X25519, tls.X25519MLKEM768},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -2042,11 +2043,12 @@ func main() {
 	// Our usage shows this is less than 1% of users so we are now mandating
 	// verification on issues we will need to update clientAuth back  to tls.RequestClientCert
 	serviceTLSConfig := &tls.Config{
-		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
-		GetCertificate:           runtimeState.certManager.GetCertificate,
-		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256, tls.X25519},
+		ClientCAs:      runtimeState.ClientCAPool,
+		ClientAuth:     tls.VerifyClientCertIfGiven,
+		GetCertificate: runtimeState.certManager.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256,
+			tls.X25519, tls.X25519MLKEM768},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
