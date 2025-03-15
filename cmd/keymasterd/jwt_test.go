@@ -86,3 +86,49 @@ func TestJWTAudtienceAuthToken(t *testing.T) {
 		}
 	}
 }
+
+func TestMixedKeyTypeSigners(t *testing.T) {
+	privatePEM := []string{testSignerPrivateKey, pkcs8ecPrivateKey} // thats rsa, p384
+
+	var keymasterSetups []*RuntimeState
+	for _, private := range privatePEM {
+		km, passwdFile, err := setupValidRuntimeStateSignerGeneric(private, t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(passwdFile.Name())
+		keymasterSetups = append(keymasterSetups, km)
+	}
+	// append other publics to trusted
+	for i, km := range keymasterSetups {
+		for j, km2 := range keymasterSetups {
+			if i != j {
+				km.KeymasterPublicKeys = append(km.KeymasterPublicKeys, km2.Signer.Public())
+			}
+		}
+	}
+	// now the actual test
+	for _, km := range keymasterSetups {
+		issuer := km.idpGetIssuer()
+		goodToken, err := testONLYGenerateAuthJWT(km, "username", AuthTypeU2F, issuer, []string{issuer})
+		if err != nil {
+			t.Fatal(err)
+		}
+		badTokenIncorrectAudience, err := testONLYGenerateAuthJWT(km, "username",
+			AuthTypeU2F, issuer, []string{"otherAudience"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, km2 := range keymasterSetups {
+			_, err = km2.getAuthInfoFromAuthJWT(goodToken)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = km2.getAuthInfoFromAuthJWT(badTokenIncorrectAudience)
+			if err == nil {
+				t.Fatal("should have failed")
+			}
+		}
+	}
+
+}
