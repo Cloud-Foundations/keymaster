@@ -80,7 +80,8 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 		return nil, err
 	}
 	if r.StatusCode >= 300 {
-		return nil, fmt.Errorf(string(body))
+		logger.Debugf(2, "HTTP Fail GET %s: %s %s", url, r.Status, string(body))
+		return nil, fmt.Errorf("Oauth http Failed with code %d", r.StatusCode)
 	}
 	logger.Debugf(8, "HTTP GET %s: %s %s", url, r.Status, string(body))
 	return body, nil
