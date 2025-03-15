@@ -1,8 +1,6 @@
 module github.com/Cloud-Foundations/keymaster
 
-go 1.23.0
-
-toolchain go1.23.2
+go 1.24.0
 
 replace github.com/bearsh/hid v1.3.0 => github.com/bearsh/hid v1.5.0
 
