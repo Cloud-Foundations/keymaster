@@ -599,17 +599,19 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
 	if err != nil {
+		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	incomingAlgos, err := state.getJoseKeymastedVerifierList()
 	if err != nil {
+		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	tok, err := jwt.ParseSigned(codeString, incomingAlgos)
 	if err != nil {
-		logger.Printf("err=%s", err)
+		logger.Debugf(1, "err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
@@ -944,12 +946,13 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter,
 	}
 	incomingAlgos, err := state.getJoseKeymastedVerifierList()
 	if err != nil {
+		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	tok, err := jwt.ParseSigned(accessToken, incomingAlgos)
 	if err != nil {
-		logger.Printf("err=%s", err)
+		logger.Debugf(1, "err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest,
 			"bad access token")
 		return
