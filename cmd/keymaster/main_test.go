@@ -34,8 +34,7 @@ func getTLSconfig() (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS11,
-		MaxVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
 		ServerName:   "localhost",
 	}, nil
@@ -180,8 +179,9 @@ func TestMost(t *testing.T) {
 	homeDir = tmpdir
 	appConfig := config.AppConfigFile{
 		Base: config.BaseConfig{
-			Gen_Cert_URLS: localHttpsTarget,
-			FilePrefix:    "test"}}
+			Gen_Cert_URLS:    localHttpsTarget,
+			PreferredKeyType: "rsa", //TODO move to ecdsa later
+			FilePrefix:       "test"}}
 
 	_, err = pipeToStdin("password\n")
 	if err != nil {

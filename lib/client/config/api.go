@@ -7,12 +7,13 @@ import (
 )
 
 type BaseConfig struct {
-	Gen_Cert_URLS   string `yaml:"gen_cert_urls"`
-	Username        string `yaml:"username"`
-	FilePrefix      string `yaml:"file_prefix"`
-	AddGroups       bool   `yaml:"add_groups"`
-	WebauthBrowser  string `yaml:"webauth_browser"`
-	AgentConfirmUse bool   `yaml:"agent_confirm_use"`
+	Gen_Cert_URLS    string `yaml:"gen_cert_urls"`
+	Username         string `yaml:"username"`
+	FilePrefix       string `yaml:"file_prefix"`
+	AddGroups        bool   `yaml:"add_groups"`
+	WebauthBrowser   string `yaml:"webauth_browser"`
+	AgentConfirmUse  bool   `yaml:"agent_confirm_use"`
+	PreferredKeyType string `yaml:"preferred_key_type"`
 }
 
 // AppConfigFile represents a keymaster client configuration file

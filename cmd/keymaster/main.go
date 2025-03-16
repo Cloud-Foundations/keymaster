@@ -71,6 +71,8 @@ var (
 		"Print version and exit")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
+	preferredKeyType = flag.String("preferredKeyType", "rsa",
+		"Preferred key type for certificates")
 
 	FilePrefix = "keymaster"
 )
@@ -191,10 +193,14 @@ func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
-	signers := makeSigners()
+	keyType, err := keyPreferenceFromString(configContents.Base.PreferredKeyType)
+	if err != nil {
+		return err
+	}
+	signers := makeSigners(keyType)
 	// Initialise the client connection.
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
-	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	err = backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
@@ -333,10 +339,14 @@ func setupCerts(
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
-	signers := makeSigners()
+	keyType, err := keyPreferenceFromString(configContents.Base.PreferredKeyType)
+	if err != nil {
+		return err
+	}
+	signers := makeSigners(keyType)
 	//initialize the client connection
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
-	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	err = backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
@@ -387,7 +397,7 @@ func setupCerts(
 	if err != nil {
 		logger.Debugf(0, "kubernetes cert not available")
 	}
-	sshRsaCert, err := twofa.DoCertRequest(signers.SshRsa, client, userName,
+	sshRsaCert, err := twofa.DoCertRequest(signers.SshMain, client, userName,
 		baseUrl, "ssh", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
@@ -417,11 +427,12 @@ func setupCerts(
 			return err
 		}
 	}
+	keySuffix := "-" + configContents.Base.PreferredKeyType
 	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		signers.SshRsa,
-		FilePrefix+"-rsa",
+		signers.SshMain,
+		FilePrefix+keySuffix,
 		userName,
-		sshKeyPath+"-rsa",
+		sshKeyPath+keySuffix,
 		confirmKeyUse,
 		logger)
 	if err != nil {
@@ -535,6 +546,14 @@ func mainWithError(stdout io.Writer, logger log.DebugLogger) error {
 	}
 	if *cliFilePrefix != "" {
 		FilePrefix = *cliFilePrefix
+	}
+	if *preferredKeyType != "" {
+		//prefKey := *preferredKeyType
+		_, err = keyPreferenceFromString(*preferredKeyType)
+		if err != nil {
+			return fmt.Errorf("Invalid preferredKey type")
+		}
+		config.Base.PreferredKeyType = *preferredKeyType
 	}
 	if flag.Arg(0) == "aws-role-cert" {
 		err = generateAwsRoleCert(homeDir, config, client, logger)
