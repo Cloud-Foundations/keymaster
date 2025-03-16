@@ -495,7 +495,7 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	} else {
 		dialer = rawDialer
 	}
-	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13}
 	return util.GetHttpClient(tlsConfig, dialer)
 }
 
