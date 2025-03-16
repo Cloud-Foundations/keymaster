@@ -49,12 +49,12 @@ func makeSigners(keyPreference KeyPreference) *signers {
 	s := signers{
 		keyPref: keyPreference,
 	}
+	s.mutex.Lock()
 	go s.compute()
 	return &s
 }
 
 func (s *signers) compute() {
-	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	var err error
 	var err2 error
@@ -83,7 +83,6 @@ func (s *signers) compute() {
 		s.err = err
 		return
 	}
-	//s.SshMain = sshRsaSigner
 	s.SshEd25519 = sshEd25519Signer
 }
 

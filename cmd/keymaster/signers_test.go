@@ -12,19 +12,28 @@ func TestSignersGenerate(t *testing.T) {
 			t.Fatal(err)
 		}
 		signers := makeSigners(keyType)
-		signers.compute()
 		err = signers.Wait()
 		if err != nil {
 			t.Fatal(err)
 		}
+		// TODO: actually check the singers match
+		// the preference
 	}
-	/*
-		signers2 := makeSigners()
-		signers2.keyPref = P256Signer
-		signers2.compute()
-		err = signers2.Wait()
+}
+
+func TestKeyPreferenceFromString(t *testing.T) {
+	GoodKeyPreferences := []string{"rsa", "p256", "p384"}
+	for _, keyPref := range GoodKeyPreferences {
+		_, err := keyPreferenceFromString(keyPref)
 		if err != nil {
 			t.Fatal(err)
 		}
-	*/
+	}
+	BadKeyPreferences := []string{"foobar", "", "x445"}
+	for _, keyPref := range BadKeyPreferences {
+		_, err := keyPreferenceFromString(keyPref)
+		if err == nil {
+			t.Fatalf("should have failed")
+		}
+	}
 }
