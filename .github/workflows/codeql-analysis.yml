@@ -42,6 +42,10 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version-file: go.mod
+    - name: Install dependencies
+      uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: gcc pkg-config libudev-dev libudev
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
