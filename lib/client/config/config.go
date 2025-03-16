@@ -35,7 +35,7 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 
 	if config.Base.PreferredKeyType != "" {
 		prefKey := config.Base.PreferredKeyType
-		if prefKey != "rsa" || prefKey != "p256" || prefKey != "p384" {
+		if prefKey != "rsa" && prefKey != "p256" && prefKey != "p384" {
 			err = errors.New("Invalid Config file... invalid KeyPreference")
 			return config, err
 		}
