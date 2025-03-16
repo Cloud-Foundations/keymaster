@@ -209,12 +209,12 @@ func generateAwsRoleCert(homeDir string,
 		KeymasterServer: targetURLs[0],
 		Logger:          logger,
 		HttpClient:      client,
-		Signer:          signers.X509Rsa,
+		Signer:          signers.X509,
 	})
 	if err != nil {
 		return err
 	}
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509)
 	if err != nil {
 		return err
 	}
@@ -376,12 +376,12 @@ func setupCerts(
 	if err := signers.Wait(); err != nil {
 		return err
 	}
-	x509Cert, err := twofa.DoCertRequest(signers.X509Rsa, client, userName,
+	x509Cert, err := twofa.DoCertRequest(signers.X509, client, userName,
 		baseUrl, "x509", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
 	}
-	kubernetesCert, err := twofa.DoCertRequest(signers.X509Rsa, client,
+	kubernetesCert, err := twofa.DoCertRequest(signers.X509, client,
 		userName, baseUrl, "x509-kubernetes", configContents.Base.AddGroups,
 		userAgentString, logger)
 	if err != nil {
@@ -428,7 +428,7 @@ func setupCerts(
 		return err
 	}
 	// Now x509
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509)
 	if err != nil {
 		return err
 	}

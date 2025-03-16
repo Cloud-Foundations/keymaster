@@ -24,6 +24,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/net"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/http2"
 	"golang.org/x/net/publicsuffix"
 	"golang.org/x/term"
 )
@@ -169,6 +170,11 @@ func getHttpClient(tlsConfig *tls.Config,
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
 		DialContext:     dialer.DialContext,
+	}
+	var err error
+	err = http2.ConfigureTransport(clientTransport)
+	if err != nil {
+		return nil, err
 	}
 
 	// proxy env variables in ascending order of preference, lower case 'http_proxy' dominates
