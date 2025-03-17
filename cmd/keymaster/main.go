@@ -66,14 +66,13 @@ var (
 		"(optional) name for using non OS root CA to verify TLS connections")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
-	cliUsername  = flag.String("username", "", "username for keymaster")
+	cliUsername      = flag.String("username", "", "username for keymaster")
+	preferredKeyType = flag.String("preferredKeyType", "rsa",
+		"Preferred key type for certificates. (rsa|p256|p384)")
 	printVersion = flag.Bool("version", false,
 		"Print version and exit")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
-	preferredKeyType = flag.String("preferredKeyType", "rsa",
-		"Preferred key type for certificates")
-
 	FilePrefix = "keymaster"
 )
 
