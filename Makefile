@@ -10,7 +10,7 @@ endif
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION?=1.17.0
+VERSION?=1.17.1
 DEFAULT_HOST?=
 VERSION_FLAVOUR?=
 EXTRA_LDFLAGS?=
