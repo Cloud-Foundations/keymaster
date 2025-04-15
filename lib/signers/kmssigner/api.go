@@ -19,7 +19,7 @@ type minKmsClient interface {
 }
 
 type KmsSigner struct {
-	client    minKmsClient //*kms.Client
+	client    minKmsClient
 	keyID     string
 	publicKey crypto.PublicKey
 }

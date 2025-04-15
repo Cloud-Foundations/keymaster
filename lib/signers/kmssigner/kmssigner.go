@@ -109,10 +109,8 @@ func getSigningAlgorithm(key crypto.PublicKey, opts crypto.SignerOpts) (types.Si
 	case *ecdsa.PublicKey:
 		switch h := opts.HashFunc(); h {
 		case crypto.SHA256:
-			//log.Printf("getSigningAlgorithm hash opts selecting sha256")
 			return types.SigningAlgorithmSpecEcdsaSha256, nil
 		case crypto.SHA384:
-			//log.Printf("getSigningAlgorithm hash opts selecting sha384")
 			return types.SigningAlgorithmSpecEcdsaSha384, nil
 		case crypto.SHA512:
 			return types.SigningAlgorithmSpecEcdsaSha512, nil
