@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/cviecco/piv-go/v2/piv"
+	"github.com/go-piv/piv-go/v2/piv"
 )
 
 func newYkPivSigner(serial uint32, pivPIN string, pub crypto.PublicKey) (*YkSigner, error) {
@@ -55,20 +55,13 @@ func newYkPivSigner(serial uint32, pivPIN string, pub crypto.PublicKey) (*YkSign
 		ks.yk.Close()
 		return nil, fmt.Errorf("Error getting the key=%s", err)
 	}
-	switch signer := priv.(type) {
-	case *piv.ECDSAPrivateKey:
-		ks.signer = signer
-		return &ks, nil
-	case *piv.Ed25519Key:
-		ks.signer = signer
-		return &ks, nil
-	case *piv.RSAkey:
-		ks.signer = signer
-		return &ks, nil
-	default:
+	signer, ok := priv.(crypto.Signer)
+	if !ok {
 		ks.yk.Close()
-		return nil, fmt.Errorf("cannot YK private key cannot be converted into signer")
+		return nil, fmt.Errorf("cannot PIV private key cannot be converted into signer")
 	}
+	ks.signer = signer
+	return &ks, nil
 }
 
 func (ks *YkSigner) public() crypto.PublicKey {

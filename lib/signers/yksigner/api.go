@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/cviecco/piv-go/v2/piv"
+	"github.com/go-piv/piv-go/v2/piv"
 )
 
 type YkSigner struct {

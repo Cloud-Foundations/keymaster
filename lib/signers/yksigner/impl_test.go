@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cviecco/piv-go/v2/piv"
+	"github.com/go-piv/piv-go/v2/piv"
 )
 
 // This is a an imperfect test, but should cover most use cases
