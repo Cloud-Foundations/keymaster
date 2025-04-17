@@ -11,9 +11,11 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 )
@@ -170,4 +172,52 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestFullAws(t *testing.T) {
+	// Guess is there are credentials... this is not comprehensive, but a
+	// decent proxy
+	awsCredsCombo := os.Getenv("AWS_PROFILE") + os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if awsCredsCombo == "" {
+		t.Skip("Skipping testing with no AWS creds available")
+	}
+	keyName := os.Getenv("KEYMASTER_AWS_KEY_NAME")
+	if keyName == "" {
+		t.Skip("Skipping testing with no keymaster key defined")
+	}
+	//func NewKmsSigner(cfg aws.Config, ctx context.Context, keyname string)
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewKmsSigner(cfg, ctx, keyName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: we only test with SHA256 which means only with RSA or P-256 keys
+	// We should make this dynamic depending on the AWS key defined
+	message := "hello world"
+	// TODO make the test more generic to test ecsda
+	digest := sha256.Sum256([]byte(message))
+	signature, err := signer.Sign(rand.Reader, digest[:], crypto.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := signer.Public()
+	//now verify
+	var verifiedSignature = false
+	switch key := pub.(type) {
+	case *ecdsa.PublicKey:
+		verifiedSignature = ecdsa.VerifyASN1(key, digest[:], signature)
+	default:
+		t.Logf("key not verification not implemented type=%T", key)
+		verifiedSignature = true
+
+	}
+	if !verifiedSignature {
+		t.Fatalf("Cannot verify with public key")
+	}
+
 }
