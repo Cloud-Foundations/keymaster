@@ -30,7 +30,7 @@ require (
 	github.com/vjeantet/ldapserver v1.0.1
 	golang.org/x/crypto v0.36.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/oauth2 v0.28.0
 	golang.org/x/term v0.30.0
 	gopkg.in/ldap.v2 v2.5.1
