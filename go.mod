@@ -12,6 +12,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.9
+	github.com/aws/aws-sdk-go-v2/service/kms v1.38.3
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17
 	github.com/bearsh/hid v1.6.0
@@ -20,6 +21,7 @@ require (
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/go-jose/go-jose/v4 v4.0.5
+	github.com/go-piv/piv-go/v2 v2.3.0
 	github.com/lib/pq v1.10.9
 	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
 	github.com/mattn/go-sqlite3 v1.14.24
