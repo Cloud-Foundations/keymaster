@@ -58,7 +58,7 @@ func newYkPivSigner(serial uint32, pivPIN string, pub crypto.PublicKey) (*YkSign
 	signer, ok := priv.(crypto.Signer)
 	if !ok {
 		ks.yk.Close()
-		return nil, fmt.Errorf("cannot PIV private key cannot be converted into signer")
+		return nil, fmt.Errorf("PIV(SC) private key(%T) cannot be converted into signer", priv)
 	}
 	ks.signer = signer
 	return &ks, nil
