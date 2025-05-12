@@ -10,6 +10,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -389,16 +390,28 @@ func (state *RuntimeState) loadExternalSigners() error {
 			return err
 		}
 		pin := "123456" //this is the yubikey default pin
+		var pubKey any
+		pubKey = nil
 		if parsedYK.User != nil {
 			pass, ok := parsedYK.User.Password()
 			if ok {
 				pin = pass
 			}
-			// still need to figure out the decoding of the username into a public key
+			b64derPubKey := parsedYK.User.Username()
+			state.logger.Debugf(3, "loadExternalSigners der pub=%s", b64derPubKey)
+			derPubKey, err := base64.URLEncoding.DecodeString(b64derPubKey)
+			if err != nil {
+				return fmt.Errorf("Invalid pub key encoding err=%s", err)
+			}
+			pubKey, err = x509.ParsePKIXPublicKey(derPubKey)
+			if err != nil {
+				return fmt.Errorf("Invalid pub key err=", err)
+			}
 		} else {
 			state.logger.Debugf(0, "Notice: Yubikey using default pin")
 		}
-		signer, err = yksigner.NewYkPivSigner(uint32(serial), pin, nil)
+		// TODO: if using default pin and failed we should try to do unsealing.
+		signer, err = yksigner.NewYkPivSigner(uint32(serial), pin, pubKey)
 		if err != nil {
 			return err
 		}
