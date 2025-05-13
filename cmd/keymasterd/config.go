@@ -408,7 +408,7 @@ func (state *RuntimeState) loadExternalSigners() error {
 			}
 			pubKey, err = x509.ParsePKIXPublicKey(derPubKey)
 			if err != nil {
-				return fmt.Errorf("Invalid pub key err=", err)
+				return fmt.Errorf("Invalid pub key err=%s", err)
 			}
 		} else {
 			state.logger.Debugf(0, "Notice: Yubikey using default pin")
