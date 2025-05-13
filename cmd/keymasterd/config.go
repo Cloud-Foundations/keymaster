@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -41,8 +42,10 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
+	"github.com/Cloud-Foundations/keymaster/lib/signers/kmssigner"
 	"github.com/Cloud-Foundations/keymaster/lib/signers/yksigner"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/duo-labs/webauthn/webauthn"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -416,7 +419,16 @@ func (state *RuntimeState) loadExternalSigners() error {
 			return err
 		}
 		state.logger.Debugf(3, "loadExternalSigners signer created")
-	//case "AWS-kms":
+	case "AWS-kms":
+		ctx := context.Background()
+		cfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return err
+		}
+		signer, err = kmssigner.NewKmsSigner(cfg, ctx, state.Config.Base.ExternalSignerConf.Location)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown external signer type")
 	}
