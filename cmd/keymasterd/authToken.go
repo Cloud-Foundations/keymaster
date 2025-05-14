@@ -10,6 +10,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
@@ -20,7 +21,7 @@ func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
 	}
 	signer, err := jose.NewSigner(jose.SigningKey{
 		Algorithm: sigAlgo,
-		Key:       state.Signer,
+		Key:       cryptosigner.Opaque(state.Signer),
 	}, (&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {
 		return "", err

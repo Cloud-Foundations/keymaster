@@ -20,6 +20,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/authutil"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
@@ -60,6 +61,8 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 		ResponseTypesSupported: []string{"code"},                    // We only support authorization code flow
 		SubjectTypesSupported:  []string{"pairwise", "public"},      // WHAT is THIS?
 		IDTokenSigningAlgValue: []string{"RS256", "ES256", "ES384"}} // Adding ECDSA even tough we dont use it now
+	// "EdDSA" is Ed25519... we need to determine
+	// compatibility before we enable as it may break things for current operators
 	// need to agree on what scopes we will support
 
 	b, err := json.Marshal(metadata)
@@ -472,7 +475,8 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
+	internalSigner := cryptosigner.Opaque(state.Signer)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -748,7 +752,8 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 
 	signerOptions = signerOptions.WithHeader("kid", kid)
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
+	internalSigner := cryptosigner.Opaque(state.Signer)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return

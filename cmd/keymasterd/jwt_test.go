@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
@@ -44,7 +45,8 @@ func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int
 	if err != nil {
 		return "", err
 	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
+	internalSigner := cryptosigner.Opaque(state.Signer)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
 	if err != nil {
 		return "", err
 	}
