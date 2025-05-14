@@ -46,6 +46,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/signers/yksigner"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/duo-labs/webauthn/webauthn"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -201,9 +202,25 @@ type DenyKeyConfig struct {
 	KeyDenyFPsshSha256 []string `yaml:"key_deny_list_ssh_sha256"`
 }
 
+type ExternalSignerType int
+
+const (
+	ExternalSignerInvalid ExternalSignerType = iota
+	ExternalSignerYubiPIV
+	ExternalSignerAWSKMS
+)
+
 type ExternalSignerConfig struct {
 	Type     string `yaml:"type"` // AWS|yubipiv
 	Location string `yaml:"location"`
+}
+
+type ParsedExternaSignerConfig struct {
+	Type      ExternalSignerType
+	PIVPin    string
+	PublicKey crypto.PublicKey
+	YKSerial  uint32
+	ARN       string
 }
 
 type AppConfigFile struct {
@@ -377,55 +394,79 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 	return nil
 }
 
-func (state *RuntimeState) loadExternalSigners() error {
-	state.logger.Debugf(3, "Top of loadExternalSigners")
-	var signer crypto.Signer
-	switch state.Config.Base.ExternalSignerConf.Type {
+func (sconfig *ExternalSignerConfig) Parse() (*ParsedExternaSignerConfig, error) {
+	var parsedConfig ParsedExternaSignerConfig
+	switch sconfig.Type {
 	case "yubipiv":
-		state.logger.Debugf(3, "loadExternalSigners yubipiv branch")
-		//parse as url
-		parsedYK, err := url.Parse(state.Config.Base.ExternalSignerConf.Location)
+		parsedConfig.Type = ExternalSignerYubiPIV
+		parsedYK, err := url.Parse(sconfig.Location)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("Cannot parse url for yubipiv")
 		}
 		serial, err := strconv.ParseUint(parsedYK.Host, 10, 32)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("Invalid Host name '%s' is not converable to serial", parsedYK.Host)
 		}
-		pin := "123456" //this is the yubikey default pin
-		var pubKey any
-		pubKey = nil
-		if parsedYK.User != nil {
-			pass, ok := parsedYK.User.Password()
-			if ok {
-				pin = pass
-			}
-			b64derPubKey := parsedYK.User.Username()
-			state.logger.Debugf(3, "loadExternalSigners der pub=%s", b64derPubKey)
-			derPubKey, err := base64.URLEncoding.DecodeString(b64derPubKey)
-			if err != nil {
-				return fmt.Errorf("Invalid pub key encoding err=%s", err)
-			}
-			pubKey, err = x509.ParsePKIXPublicKey(derPubKey)
-			if err != nil {
-				return fmt.Errorf("Invalid pub key err=%s", err)
-			}
-		} else {
-			state.logger.Debugf(0, "Notice: Yubikey using default pin")
+		parsedConfig.YKSerial = uint32(serial)
+		parsedConfig.PIVPin = "123456"
+		if parsedYK.User == nil {
+			parsedConfig.PublicKey = nil
+			return &parsedConfig, nil
 		}
+		b64derPubKey := parsedYK.User.Username()
+		derPubKey, err := base64.URLEncoding.DecodeString(b64derPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid pub key encoding err=%s", err)
+		}
+		parsedConfig.PublicKey, err = x509.ParsePKIXPublicKey(derPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid pub key err=%s", err)
+		}
+		pass, ok := parsedYK.User.Password()
+		if ok {
+			parsedConfig.PIVPin = pass
+		}
+		return &parsedConfig, nil
+	case "AWS-kms":
+		parsedArn, err := arn.Parse(sconfig.Location)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot parse arn for kms")
+		}
+		if parsedArn.Service != "kms" {
+			return nil, fmt.Errorf("Is not an kms urn for external signer")
+		}
+		parsedConfig.Type = ExternalSignerAWSKMS
+		parsedConfig.ARN = sconfig.Location
+		return &parsedConfig, nil
+	default:
+		return nil, fmt.Errorf("Invalid External Signer type")
+	}
+}
+
+func (state *RuntimeState) loadExternalSigners() error {
+	state.logger.Debugf(3, "Top of loadExternalSigners")
+	var signer crypto.Signer
+	parsedConfig, err := state.Config.Base.ExternalSignerConf.Parse()
+	if err != nil {
+		return err
+	}
+	switch parsedConfig.Type {
+	case ExternalSignerYubiPIV:
+		state.logger.Debugf(3, "loadExternalSigners yubipiv branch")
 		// TODO: if using default pin and failed we should try to do unsealing.
-		signer, err = yksigner.NewYkPivSigner(uint32(serial), pin, pubKey)
+		signer, err = yksigner.NewYkPivSigner(
+			parsedConfig.YKSerial, parsedConfig.PIVPin, parsedConfig.PublicKey)
 		if err != nil {
 			return err
 		}
 		state.logger.Debugf(3, "loadExternalSigners signer created")
-	case "AWS-kms":
+	case ExternalSignerAWSKMS:
 		ctx := context.Background()
 		cfg, err := awsconfig.LoadDefaultConfig(ctx)
 		if err != nil {
 			return err
 		}
-		signer, err = kmssigner.NewKmsSigner(cfg, ctx, state.Config.Base.ExternalSignerConf.Location)
+		signer, err = kmssigner.NewKmsSigner(cfg, ctx, parsedConfig.ARN)
 		if err != nil {
 			return err
 		}
