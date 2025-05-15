@@ -9,19 +9,11 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
-	if err != nil {
-		return "", err
-	}
-	signer, err := jose.NewSigner(jose.SigningKey{
-		Algorithm: sigAlgo,
-		Key:       state.Signer,
-	}, (&jose.SignerOptions{}).WithType("JWT"))
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", err
 	}

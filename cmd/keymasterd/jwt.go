@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/exp/maps"
@@ -87,18 +88,22 @@ func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (
 	return err
 }
 
-//func (state *RuntimeState) getJoseSignerFromSigner(
+func getJoseSignerFromSigner(signer crypto.Signer) (jose.Signer, error) {
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	sigAlgo, err := publicToPreferedJoseSigAlgo(signer.Public())
+	if err != nil {
+		return nil, fmt.Errorf("cannot find preferred lgo err=%s", err)
+	}
+
+	internalSigner := cryptosigner.Opaque(signer)
+	return jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
+}
 
 func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authLevel int, durationSeconds int64) (string, error) {
-	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
-		return "", err
-	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("cannot create new jose signer err=%s", err)
 	}
 	issuer := state.idpGetIssuer()
 	authToken := authInfoJWT{Issuer: issuer, Subject: username,
@@ -145,16 +150,11 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 }
 
 func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuthLevel int) (string, error) {
-	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", err
 	}
 	incomingAlgos, err := state.getJoseKeymastedVerifierList()
-	if err != nil {
-		return "", err
-	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
 	if err != nil {
 		return "", err
 	}
@@ -180,12 +180,7 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 }
 
 func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string, dataType int, data string, expiration int64) (string, error) {
-	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
-	if err != nil {
-		return "", err
-	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: state.Signer}, signerOptions)
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", err
 	}
