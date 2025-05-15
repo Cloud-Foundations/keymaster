@@ -474,6 +474,9 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Firefox/") {
 		return true
 	}
+	if strings.Contains(r.UserAgent(), "Safari/") {
+		return true
+	}
 	logger.Debugf(3, "browser doest NOT support u2f")
 	return false
 }
