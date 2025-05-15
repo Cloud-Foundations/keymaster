@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
@@ -40,13 +39,7 @@ func testPublicToPreferedJoseSigAlgo(t *testing.T) {
 }
 
 func testONLYGenerateAuthJWT(state *RuntimeState, username string, authLevel int, issuer string, audience []string) (string, error) {
-	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
-	if err != nil {
-		return "", err
-	}
-	internalSigner := cryptosigner.Opaque(state.Signer)
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", err
 	}

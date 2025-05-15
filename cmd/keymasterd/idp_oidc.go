@@ -468,15 +468,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	//Dont check for now
-	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	//signerOptions.EmbedJWK = true
-	sigAlgo, err := publicToPreferedJoseSigAlgo(state.Signer.Public())
-	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		return
-	}
-	internalSigner := cryptosigner.Opaque(state.Signer)
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -750,7 +742,6 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
 		return
 	}
-
 	signerOptions = signerOptions.WithHeader("kid", kid)
 	internalSigner := cryptosigner.Opaque(state.Signer)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: sigAlgo, Key: internalSigner}, signerOptions)
