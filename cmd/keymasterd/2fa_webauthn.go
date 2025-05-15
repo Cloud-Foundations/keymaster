@@ -11,8 +11,10 @@ import (
 
 	"github.com/tstranex/u2f"
 
-	"github.com/duo-labs/webauthn/protocol"
-	"github.com/duo-labs/webauthn/webauthn"
+	//"github.com/duo-labs/webauthn/protocol"
+	//"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
@@ -324,11 +326,13 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		shouldVerifyUser := session.UserVerification == protocol.VerificationRequired
 
 		rpID := state.webAuthn.Config.RPID
-		rpOrigin := state.webAuthn.Config.RPOrigin
+		rpOrigins := state.webAuthn.Config.RPOrigins
 		appID := u2fAppID
 
+		// func (p *ParsedCredentialAssertionData) Verify(storedChallenge string, relyingPartyID string, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode, appID string, verifyUser bool, credentialBytes []byte) error {
 		// Handle steps 4 through 16
-		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigin, appID, shouldVerifyUser, loginCredential.PublicKey)
+		rpTopOrigins := rpOrigins // FIXME: we actually have to compute this
+		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginIgnoreVerificationMode, appID, shouldVerifyUser, loginCredential.PublicKey)
 		if validError != nil {
 			logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")

@@ -9,7 +9,8 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	//"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 func TestWebAuthnRegistrationBegin(t *testing.T) {
@@ -43,7 +44,7 @@ func TestWebAuthnRegistrationBegin(t *testing.T) {
 	state.webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Keymaster Server", // Display Name for your site
 		RPID:          state.HostIdentity, // Generally the domain name for your site
-		RPOrigin:      u2fAppID,           // The origin URL for WebAuthn requests
+		RPOrigins:     []string{u2fAppID}, // The origin URL for WebAuthn requests
 		// RPIcon: "https://duo.com/logo.png", // Optional icon URL for your site
 	})
 	if err != nil {

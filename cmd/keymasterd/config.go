@@ -40,7 +40,9 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
-	"github.com/duo-labs/webauthn/webauthn"
+
+	//"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
@@ -466,7 +468,8 @@ func loadVerifyConfigFile(configFilename string,
 	runtimeState.webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Keymaster Server",        // Display Name for your site
 		RPID:          runtimeState.HostIdentity, // Generally the domain name for your site
-		RPOrigin:      u2fAppID,                  // The origin URL for WebAuthn requests
+		RPOrigins:     u2fTrustedFacets,
+		//RPOrigin:      u2fAppID,                  // The origin URL for WebAuthn requests
 		// RPIcon: "https://duo.com/logo.png", // Optional icon URL for your site
 	})
 	if err != nil {
