@@ -10,7 +10,7 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 
-	//"github.com/duo-labs/webauthn/webauthn"
+	oldproto "github.com/duo-labs/webauthn/protocol"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -189,6 +189,13 @@ func TestWebAuthnLoginBegin(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("regdata=%s\n", b.String())
+
+	// TODO: we are jus manually doing the json parsing here,
+	// we should be actually be using the client code
+	var compatClient oldproto.CredentialAssertion
+	if err = json.Unmarshal(b.Bytes(), &compatClient); err != nil {
+		t.Fatal(err)
+	}
 
 	state.dbDone <- struct{}{}
 }

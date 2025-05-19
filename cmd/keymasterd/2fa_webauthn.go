@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
-	//"github.com/tstranex/u2f"
-
-	//"github.com/duo-labs/webauthn/webauthn"
 	oldproto "github.com/duo-labs/webauthn/protocol"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+
+	// TODO: we should not be using this protocol at all,
+	// We need a break scenario to destroy backwards compatibility at
+	// the client side.
 	"github.com/tstranex/u2f"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
@@ -185,10 +186,7 @@ const webAuthnAuthBeginPath = "/webauthn/AuthBegin/"
 // The only difference is that the the encoding of some of the data, we need to keep this until cli clients
 // have migrated to understand the new formatting.
 func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.CredentialAssertion) (*oldproto.CredentialAssertion, error) {
-	//var out oldproto.CredentialAssertion
-
-	state.logger.Debugf(3, " convert to old conversion in=%+v, ", in)
-
+	state.logger.Debugf(4, " convert to old conversion in=%+v, ", in)
 	serializedIn, err := json.Marshal(in)
 	if err != nil {
 		return nil, fmt.Errorf("error serializing err=%s", err)
@@ -197,8 +195,8 @@ func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.Creden
 	if err = json.Unmarshal(serializedIn, &clone); err != nil {
 		return nil, fmt.Errorf("error marshaling serrializedIn err=%s", err)
 	}
-	// Here we will remove unparseable
-	clone.Response.Challenge = nil //[]byte{0x00, 0x00, 0x00, 0x00}
+	// Here we will remove incompatible fields
+	clone.Response.Challenge = nil
 	for i, _ := range clone.Response.AllowedCredentials {
 		clone.Response.AllowedCredentials[i].CredentialID = clone.Response.Challenge
 	}
@@ -210,17 +208,12 @@ func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.Creden
 	if err = json.Unmarshal(serializedClone, &out); err != nil {
 		return nil, fmt.Errorf("error marshaling out err=%s", err)
 	}
-	// and here we re-add what we removed
-	/*
-		var challengeBytes []byte
-		challengeBytes = in.Response.Challenge
-		out.Response.Challenge = challengeBytes
-	*/
+	// And now we reconstitute the incompatible fields
 	out.Response.Challenge = []byte(in.Response.Challenge)
 	for i, _ := range out.Response.AllowedCredentials {
 		out.Response.AllowedCredentials[i].CredentialID = []byte(in.Response.AllowedCredentials[i].CredentialID)
 	}
-	state.logger.Debugf(3, "conversion in=%+v, old=%+v", in, out)
+	state.logger.Debugf(5, "conversion in=%+v, old=%+v", in, out)
 
 	return &out, nil
 }
@@ -286,9 +279,6 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	//(*oldproto.CredentialAssertion, error)
-
-	//webauthnJsonResponse(w, options, http.StatusOK)
 	webauthnJsonResponse(w, compatOptions, http.StatusOK)
 	logger.Debugf(3, "end of webauthnAuthBegin")
 }
@@ -386,7 +376,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		// func (p *ParsedCredentialAssertionData) Verify(storedChallenge string, relyingPartyID string, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode, appID string, verifyUser bool, credentialBytes []byte) error {
 		// Handle steps 4 through 16
 		rpTopOrigins := rpOrigins // FIXME: we actually have to compute this
-		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginIgnoreVerificationMode, appID, shouldVerifyUser, loginCredential.PublicKey)
+		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginAutoVerificationMode, appID, shouldVerifyUser, loginCredential.PublicKey)
 		if validError != nil {
 			logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
