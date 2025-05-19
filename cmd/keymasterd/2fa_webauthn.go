@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tstranex/u2f"
+	//"github.com/tstranex/u2f"
 
-	//"github.com/duo-labs/webauthn/protocol"
 	//"github.com/duo-labs/webauthn/webauthn"
+	oldproto "github.com/duo-labs/webauthn/protocol"
+
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/tstranex/u2f"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
@@ -179,6 +181,50 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 
 const webAuthnAuthBeginPath = "/webauthn/AuthBegin/"
 
+// We need to convert the auth request to the duo-labs proto as we need to be backwards compatible with clients
+// The only difference is that the the encoding of some of the data, we need to keep this until cli clients
+// have migrated to understand the new formatting.
+func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.CredentialAssertion) (*oldproto.CredentialAssertion, error) {
+	//var out oldproto.CredentialAssertion
+
+	state.logger.Debugf(3, " convert to old conversion in=%+v, ", in)
+
+	serializedIn, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("error serializing err=%s", err)
+	}
+	var clone protocol.CredentialAssertion
+	if err = json.Unmarshal(serializedIn, &clone); err != nil {
+		return nil, fmt.Errorf("error marshaling serrializedIn err=%s", err)
+	}
+	// Here we will remove unparseable
+	clone.Response.Challenge = nil //[]byte{0x00, 0x00, 0x00, 0x00}
+	for i, _ := range clone.Response.AllowedCredentials {
+		clone.Response.AllowedCredentials[i].CredentialID = clone.Response.Challenge
+	}
+	serializedClone, err := json.Marshal(clone)
+	if err != nil {
+		return nil, fmt.Errorf("failure to serialize clone err=%s", err)
+	}
+	var out oldproto.CredentialAssertion
+	if err = json.Unmarshal(serializedClone, &out); err != nil {
+		return nil, fmt.Errorf("error marshaling out err=%s", err)
+	}
+	// and here we re-add what we removed
+	/*
+		var challengeBytes []byte
+		challengeBytes = in.Response.Challenge
+		out.Response.Challenge = challengeBytes
+	*/
+	out.Response.Challenge = []byte(in.Response.Challenge)
+	for i, _ := range out.Response.AllowedCredentials {
+		out.Response.AllowedCredentials[i].CredentialID = []byte(in.Response.AllowedCredentials[i].CredentialID)
+	}
+	state.logger.Debugf(3, "conversion in=%+v, old=%+v", in, out)
+
+	return &out, nil
+}
+
 func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf(3, "top of webauthnAuthBegin")
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -234,8 +280,16 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Lock()
 	state.localAuthData[authData.Username] = localAuth
 	state.Mutex.Unlock()
+	compatOptions, err := state.webauthAuthBeginResponseToOldProto(*options)
+	if err != nil {
+		logger.Printf("webauthnAuthBegin convert to old  error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	//(*oldproto.CredentialAssertion, error)
 
-	webauthnJsonResponse(w, options, http.StatusOK)
+	//webauthnJsonResponse(w, options, http.StatusOK)
+	webauthnJsonResponse(w, compatOptions, http.StatusOK)
 	logger.Debugf(3, "end of webauthnAuthBegin")
 }
 

@@ -5,7 +5,13 @@
 
 // Base64 to ArrayBuffer
 function bufferDecode(value) {
+    //return Uint8Array.from(atob(value), c => c.charCodeAt(0));
+    return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
+}
+
+function bufferDecodeB64(value) {
     return Uint8Array.from(atob(value), c => c.charCodeAt(0));
+    //return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
 }
 
 // ArrayBuffer to URLBase64
@@ -87,12 +93,12 @@ function webAuthnAuthenticateUser() {
     'json')
     .then((credentialRequestOptions) => {
 
-      credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
+      credentialRequestOptions.publicKey.challenge = bufferDecodeB64(credentialRequestOptions.publicKey.challenge);
       credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
-        listItem.id = bufferDecode(listItem.id)
+        listItem.id = bufferDecodeB64(listItem.id)
       });
       //credentialRequestOptions.publicKey.authenticatorSelection.userVerification="discouraged";
-
+      console.log("Authnenticated: " + credentialRequestOptions);
       return navigator.credentials.get({
         publicKey: credentialRequestOptions.publicKey
       })

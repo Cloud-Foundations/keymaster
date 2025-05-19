@@ -22,6 +22,7 @@ require (
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/go-jose/go-jose/v4 v4.0.5
 	github.com/go-piv/piv-go/v2 v2.3.0
+	github.com/go-webauthn/webauthn v0.13.0
 	github.com/lib/pq v1.10.9
 	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
 	github.com/mattn/go-sqlite3 v1.14.24
@@ -54,7 +55,6 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-git/go-git/v5 v5.14.0 // indirect
-	github.com/go-webauthn/webauthn v0.13.0 // indirect
 	github.com/go-webauthn/x v0.1.21 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
