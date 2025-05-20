@@ -6,7 +6,10 @@
 // Base64 to ArrayBuffer
 function bufferDecode(value) {
     //return Uint8Array.from(atob(value), c => c.charCodeAt(0));
-    return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
+    //return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
+    value = value.replace(/-/g, "/").replace(/_/g, "/");
+    //maybe append some extra "="
+    return Uint8Array.from(atob(value), c => c.charCodeAt(0));
 }
 
 function bufferDecodeB64(value) {
