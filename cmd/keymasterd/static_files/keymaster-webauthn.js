@@ -7,14 +7,12 @@
 function bufferDecode(value) {
     //return Uint8Array.from(atob(value), c => c.charCodeAt(0));
     //return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
-    value = value.replace(/-/g, "/").replace(/_/g, "/");
-    //maybe append some extra "="
+    value = value.replace(/\-/g, "+").replace(/_/g, "/");
     return Uint8Array.from(atob(value), c => c.charCodeAt(0));
 }
 
 function bufferDecodeB64(value) {
     return Uint8Array.from(atob(value), c => c.charCodeAt(0));
-    //return  Uint8Array.fromBase64(value, { alphabet: "base64url" });
 }
 
 // ArrayBuffer to URLBase64
@@ -74,7 +72,8 @@ function webAuthnRegisterUser() {
 
           })
           .then((success) => {
-                  alert("successfully registered " + username + "!")
+                  alert("successfully registered " + username + "!");
+		  location.reload();
                   return
           })
           .catch((error) => {
