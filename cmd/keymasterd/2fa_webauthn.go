@@ -12,9 +12,9 @@ import (
 	// TODO: we should not be using this protocol at all,
 	// We need a break scenario to destroy backwards compatibility at
 	// the client side.
-	oldproto "github.com/duo-labs/webauthn/protocol"
 	"github.com/tstranex/u2f"
 
+	oldproto "github.com/duo-labs/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
