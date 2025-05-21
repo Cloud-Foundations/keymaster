@@ -9,15 +9,14 @@ import (
 	"strings"
 	"time"
 
-	oldproto "github.com/duo-labs/webauthn/protocol"
-
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
-
 	// TODO: we should not be using this protocol at all,
 	// We need a break scenario to destroy backwards compatibility at
 	// the client side.
+	oldproto "github.com/duo-labs/webauthn/protocol"
 	"github.com/tstranex/u2f"
+
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"

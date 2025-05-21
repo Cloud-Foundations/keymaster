@@ -17,7 +17,6 @@ import (
 	"github.com/tstranex/u2f"
 )
 
-// "github.com/go-webauthn/webauthn/protocol"
 func webauthnRegistrationToU2fRegistration(reg webauthAuthData) (*u2fAuthData, error) {
 	x, y := elliptic.Unmarshal(elliptic.P256(), reg.Credential.PublicKey)
 	if x == nil || y == nil {
