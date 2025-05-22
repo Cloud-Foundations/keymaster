@@ -427,16 +427,18 @@ func (sconfig *ExternalSignerConfig) Parse() (*ParsedExternaSignerConfig, error)
 			parsedConfig.PIVPin = pass
 		}
 		return &parsedConfig, nil
-	case "AWS-kms":
+	case "AWS":
 		parsedArn, err := arn.Parse(sconfig.Location)
 		if err != nil {
 			return nil, fmt.Errorf("Cannot parse arn for kms")
 		}
-		if parsedArn.Service != "kms" {
+		switch parsedArn.Service {
+		case "kms":
+			parsedConfig.Type = ExternalSignerAWSKMS
+			parsedConfig.ARN = sconfig.Location
+		default:
 			return nil, fmt.Errorf("Is not an kms urn for external signer")
 		}
-		parsedConfig.Type = ExternalSignerAWSKMS
-		parsedConfig.ARN = sconfig.Location
 		return &parsedConfig, nil
 	default:
 		return nil, fmt.Errorf("Invalid External Signer type")

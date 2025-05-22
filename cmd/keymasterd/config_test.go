@@ -96,7 +96,7 @@ func TesrParseExternalSigners(t *testing.T) {
 			Location: "yubipiv://32720973",
 		},
 		ExternalSignerConfig{
-			Type:     "AWS-kms",
+			Type:     "AWS",
 			Location: "arn:aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
 		},
 	}
@@ -121,12 +121,16 @@ func TesrParseExternalSigners(t *testing.T) {
 			Location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=xxxxxx@32720973",
 		},
 		ExternalSignerConfig{
-			Type:     "AWS-kms",
+			Type:     "AWS",
 			Location: "arn://aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
 		},
 		ExternalSignerConfig{
-			Type:     "AWS-kms",
+			Type:     "AWS",
 			Location: "arn:aws:non-kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
+		},
+		ExternalSignerConfig{
+			Type:     "AWS-FOO",
+			Location: "arn://aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
 		},
 	}
 	for _, extConfig := range badConfigs {
