@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 )
 
 // This is the implementation of duo-labs' webauthn User interface
@@ -33,7 +33,7 @@ func (u *userProfile) WebAuthnIcon() string {
 
 // This function is needed to create a unified view of all webauthn credentials
 func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
-	logger.Debugf(3, "top of profile.WebAuthnCredentials ")
+	logger.Debugf(3, "top of profile.WebAuthnCredentials %+v ", u)
 	var rvalue []webauthn.Credential
 	for _, authData := range u.WebauthnData {
 		if !authData.Enabled {
@@ -41,6 +41,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 		}
 		rvalue = append(rvalue, authData.Credential)
 	}
+	logger.Debugf(3, "profile.WebAuthnCredentials after webauthn.Credential loop")
 	for _, u2fAuthData := range u.U2fAuthData {
 		logger.Debugf(3, "WebAuthnCredentials: inside u.U2fAuthData")
 		if !u2fAuthData.Enabled {
@@ -76,6 +77,7 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 		rvalue = append(rvalue, credential)
 
 	}
+	logger.Debugf(3, "profile.WebAuthnCredentials done")
 
 	return rvalue
 }
@@ -97,6 +99,9 @@ func (u *userProfile) FixupCredential(username string, displayname string) {
 	}
 	if u.WebauthnData == nil {
 		u.WebauthnData = make(map[int64]*webauthAuthData)
+	}
+	if u.U2fAuthData == nil {
+		u.U2fAuthData = make(map[int64]*u2fAuthData)
 	}
 }
 

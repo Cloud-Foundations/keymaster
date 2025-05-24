@@ -9,10 +9,14 @@ import (
 	"strings"
 	"time"
 
+	// TODO: we should not be using this protocol at all,
+	// We need a break scenario to destroy backwards compatibility at
+	// the client side.
 	"github.com/tstranex/u2f"
 
-	"github.com/duo-labs/webauthn/protocol"
-	"github.com/duo-labs/webauthn/webauthn"
+	oldproto "github.com/duo-labs/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/proto/eventmon"
@@ -177,6 +181,42 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 
 const webAuthnAuthBeginPath = "/webauthn/AuthBegin/"
 
+// We need to convert the auth request to the duo-labs proto as we need to be backwards compatible with clients
+// The only difference is that the the encoding of some of the data, we need to keep this until cli clients
+// have migrated to understand the new formatting.
+func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.CredentialAssertion) (*oldproto.CredentialAssertion, error) {
+	state.logger.Debugf(4, " convert to old conversion in=%+v, ", in)
+	serializedIn, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("error serializing err=%s", err)
+	}
+	var clone protocol.CredentialAssertion
+	if err = json.Unmarshal(serializedIn, &clone); err != nil {
+		return nil, fmt.Errorf("error marshaling serrializedIn err=%s", err)
+	}
+	// Here we will remove incompatible fields
+	clone.Response.Challenge = nil
+	for i, _ := range clone.Response.AllowedCredentials {
+		clone.Response.AllowedCredentials[i].CredentialID = clone.Response.Challenge
+	}
+	serializedClone, err := json.Marshal(clone)
+	if err != nil {
+		return nil, fmt.Errorf("failure to serialize clone err=%s", err)
+	}
+	var out oldproto.CredentialAssertion
+	if err = json.Unmarshal(serializedClone, &out); err != nil {
+		return nil, fmt.Errorf("error marshaling out err=%s", err)
+	}
+	// And now we reconstitute the incompatible fields
+	out.Response.Challenge = []byte(in.Response.Challenge)
+	for i, _ := range out.Response.AllowedCredentials {
+		out.Response.AllowedCredentials[i].CredentialID = []byte(in.Response.AllowedCredentials[i].CredentialID)
+	}
+	state.logger.Debugf(5, "conversion in=%+v, old=%+v", in, out)
+
+	return &out, nil
+}
+
 func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf(3, "top of webauthnAuthBegin")
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -232,8 +272,13 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Lock()
 	state.localAuthData[authData.Username] = localAuth
 	state.Mutex.Unlock()
-
-	webauthnJsonResponse(w, options, http.StatusOK)
+	compatOptions, err := state.webauthAuthBeginResponseToOldProto(*options)
+	if err != nil {
+		logger.Printf("webauthnAuthBegin convert to old  error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	webauthnJsonResponse(w, compatOptions, http.StatusOK)
 	logger.Debugf(3, "end of webauthnAuthBegin")
 }
 
@@ -324,11 +369,13 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		shouldVerifyUser := session.UserVerification == protocol.VerificationRequired
 
 		rpID := state.webAuthn.Config.RPID
-		rpOrigin := state.webAuthn.Config.RPOrigin
+		rpOrigins := state.webAuthn.Config.RPOrigins
 		appID := u2fAppID
 
+		// func (p *ParsedCredentialAssertionData) Verify(storedChallenge string, relyingPartyID string, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode, appID string, verifyUser bool, credentialBytes []byte) error {
 		// Handle steps 4 through 16
-		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigin, appID, shouldVerifyUser, loginCredential.PublicKey)
+		rpTopOrigins := rpOrigins // FIXME: we actually have to compute this
+		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginAutoVerificationMode, appID, shouldVerifyUser, loginCredential.PublicKey)
 		if validError != nil {
 			logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
