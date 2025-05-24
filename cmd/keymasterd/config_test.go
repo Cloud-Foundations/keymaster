@@ -80,3 +80,64 @@ func TestLoadSignersFromPemData(t *testing.T) {
 	}
 
 }
+
+func TesrParseExternalSigners(t *testing.T) {
+	goodConfigs := []ExternalSignerConfig{
+		ExternalSignerConfig{
+			Type:     "yubipiv",
+			Location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=:123456@32720973",
+		},
+		ExternalSignerConfig{
+			Type:     "yubipiv",
+			Location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=@32720973",
+		},
+		ExternalSignerConfig{
+			Type:     "yubipiv",
+			Location: "yubipiv://32720973",
+		},
+		ExternalSignerConfig{
+			Type:     "AWS",
+			Location: "arn:aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
+		},
+	}
+	for _, extConfig := range goodConfigs {
+		config, err := extConfig.Parse()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Type == ExternalSignerYubiPIV {
+			if config.YKSerial != 32720973 {
+				t.Fatal("serial does not match")
+			}
+		}
+	}
+	badConfigs := []ExternalSignerConfig{
+		ExternalSignerConfig{
+			Type:     "yubipiv",
+			Location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=:123456@example.com",
+		},
+		ExternalSignerConfig{
+			Type:     "yubipiv",
+			Location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=xxxxxx@32720973",
+		},
+		ExternalSignerConfig{
+			Type:     "AWS",
+			Location: "arn://aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
+		},
+		ExternalSignerConfig{
+			Type:     "AWS",
+			Location: "arn:aws:non-kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
+		},
+		ExternalSignerConfig{
+			Type:     "AWS-FOO",
+			Location: "arn://aws:kms:us-west-2:111111111111:key/1aadaaaa-cccc-bbbb-93af-155eb23a92d5",
+		},
+	}
+	for _, extConfig := range badConfigs {
+		_, err := extConfig.Parse()
+		if err == nil {
+			t.Fatalf("should have failed wtih config=%+v", extConfig)
+		}
+	}
+
+}
