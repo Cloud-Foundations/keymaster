@@ -1,6 +1,6 @@
 # Signers
 
-Keymasterd now supports the use of external signers instead of the built-in
+Keymasterd currently supports the use of external signers instead of the built-in
 signers using native go code. External signers are now limited to yubikeys in PIV mode
 and AWS kms.
 
@@ -25,7 +25,7 @@ As written you only need the yubikey PIN if using self-generated keys. If using
 imported keys it is mandatory to have the public key of the key.
 
 The performance of signing using yuibkeys is dependent on the key type AND
-the key lenght. The recomendations is to use P256 or  P384 keys . Signatures
+the key length. The recomendation is to use P256 or  P384 keys. Signatures
 take around 90ms, and  130ms respectively for each signing operation. Ed215519
 keys are also supported, but they may cause issues with old openidc clients
 so they are not recomended yet (if you need openidc compatibility).
@@ -40,9 +40,16 @@ generate an Ed25519Key:
 Generate an P384 key:
 > ykman piv keys generate -a ECCP384 9a -
 
+If you already have a key generated, you can use the export sub-sub-command to
+display the public key:
+> ykman piv keys export 9a -
+
+
+
+
 #### Configuration
 
-The yubikey configuraiton is defined as a URL. Where the hostname is the yubikey serial number,
+The yubikey configuraiton is defined as a URL; where the hostname is the yubikey serial number,
 the username is the public key (PKIX DER [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.1), but base64url encoded),
 and the password is the yubikey PIN. The type is "yubipiv"
 
@@ -58,15 +65,16 @@ The Hostname (serial number) is mandatory.
 
 ### AWS kms
 
-The second external signer mechanism is AWS kms. When using this mode the AWS credentials need protection
-and monitorin should be placed in cloudtrail for the use of the KMS keys. Today AWS logs do not include a way
+The second external signer mechanism is AWS kms. Monitoring should be placed arount
+the cloudtrail logs for the use of the KMS keys. Today, the AWS cloudtrail logs do not include a way
 to map what was signed at each operation so monitoring of the keys depends on tracking the actual key use
-from the keymasterd logs into the kms logs. 
+(from the kms logs) to the certificate generation/login operations in the keymaster logs. A signature is 
+generated every time an authetnication happens (jwt signing) and every time a certificate is signed.  
 
 #### Configuraiton:
 The type is "AWS" and the location value is the full arn of the kms key. The AWS credentials
 needed as fetched by the AWS SDK so they can be part the of running profile, environment variables,
-or ".aws/credentials" values.
+or ".aws/credentials" values. 
 
 ```
    external_signer_config:
