@@ -30,7 +30,7 @@ Pre-build binaries (both RPM and DEB) can be found here: [releases page](https:/
 ### Building from Source
 
 #### Prerequisites
-* go >= 1.21
+* go >= 1.23
 * make
 * gcc
 
@@ -38,7 +38,7 @@ In addition for linux you will also need:
 * pkg-config
 * libudev-dev
 
-For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/). Recent windows builds fail  when using TDM-GCC 5.x. Successful builds are known with golang 1.21.X and gcc 10.X.
+For Windows (both gcc and gnu-make) use: [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/). Recent windows builds fail  when using TDM-GCC 5.x. Successful builds are known with golang 1.23.X and gcc 10.X.
 
 #### Building
 1. make get-deps
@@ -106,7 +106,7 @@ patents and contracts.
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019-2024 Cloud-Foundations.org
+Copyright 2019-2025 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
