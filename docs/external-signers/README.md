@@ -47,11 +47,12 @@ the username is the public key (PKIX DER [RFC 5280](https://www.rfc-editor.org/r
 and the password is the yubikey PIN. The type is "yubipiv"
 
 For example:
->   external_signer_config:
->      type: "yubipiv"
->      #location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=:123456@32720973"
->      location: "yubipiv://32720973"
-> 
+```
+  external_signer_config:
+     type: "yubipiv"
+     #location: "yubipiv://MCowBQYDK2VwAyEABUlG-f3cM5LkFIox_M4qeNdBMYv1rD71Z0SnEXNP_bY=:123456@32720973"
+     location: "yubipiv://32720973"
+```
 
 The Hostname (serial number) is mandatory.
 
@@ -67,6 +68,8 @@ The type is "AWS" and the location value is the full arn of the kms key. The AWS
 needed as fetched by the AWS SDK so they can be part the of running profile, environment variables,
 or ".aws/credentials" values.
 
-> external_signer_config:
->      type: "AWS"
->      location: "arn:aws:kms:us-west-2:807646279115:key/1aad97ad-32b5-484b-93af-155eb23a92d5"
+```
+   external_signer_config:
+     type: "AWS"
+     location: "arn:aws:kms:us-west-2:807646279115:key/1aad97ad-32b5-484b-93af-155eb23a92d5"
+```
