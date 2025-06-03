@@ -49,7 +49,7 @@ display the public key:
 
 #### Configuration
 
-The yubikey configuraiton is defined as a URL; where the hostname is the yubikey serial number,
+The yubikey configuration is defined as a URL; where the hostname is the yubikey serial number,
 the username is the public key (PKIX DER [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.1), but base64url encoded),
 and the password is the yubikey PIN. The type is "yubipiv"
 
@@ -65,8 +65,8 @@ The Hostname (serial number) is mandatory.
 
 ### AWS kms
 
-The second external signer mechanism is AWS kms. Monitoring should be placed arount
-the cloudtrail logs for the use of the KMS keys. Today, the AWS cloudtrail logs do not include a way
+The second external signer mechanism is AWS kms. Monitoring of the CloudTrail logs of KMS access should be added.
+Today, the AWS cloudtrail logs do not include a way
 to map what was signed at each operation so monitoring of the keys depends on tracking the actual key use
 (from the kms logs) to the certificate generation/login operations in the keymaster logs. A signature is 
 generated every time an authetnication happens (jwt signing) and every time a certificate is signed.  
