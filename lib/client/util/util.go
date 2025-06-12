@@ -34,6 +34,11 @@ const rsaKeySize = 2048
 const maxPasswordLength = 512
 
 func getUserCreds(userName string) (password []byte, err error) {
+	// First check for environment variable
+	if envPass := os.Getenv("KEYMASTER_PASSWORD"); envPass != "" {
+		return []byte(envPass), nil
+	}
+
 	fmt.Printf("Password for %s: ", userName)
 
 	if term.IsTerminal(int(os.Stdin.Fd())) {
