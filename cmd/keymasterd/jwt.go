@@ -101,6 +101,11 @@ func getJoseSignerFromSigner(signer crypto.Signer) (jose.Signer, error) {
 
 func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authLevel int, durationSeconds int64) (string, error) {
+	return state.genNewSerializedAuthJWTWithNotBefore(username, authLevel, durationSeconds, time.Now())
+}
+
+func (state *RuntimeState) genNewSerializedAuthJWTWithNotBefore(username string,
+	authLevel int, durationSeconds int64, notBefore time.Time) (string, error) {
 	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", fmt.Errorf("cannot create new jose signer err=%s", err)
@@ -108,9 +113,14 @@ func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	issuer := state.idpGetIssuer()
 	authToken := authInfoJWT{Issuer: issuer, Subject: username,
 		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
-	authToken.NotBefore = time.Now().Unix()
-	authToken.IssuedAt = authToken.NotBefore
+	authToken.NotBefore = notBefore.Unix()
+	authToken.IssuedAt = time.Now().Unix()
 	authToken.Expiration = authToken.IssuedAt + durationSeconds
+
+	if authToken.NotBefore > authToken.IssuedAt {
+		return "", fmt.Errorf("Invalid not before time at JWT generation notBeforeUnix=%d, issuedAtUnix=%d", authToken.NotBefore, authToken.IssuedAt)
+	}
+
 	return jwt.Signed(signer).Claims(authToken).Serialize()
 }
 

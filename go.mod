@@ -48,6 +48,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.29.1 // indirect
 	github.com/cloudflare/circl v1.6.0 // indirect
+	github.com/cviecco/webauth-sshcert v0.0.0-20250328160617-6b3c88be8c5d // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
