@@ -45,7 +45,7 @@ jobs:
     - name: Install dependencies
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: gcc pkg-config libudev-dev libudev libpcsclite libpcsclite-dev
+        packages: gcc pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
