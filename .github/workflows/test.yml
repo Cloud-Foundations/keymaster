@@ -11,7 +11,7 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-    - run: sudo apt install -y gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite libpcsclite-dev
+    - run: sudo apt install -y gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
     - uses: actions/checkout@v4
     - run: make test
   testmacos:
