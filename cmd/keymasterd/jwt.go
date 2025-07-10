@@ -115,10 +115,13 @@ func (state *RuntimeState) genNewSerializedAuthJWTWithNotBefore(username string,
 		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
 	authToken.NotBefore = notBefore.Unix()
 	authToken.IssuedAt = time.Now().Unix()
-	authToken.Expiration = authToken.IssuedAt + durationSeconds
+	authToken.Expiration = authToken.NotBefore + durationSeconds
 
 	if authToken.NotBefore > authToken.IssuedAt {
 		return "", fmt.Errorf("Invalid not before time at JWT generation notBeforeUnix=%d, issuedAtUnix=%d", authToken.NotBefore, authToken.IssuedAt)
+	}
+	if authToken.IssuedAt > authToken.Expiration {
+		return "", fmt.Errorf("Invalid not before time at JWT generation (expired) issuedAtUnix=%d ", authToken.IssuedAt)
 	}
 
 	return jwt.Signed(signer).Claims(authToken).Serialize()

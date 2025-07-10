@@ -77,6 +77,7 @@ const (
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
 	AuthTypeFIDO2
+	AuthTypeSSHCert
 )
 
 const (
@@ -737,8 +738,6 @@ func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
 }
 func (state *RuntimeState) withCookieSetNewAuthCookie(w http.ResponseWriter,
 	cookieVal string, expiration time.Time) (string, error) {
-	//expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
-	//	time.Second)
 	authCookie := http.Cookie{
 		Name:    authCookieName,
 		Value:   cookieVal,
@@ -926,7 +925,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 
 				if err == nil && userErr == nil {
 					authData.AuthType = authData.AuthType | AuthTypeIPCertificate
-					authData.IssuedAt = userCert.NotBefore
+					authData.IssuedAt = time.Now()
 					authData.Username = clientName
 					authData.ExpiresAt = userCert.NotAfter
 				}

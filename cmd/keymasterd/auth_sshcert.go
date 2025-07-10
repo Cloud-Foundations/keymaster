@@ -22,7 +22,7 @@ func (s *RuntimeState) CreateChallengeHandler(w http.ResponseWriter, r *http.Req
 // and we finalize with setting a cookie (which in this implementaiton) is used to track
 // user sessions.
 func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.Request) {
-	authUser, maxAge, userErrString, err := s.websshauthenticator.LoginWithChallenge(r)
+	authUser, authMaxAge, userErrString, err := s.websshauthenticator.LoginWithChallenge(r)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
 		errorCode := http.StatusBadRequest
@@ -32,9 +32,15 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 		http.Error(w, userErrString, errorCode)
 		return
 	}
+	// Ensure even a brokenMaxAge is bound to be the maximum cert lifetime
+	maxAge := authMaxAge
+	if authMaxAge.After(time.Now().Add(maxCertificateLifetime)) {
+		maxAge = time.Now().Add(maxCertificateLifetime)
+	}
 	// maxCertificateLifetime is the thing that we should be adding
-	fakeNotBefore := maxAge.Add(-1 * time.Second * 24 * 3600)
-	cookieVal, err := s.genNewSerializedAuthJWTWithNotBefore(authUser, 1, 24*3600, fakeNotBefore)
+	notBefore := maxAge.Add(-1 * maxCertificateLifetime)
+	cookieVal, err := s.genNewSerializedAuthJWTWithNotBefore(authUser, AuthTypeSSHCert,
+		int64(maxCertificateLifetime.Seconds()), notBefore)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
 		http.Error(w, "", http.StatusInternalServerError)
