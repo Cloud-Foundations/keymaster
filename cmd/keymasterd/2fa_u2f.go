@@ -242,10 +242,11 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 	/*
 	 */
+	state.logger.Debugf(4, "u2fSignRequest: top")
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Debugf(1, "%v", err)
+		state.logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
@@ -285,7 +286,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	state.Mutex.Unlock()
 
 	req := c.SignRequest(registrations)
-	logger.Debugf(3, "Sign request: %+v", req)
+	state.logger.Debugf(3, "Sign request: %+v", req)
 
 	if err := json.NewEncoder(w).Encode(req); err != nil {
 		logger.Printf("json encofing error: %v", err)
