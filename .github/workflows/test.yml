@@ -8,13 +8,13 @@ jobs:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v3
+    - uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: gcc rpm alien rsync pkg-config libudev-dev libudev libpcsclite libpcsclite-dev
-    - uses: actions/checkout@v3
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
+    - uses: actions/checkout@v4
     - run: make test
   testmacos:
     strategy:
@@ -23,10 +23,10 @@ jobs:
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v3
+    - uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - run: make test
   testwindowsclient:
     strategy:
@@ -65,7 +65,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: gcc rpm alien rsync pkg-config libudev-dev libudev libpcsclite libpcsclite-dev
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
     - uses: actions/checkout@v3
     - run: make rpm
 
