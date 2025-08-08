@@ -194,7 +194,28 @@ func TestDecodeIPV4AddressChoiceFail(t *testing.T) {
 			t.Fatalf("should NOT have failed")
 		}
 	}
+}
 
+func TestDecodeDelegationExtensionFail(t *testing.T) {
+	invalidASN1Master := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04},
+	}
+	uknownAddrFamily := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x02, 0x30, 0x05, 0x03, 0x03, 00, 0x0d, 0xff},
+	}
+	invalidASN1Range := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x04, 00, 0x0d, 0xff},
+	}
+	failExtensions := []pkix.Extension{invalidASN1Master, uknownAddrFamily, invalidASN1Range}
+	for _, extension := range failExtensions {
+		_, err := decodeDelegationExtension(&extension)
+		if err == nil {
+			t.Fatalf("should have failed")
+		}
+	}
 }
 
 func FuzzDecodeExtensionValue(f *testing.F) {
