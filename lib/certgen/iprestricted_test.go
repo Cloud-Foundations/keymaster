@@ -160,6 +160,43 @@ func TestExtractIPNetsFromIPRestrictedX509(t *testing.T) {
 	}
 }
 
+func TestDecodeIPV4AddressChoiceFail(t *testing.T) {
+	negativeBitLength := asn1.BitString{
+		BitLength: -1,
+	}
+	zeroBitLenght := asn1.BitString{
+		BitLength: 0,
+	}
+	tooLargeBitLenght := asn1.BitString{
+		BitLength: 33,
+	}
+
+	failBitStrings := []asn1.BitString{negativeBitLength, zeroBitLenght, tooLargeBitLenght}
+	for _, block := range failBitStrings {
+		_, err := decodeIPV4AddressChoice(block)
+		if err == nil {
+			t.Fatalf("should have failed")
+		}
+	}
+	//not failing, but inconsistent
+	tooSmallBytes1 := asn1.BitString{
+		BitLength: 15,
+		Bytes:     []byte{0x03},
+	}
+	tooManyBytes1 := asn1.BitString{
+		BitLength: 7,
+		Bytes:     []byte{0x03, 0xf3},
+	}
+	inconsistentBitStrings := []asn1.BitString{tooSmallBytes1, tooManyBytes1}
+	for _, block := range inconsistentBitStrings {
+		_, err := decodeIPV4AddressChoice(block)
+		if err != nil {
+			t.Fatalf("should NOT have failed")
+		}
+	}
+
+}
+
 func FuzzDecodeExtensionValue(f *testing.F) {
 	//f.Add([]byte{0x30, 0x0e, 0x30, 0x0c, 0x04}) // 03 00 01  01 30 05 03 03 00 0d ff})
 	// NOTE the added data looks like it needs to succeed
@@ -178,12 +215,12 @@ func FuzzDecodeExtensionValue(f *testing.F) {
 }
 
 func FuzzDecodeIPV4AddressChoice(f *testing.F) {
-	f.Add(15, []byte{0x03, 0xf4})
-	f.Add(22, []byte{0x01, 0x02, 0x03})
-	f.Add(-1, []byte{0x03, 0xf4})
-	f.Fuzz(func(t *testing.T, bitLength int, encValue []byte) {
+	f.Add(int8(15), []byte{0x03, 0xf4})
+	f.Add(int8(22), []byte{0x01, 0x02, 0x03})
+	f.Add(int8(-1), []byte{0x03, 0xf4})
+	f.Fuzz(func(t *testing.T, bitLength int8, encValue []byte) {
 		encodedBlock := asn1.BitString{
-			BitLength: bitLength,
+			BitLength: int(bitLength),
 			Bytes:     encValue,
 		}
 		//emptyNet := net.IPNet{}
