@@ -102,6 +102,10 @@ test:
 verbose-test:
 	go test -v ./...
 
+
+fuzz:
+	go test github.com/Cloud-Foundations/keymaster/lib/certgen -fuzztime 30s -fuzz  FuzzDecodeIPV4AddressChoice 
+
 format:
 	gofmt -s -w .
 
