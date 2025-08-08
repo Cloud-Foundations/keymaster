@@ -31,11 +31,20 @@ func TestGenDelegationExtension(t *testing.T) {
 		IP:   net.ParseIP("13.255.0.0"),
 		Mask: net.CIDRMask(16, 32),
 	}
+	netblock4 := net.IPNet{
+		IP:   net.ParseIP("172.16.0.0"),
+		Mask: net.CIDRMask(12, 32),
+	}
+	netblock5 := net.IPNet{
+		IP:   net.ParseIP("10.0.0.0"),
+		Mask: net.CIDRMask(8, 32),
+	}
 
 	netblockListList := [][]net.IPNet{
 		{netblock, netblock2},
 		{netblock},
 		{netblock3},
+		{netblock5, netblock4},
 	}
 
 	for _, netblockList := range netblockListList {

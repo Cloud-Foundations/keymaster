@@ -82,7 +82,6 @@ func genDelegationExtension(ipv4Netblocks []net.IPNet) (*pkix.Extension, error) 
 
 func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	var encodedIP [4]byte
-	// TODO ::Determine if this should Always be 32
 	if encodedBlock.BitLength < 1 || encodedBlock.BitLength > 32 {
 		failval := net.IPNet{}
 		return failval, fmt.Errorf("invalid encoded bit length")
