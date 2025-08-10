@@ -58,7 +58,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
 	"github.com/cviecco/webauth-sshcert/lib/server/sshcertauth"
-	"github.com/duo-labs/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -473,6 +473,9 @@ func browserSupportsU2F(r *http.Request) bool {
 		return true
 	}
 	if strings.Contains(r.UserAgent(), "Firefox/") {
+		return true
+	}
+	if strings.Contains(r.UserAgent(), "Safari/") {
 		return true
 	}
 	logger.Debugf(3, "browser doest NOT support u2f")
