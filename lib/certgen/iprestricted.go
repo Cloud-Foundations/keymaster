@@ -44,14 +44,15 @@ func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, []byte, error) {
 	//log.Printf("outlen=%d, ones=%d bits=%d", outlen, ones, bits)
 	output = make([]byte, outlen, outlen)
 	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
-	increment := 12
-	if len(netBlock.IP) == 4 {
-		increment = 0
+	increment := 0
+	if len(netBlock.IP) == 16 && bits == 32 {
+		// ipv4 addresses can be written within an 16 byte block, in this
+		// case the address is shifted by 12 bytes
+		increment = 12
 	}
 	var outFamily []byte
 	outFamily = ipV4FamilyEncoding
 	if bits == 128 {
-		increment = 0
 		outFamily = ipV6FamilyEncoding
 	}
 	for i := 0; i < outlen; i++ {
