@@ -10,29 +10,6 @@ import (
 	"testing"
 )
 
-// TODO move this to the actual codebase once we fully support ipv6
-func encodeIpv6AddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
-	ones, bits := netBlock.Mask.Size()
-	if bits != 128 {
-		return asn1.BitString{}, errors.New("not an ipv6 address")
-	}
-	//unusedLen = uint8(ones) % 8
-	var output []byte
-	outlen := ((ones + 7) / 8)
-	//log.Printf("outlen=%d, ones=%d", outlen, ones)
-	output = make([]byte, outlen, outlen)
-	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
-	for i := 0; i < outlen; i++ {
-		output[i] = netBlock.IP[i]
-	}
-	//log.Printf("%+v", output)
-	bitString := asn1.BitString{
-		Bytes:     output,
-		BitLength: ones,
-	}
-	return bitString, nil
-}
-
 func TestComputePublicKeyKeyID(t *testing.T) {
 	userPub, _, _ := setupX509Generator(t)
 	_, err := ComputePublicKeyKeyID(userPub)
@@ -96,8 +73,6 @@ func TestGenDelegationExtension(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		//netblocks, err := decodeDelegationExtension(extension)
-
 		extensionDer, err := asn1.Marshal(*extension)
 		if err != nil {
 			t.Fatal(err)
@@ -111,24 +86,6 @@ func TestGenDelegationExtension(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		/*
-
-			var addressFamilyList []IpAdressFamily
-			_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Logf("%+v", addressFamilyList)
-
-			var roundTripBlockList []net.IPNet
-			for _, encodedNetblock := range addressFamilyList[0].Addresses {
-				decoded, err := decodeIPV4AddressChoice(encodedNetblock)
-				if err != nil {
-					t.Fatal(err)
-				}
-				roundTripBlockList = append(roundTripBlockList, decoded)
-			}
-		*/
 		t.Logf("%+v", roundTripBlockList)
 		if len(roundTripBlockList) != len(netblockList) {
 			t.Fatal(errors.New("bad rountrip lenght"))
@@ -137,6 +94,9 @@ func TestGenDelegationExtension(t *testing.T) {
 			if !block.IP.Equal(roundTripBlockList[i].IP) {
 				t.Fatal(fmt.Errorf("ip not matching %d %s %s", i, block.IP.String(), (roundTripBlockList[i].String())))
 
+			}
+			if block.Mask.String() != roundTripBlockList[i].Mask.String() {
+				t.Fatal(fmt.Errorf("masks do not match  not matching %d %s %s", i, block.Mask.String(), (roundTripBlockList[i].String())))
 			}
 		}
 	}
