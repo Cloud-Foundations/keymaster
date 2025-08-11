@@ -18,12 +18,22 @@ func TestComputePublicKeyKeyID(t *testing.T) {
 	}
 }
 
+/*
+// This test should be a forward test to ensure that we encode into well
+// known encoding values
+func TestGenenDelegationExtensionInterop(t *testing.T) {
+
+
+}
+*/
+
 func TestGenDelegationExtension(t *testing.T) {
 
 	netblock := net.IPNet{
 		IP:   net.ParseIP("10.11.12.0"),
 		Mask: net.CIDRMask(24, 32),
 	}
+
 	netblock2 := net.IPNet{
 		IP:   net.ParseIP("13.14.128.0"),
 		Mask: net.CIDRMask(20, 32),
@@ -40,18 +50,26 @@ func TestGenDelegationExtension(t *testing.T) {
 		IP:   net.ParseIP("10.0.0.0"),
 		Mask: net.CIDRMask(8, 32),
 	}
-	netblock6 := net.IPNet{
+	_, netblock6, err := net.ParseCIDR("192.168.24.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	netblock7 := net.IPNet{
 		//IP:   net.ParseIP("2001:0:200:3:0:0:0:1"),
 		IP:   net.ParseIP("2001:0:200:3:0:0:1:1"),
 		Mask: net.CIDRMask(128, 128),
 	}
-	netblock7 := net.IPNet{
+	netblock8 := net.IPNet{
 		IP:   net.ParseIP("2001:0:200::"),
 		Mask: net.CIDRMask(39, 128),
 	}
-	netblock8 := net.IPNet{
+	netblock9 := net.IPNet{
 		IP:   net.ParseIP("2001::"),
 		Mask: net.CIDRMask(32, 128),
+	}
+	_, netblock10, err := net.ParseCIDR("2001:db8:a0b:12f0::1/32")
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	netblockListList := [][]net.IPNet{
@@ -59,10 +77,12 @@ func TestGenDelegationExtension(t *testing.T) {
 		{netblock},
 		{netblock3},
 		{netblock5, netblock4},
-		{netblock6},
+		{*netblock6},
 		{netblock7},
 		{netblock8},
-		{netblock5, netblock4, netblock7},
+		{netblock9},
+		{*netblock10},
+		{netblock5, netblock4, netblock8},
 	}
 
 	for _, netblockList := range netblockListList {
@@ -113,7 +133,16 @@ func TestGenIPRestrictedX509Cert(t *testing.T) {
 		IP:   net.ParseIP("10.0.0.0"),
 		Mask: net.CIDRMask(8, 32),
 	}
-	netblockList := []net.IPNet{netblock, netblock2}
+	_, netblock3, err := net.ParseCIDR("192.168.24.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, netblock4, err := net.ParseCIDR("2001:db8:a0b:12f0::1/32")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	netblockList := []net.IPNet{netblock, netblock2, *netblock3, *netblock4}
 	derCert, err := GenIPRestrictedX509Cert("username", userPub, caCert, caPriv, netblockList, testDuration, nil, nil)
 	if err != nil {
 		t.Fatal(err)

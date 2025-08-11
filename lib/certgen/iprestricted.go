@@ -45,6 +45,9 @@ func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, []byte, error) {
 	output = make([]byte, outlen, outlen)
 	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
 	increment := 12
+	if len(netBlock.IP) == 4 {
+		increment = 0
+	}
 	var outFamily []byte
 	outFamily = ipV4FamilyEncoding
 	if bits == 128 {
