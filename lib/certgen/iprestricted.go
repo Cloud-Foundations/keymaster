@@ -88,7 +88,13 @@ func genDelegationExtension(ipv4Netblocks []net.IPNet) (*pkix.Extension, error) 
 			ipv6AddressFamily.Addresses = append(ipv6AddressFamily.Addresses, encodedNetBlock)
 		}
 	}
-	addressFamilyList := []IpAdressFamily{ipv4AddressFamily, ipv6AddressFamily}
+	addressFamilyList := []IpAdressFamily{}
+	if len(ipv4AddressFamily.Addresses) > 0 {
+		addressFamilyList = append(addressFamilyList, ipv4AddressFamily)
+	}
+	if len(ipv6AddressFamily.Addresses) > 0 {
+		addressFamilyList = append(addressFamilyList, ipv6AddressFamily)
+	}
 
 	encodedAddressFamily, err := asn1.Marshal(addressFamilyList)
 	if err != nil {
