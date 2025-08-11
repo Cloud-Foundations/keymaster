@@ -5,9 +5,33 @@ import (
 	"encoding/asn1"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 )
+
+// TODO move this to the actual codebase once we fully support ipv6
+func encodeIpv6AddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
+	ones, bits := netBlock.Mask.Size()
+	if bits != 128 {
+		return asn1.BitString{}, errors.New("not an ipv6 address")
+	}
+	//unusedLen = uint8(ones) % 8
+	var output []byte
+	outlen := ((ones + 7) / 8)
+	//log.Printf("outlen=%d, ones=%d", outlen, ones)
+	output = make([]byte, outlen, outlen)
+	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
+	for i := 0; i < outlen; i++ {
+		output[i] = netBlock.IP[i]
+	}
+	//log.Printf("%+v", output)
+	bitString := asn1.BitString{
+		Bytes:     output,
+		BitLength: ones,
+	}
+	return bitString, nil
+}
 
 func TestComputePublicKeyKeyID(t *testing.T) {
 	userPub, _, _ := setupX509Generator(t)
@@ -39,12 +63,29 @@ func TestGenDelegationExtension(t *testing.T) {
 		IP:   net.ParseIP("10.0.0.0"),
 		Mask: net.CIDRMask(8, 32),
 	}
+	netblock6 := net.IPNet{
+		//IP:   net.ParseIP("2001:0:200:3:0:0:0:1"),
+		IP:   net.ParseIP("2001:0:200:3:0:0:1:1"),
+		Mask: net.CIDRMask(128, 128),
+	}
+	netblock7 := net.IPNet{
+		IP:   net.ParseIP("2001:0:200::"),
+		Mask: net.CIDRMask(39, 128),
+	}
+	netblock8 := net.IPNet{
+		IP:   net.ParseIP("2001::"),
+		Mask: net.CIDRMask(32, 128),
+	}
 
 	netblockListList := [][]net.IPNet{
 		{netblock, netblock2},
 		{netblock},
 		{netblock3},
 		{netblock5, netblock4},
+		{netblock6},
+		{netblock7},
+		{netblock8},
+		{netblock5, netblock4, netblock7},
 	}
 
 	for _, netblockList := range netblockListList {
@@ -54,6 +95,9 @@ func TestGenDelegationExtension(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		//netblocks, err := decodeDelegationExtension(extension)
+
 		extensionDer, err := asn1.Marshal(*extension)
 		if err != nil {
 			t.Fatal(err)
@@ -61,23 +105,39 @@ func TestGenDelegationExtension(t *testing.T) {
 
 		t.Logf("encodedExt=\n%s", hex.Dump(extensionDer))
 		t.Logf("ExtValue=\n%s", hex.Dump(extension.Value))
-		var addressFamilyList []IpAdressFamily
-		_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
+
+		roundTripBlockList, err := decodeDelegationExtension(extension)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%+v", addressFamilyList)
-		var roundTripBlockList []net.IPNet
-		for _, encodedNetblock := range addressFamilyList[0].Addresses {
-			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+
+		/*
+
+			var addressFamilyList []IpAdressFamily
+			_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
 			if err != nil {
 				t.Fatal(err)
 			}
-			roundTripBlockList = append(roundTripBlockList, decoded)
-		}
+			t.Logf("%+v", addressFamilyList)
+
+			var roundTripBlockList []net.IPNet
+			for _, encodedNetblock := range addressFamilyList[0].Addresses {
+				decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+				if err != nil {
+					t.Fatal(err)
+				}
+				roundTripBlockList = append(roundTripBlockList, decoded)
+			}
+		*/
 		t.Logf("%+v", roundTripBlockList)
 		if len(roundTripBlockList) != len(netblockList) {
 			t.Fatal(errors.New("bad rountrip lenght"))
+		}
+		for i, block := range netblockList {
+			if !block.IP.Equal(roundTripBlockList[i].IP) {
+				t.Fatal(fmt.Errorf("ip not matching %d %s %s", i, block.IP.String(), (roundTripBlockList[i].String())))
+
+			}
 		}
 	}
 
@@ -209,6 +269,10 @@ func TestDecodeDelegationExtensionFail(t *testing.T) {
 		Id:    oidIPAddressDelegation,
 		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x04, 00, 0x0d, 0xff},
 	}
+	// Next is an ipv6 address encoded with an ipv4 family...should NOT decode
+	//30 14 30 12 04 03 00 01  01 30 0b 03 09 00 20 01  |0.0......0.... .|
+	//00 00 02 00 00 03
+
 	failExtensions := []pkix.Extension{invalidASN1Master, uknownAddrFamily, invalidASN1Range}
 	for _, extension := range failExtensions {
 		_, err := decodeDelegationExtension(&extension)
