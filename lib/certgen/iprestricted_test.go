@@ -292,6 +292,8 @@ func FuzzDecodeIPV4AddressChoice(f *testing.F) {
 	f.Add(int8(15), []byte{0x03, 0xf4})
 	f.Add(int8(22), []byte{0x01, 0x02, 0x03})
 	f.Add(int8(-1), []byte{0x03, 0xf4})
+	f.Add(int8(32), []byte{0x03, 0x05, 0x00, 0x20, 0x01, 00, 0x00})
+	f.Add(int8(127), []byte{0x03, 0x05, 0x00, 0x20, 0x01, 00, 0x00})
 	f.Fuzz(func(t *testing.T, bitLength int8, encValue []byte) {
 		encodedBlock := asn1.BitString{
 			BitLength: int(bitLength),
@@ -320,7 +322,7 @@ func FuzzDecodeIPV6AddressChoice(f *testing.F) {
 			Bytes:     encValue,
 		}
 		//emptyNet := net.IPNet{}
-		out, err := decodeIPV4AddressChoice(encodedBlock)
+		out, err := decodeIPV6AddressChoice(encodedBlock)
 		if err != nil {
 			if out.IP != nil {
 				t.Errorf("%q, %v", out, err)
