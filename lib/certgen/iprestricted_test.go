@@ -27,36 +27,58 @@ func TestGenDelegationExtension(t *testing.T) {
 		IP:   net.ParseIP("13.14.128.0"),
 		Mask: net.CIDRMask(20, 32),
 	}
-	netblockList := []net.IPNet{netblock, netblock2}
-	var extension *pkix.Extension
-	var err error
-	extension, err = genDelegationExtension(netblockList)
-	if err != nil {
-		t.Fatal(err)
+	netblock3 := net.IPNet{
+		IP:   net.ParseIP("13.255.0.0"),
+		Mask: net.CIDRMask(16, 32),
 	}
-	extensionDer, err := asn1.Marshal(*extension)
-	if err != nil {
-		t.Fatal(err)
+	netblock4 := net.IPNet{
+		IP:   net.ParseIP("172.16.0.0"),
+		Mask: net.CIDRMask(12, 32),
+	}
+	netblock5 := net.IPNet{
+		IP:   net.ParseIP("10.0.0.0"),
+		Mask: net.CIDRMask(8, 32),
 	}
 
-	t.Logf("encodedExt=\n%s", hex.Dump(extensionDer))
-	var addressFamilyList []IpAdressFamily
-	_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
-	if err != nil {
-		t.Fatal(err)
+	netblockListList := [][]net.IPNet{
+		{netblock, netblock2},
+		{netblock},
+		{netblock3},
+		{netblock5, netblock4},
 	}
-	t.Logf("%+v", addressFamilyList)
-	var roundTripBlockList []net.IPNet
-	for _, encodedNetblock := range addressFamilyList[0].Addresses {
-		decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+
+	for _, netblockList := range netblockListList {
+		var extension *pkix.Extension
+		var err error
+		extension, err = genDelegationExtension(netblockList)
 		if err != nil {
 			t.Fatal(err)
 		}
-		roundTripBlockList = append(roundTripBlockList, decoded)
-	}
-	t.Logf("%+v", roundTripBlockList)
-	if len(roundTripBlockList) != len(netblockList) {
-		t.Fatal(errors.New("bad rountrip lenght"))
+		extensionDer, err := asn1.Marshal(*extension)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Logf("encodedExt=\n%s", hex.Dump(extensionDer))
+		t.Logf("ExtValue=\n%s", hex.Dump(extension.Value))
+		var addressFamilyList []IpAdressFamily
+		_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%+v", addressFamilyList)
+		var roundTripBlockList []net.IPNet
+		for _, encodedNetblock := range addressFamilyList[0].Addresses {
+			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roundTripBlockList = append(roundTripBlockList, decoded)
+		}
+		t.Logf("%+v", roundTripBlockList)
+		if len(roundTripBlockList) != len(netblockList) {
+			t.Fatal(errors.New("bad rountrip lenght"))
+		}
 	}
 
 }
@@ -76,11 +98,11 @@ func TestGenIPRestrictedX509Cert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, _, err := derBytesCertToCertAndPem(derCert)
+	cert, pemCert, err := derBytesCertToCertAndPem(derCert)
 	if err != nil {
 		t.Fatal(err)
 	}
-	//t.Logf("%+v", cert)
+	t.Logf("Ip restricted cert%+v", pemCert)
 	var ok bool
 	ok, err = VerifyIPRestrictedX509CertIP(cert, "10.0.0.1:234")
 	if err != nil {
@@ -136,4 +158,98 @@ func TestExtractIPNetsFromIPRestrictedX509(t *testing.T) {
 			t.Fatalf("nets dont match")
 		}
 	}
+}
+
+func TestDecodeIPV4AddressChoiceFail(t *testing.T) {
+	negativeBitLength := asn1.BitString{
+		BitLength: -1,
+	}
+	zeroBitLenght := asn1.BitString{
+		BitLength: 0,
+	}
+	tooLargeBitLenght := asn1.BitString{
+		BitLength: 33,
+	}
+
+	failBitStrings := []asn1.BitString{negativeBitLength, zeroBitLenght, tooLargeBitLenght}
+	for _, block := range failBitStrings {
+		_, err := decodeIPV4AddressChoice(block)
+		if err == nil {
+			t.Fatalf("should have failed")
+		}
+	}
+	//not failing, but inconsistent
+	tooSmallBytes1 := asn1.BitString{
+		BitLength: 15,
+		Bytes:     []byte{0x03},
+	}
+	tooManyBytes1 := asn1.BitString{
+		BitLength: 7,
+		Bytes:     []byte{0x03, 0xf3},
+	}
+	inconsistentBitStrings := []asn1.BitString{tooSmallBytes1, tooManyBytes1}
+	for _, block := range inconsistentBitStrings {
+		_, err := decodeIPV4AddressChoice(block)
+		if err != nil {
+			t.Fatalf("should NOT have failed")
+		}
+	}
+}
+
+func TestDecodeDelegationExtensionFail(t *testing.T) {
+	invalidASN1Master := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04},
+	}
+	uknownAddrFamily := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x02, 0x30, 0x05, 0x03, 0x03, 00, 0x0d, 0xff},
+	}
+	invalidASN1Range := pkix.Extension{
+		Id:    oidIPAddressDelegation,
+		Value: []byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x04, 00, 0x0d, 0xff},
+	}
+	failExtensions := []pkix.Extension{invalidASN1Master, uknownAddrFamily, invalidASN1Range}
+	for _, extension := range failExtensions {
+		_, err := decodeDelegationExtension(&extension)
+		if err == nil {
+			t.Fatalf("should have failed")
+		}
+	}
+}
+
+func FuzzDecodeExtensionValue(f *testing.F) {
+	// NOTE the added data looks like it needs to succeed
+	f.Add([]byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x03, 00, 0x0d, 0xff})
+	f.Add([]byte{0x30, 0x0f, 0x30, 0x0d, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x06, 0x03, 0x04, 00, 0x0a, 0x0b, 0x0c})
+	f.Fuzz(func(t *testing.T, extValue []byte) {
+		extension := pkix.Extension{
+			Id:    oidIPAddressDelegation,
+			Value: extValue,
+		}
+		out, err := decodeDelegationExtension(&extension)
+		if err != nil && out != nil {
+			t.Errorf("%q, %v", out, err)
+		}
+	})
+}
+
+func FuzzDecodeIPV4AddressChoice(f *testing.F) {
+	f.Add(int8(15), []byte{0x03, 0xf4})
+	f.Add(int8(22), []byte{0x01, 0x02, 0x03})
+	f.Add(int8(-1), []byte{0x03, 0xf4})
+	f.Fuzz(func(t *testing.T, bitLength int8, encValue []byte) {
+		encodedBlock := asn1.BitString{
+			BitLength: int(bitLength),
+			Bytes:     encValue,
+		}
+		//emptyNet := net.IPNet{}
+		out, err := decodeIPV4AddressChoice(encodedBlock)
+		if err != nil {
+			if out.IP != nil {
+				t.Errorf("%q, %v", out, err)
+			}
+		}
+
+	})
 }
