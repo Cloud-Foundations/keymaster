@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/bearsh/hid v1.6.0
 	github.com/cloudflare/cfssl v1.6.5
+	github.com/cviecco/webauth-sshcert v0.0.0-20250328160617-6b3c88be8c5d
 	github.com/duo-labs/webauthn v0.0.0-20221205164246-ebaf9b74c6ec
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
@@ -99,5 +100,4 @@ require (
 	golang.org/x/time v0.11.0
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
-	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )
