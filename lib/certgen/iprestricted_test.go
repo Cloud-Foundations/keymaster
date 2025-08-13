@@ -271,11 +271,90 @@ func TestDecodeDelegationExtensionFail(t *testing.T) {
 	}
 }
 
+func buildExvalueSingle(numZeroes byte, addrType []byte, encodedIP []byte) []byte {
+	addrBitStringSize := len(encodedIP) + 1
+	addrseqSize := addrBitStringSize + 2
+	addrTypeSize := len(addrType)
+	addrblocklen := addrseqSize + addrTypeSize + 4
+	extSize := addrTypeSize + 2
+
+	intval := []byte{0x30, 0x00, 0x30, 0x00, 0x04, 0x00}
+	intval[1] = byte(extSize)
+	intval[3] = byte(addrblocklen)
+	intval[5] = byte(addrTypeSize)
+	intval = append(intval, addrType...)
+	intval = append(intval, []byte{0x30}...)
+	intval = append(intval, byte(addrseqSize))
+	intval = append(intval, []byte{0x03}...)
+	intval = append(intval, byte(addrBitStringSize))
+	intval = append(intval, numZeroes)
+	intval = append(intval, encodedIP...)
+	return intval
+}
+func FuzzDecodeExtensionValueSingle(f *testing.F) {
+	f.Add(byte(0), ipV4FamilyEncoding, []byte{0x0d, 0xff})
+	f.Add(byte(0), ipV6FamilyEncoding, []byte{0x0d, 0xff})
+	f.Add(byte(2), ipV4FamilyEncoding, []byte{0x0d, 0xf1})
+	f.Add(byte(2), ipV4FamilyEncoding, []byte{0x0d, 0xf1, 0xab, 0x88})
+	f.Add(byte(0), []byte{0x01}, []byte{0x0d, 0xff})
+
+	f.Fuzz(func(t *testing.T, numzeroes byte, family []byte, encodedIP []byte) {
+		extValue := buildExvalueSingle(numzeroes, family, encodedIP)
+		extension := pkix.Extension{
+			Id:    oidIPAddressDelegation,
+			Value: extValue,
+		}
+		out, err := decodeDelegationExtension(&extension)
+		if err != nil && out != nil {
+			t.Errorf("%q, %v", out, err)
+		}
+	})
+}
+
 func FuzzDecodeExtensionValue(f *testing.F) {
 	//f.Add([]byte{0x30, 0x0e, 0x30, 0x0c, 0x04}) // 03 00 01  01 30 05 03 03 00 0d ff})
 	// NOTE the added data looks like it needs to succeed
 	f.Add([]byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x03, 00, 0x0d, 0xff})
 	f.Add([]byte{0x30, 0x0f, 0x30, 0x0d, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x06, 0x03, 0x04, 00, 0x0a, 0x0b, 0x0c})
+
+	//04 28 30 26 30 15 04 03 00 01 01 30 0E 03 02 00 7F 03 02 00 0A 03 04 00 C0 A8 18 30 0D 04 02 00 02 30 07 03 05 00 20 01 0D B8
+	// (40 byte)
+	//3026
+	//3015
+	//0403000101
+	//300E
+	//0302007F
+	//0302000A
+	//030400C0A818
+	//300D0
+	//4020002
+	//3007
+	//0305 00 20 01 0D B8
+
+	// Single element
+	// Tag: 0x30
+	// Len:
+	// Tag 0x30
+	// Len
+	// Tag: 0x04 octe
+	// Len: 0x03 -> this is the
+	//   // data1 -> type of addr
+	// Tag: 0x30 ->Sequence
+	// Len:
+	// Tag: 0x03 Bit sequence
+	// // data -> actual data
+
+	//with 1 addr
+	//ipdata []byte
+	//numzeros (nibble)
+	//addr_type (bool)... -> 3bytes
+
+	// bistringlenght <- len(ipdata)+1  //0x02
+	// addrseqlen <- 2 + bistringlength // 0x0E***
+	// addrtypebitlenn <- len(addr_type)
+	// addrblocklen<- addrseqlen + 2 + addrtypebitlenn + 2  // 0x15
+	// totallen <- addrblocklen + 2
+
 	f.Fuzz(func(t *testing.T, extValue []byte) {
 		extension := pkix.Extension{
 			Id:    oidIPAddressDelegation,
