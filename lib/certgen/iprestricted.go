@@ -108,7 +108,6 @@ func decodeDelegationExtension(extension *pkix.Extension) ([]net.IPNet, error) {
 	var rvalue []net.IPNet
 	for _, addressList := range ipAddressFamilyList {
 		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
-			//continue
 			return nil, fmt.Errorf("We only support ipv4 netblocks")
 		}
 		for _, encodedNetblock := range addressList.Addresses {
@@ -213,7 +212,6 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 		if netblock.Contains(remoteIP) {
 			return true, nil
 		}
-
 	}
 	return false, nil
 }
