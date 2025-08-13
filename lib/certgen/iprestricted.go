@@ -271,7 +271,6 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 		if netblock.Contains(remoteIP) {
 			return true, nil
 		}
-
 	}
 	return false, nil
 }
