@@ -18,14 +18,9 @@ func TestComputePublicKeyKeyID(t *testing.T) {
 	}
 }
 
-/*
-// This test should be a forward test to ensure that we encode into well
-// known encoding values
-func TestGenenDelegationExtensionInterop(t *testing.T) {
-
-
-}
-*/
+// TODO: We  should be a forward test to ensure that we encode into well
+// known value. But this will be another day, for now we will use
+// local round-trip as "good enough"
 
 func TestGenDelegationExtension(t *testing.T) {
 
@@ -55,7 +50,6 @@ func TestGenDelegationExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	netblock7 := net.IPNet{
-		//IP:   net.ParseIP("2001:0:200:3:0:0:0:1"),
 		IP:   net.ParseIP("2001:0:200:3:0:0:1:1"),
 		Mask: net.CIDRMask(128, 128),
 	}
@@ -209,6 +203,14 @@ func TestExtractIPNetsFromIPRestrictedX509(t *testing.T) {
 	}
 }
 
+func TestExtractIPNetsFromIPRestrictedX509Fail(t *testing.T) {
+	_, caCert, _ := setupX509Generator(t)
+	_, err := ExtractIPNetsFromIPRestrictedX509(caCert)
+	if err == nil {
+		t.Fatal("should have failed extension not found")
+	}
+}
+
 func TestDecodeIPV4AddressChoiceFail(t *testing.T) {
 	negativeBitLength := asn1.BitString{
 		BitLength: -1,
@@ -296,6 +298,7 @@ func FuzzDecodeExtensionValueSingle(f *testing.F) {
 	f.Add(byte(0), ipV6FamilyEncoding, []byte{0x0d, 0xff})
 	f.Add(byte(2), ipV4FamilyEncoding, []byte{0x0d, 0xf1})
 	f.Add(byte(2), ipV4FamilyEncoding, []byte{0x0d, 0xf1, 0xab, 0x88})
+	f.Add(byte(2), ipV4FamilyEncoding, []byte{0x0d, 0xf1, 0xab, 0x88, 0x99})
 	f.Add(byte(0), []byte{0x01}, []byte{0x0d, 0xff})
 
 	f.Fuzz(func(t *testing.T, numzeroes byte, family []byte, encodedIP []byte) {
