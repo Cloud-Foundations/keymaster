@@ -3,7 +3,6 @@ package certgen
 import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -87,19 +86,10 @@ func TestGenDelegationExtension(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		extensionDer, err := asn1.Marshal(*extension)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		t.Logf("encodedExt=\n%s", hex.Dump(extensionDer))
-		t.Logf("ExtValue=\n%s", hex.Dump(extension.Value))
-
 		roundTripBlockList, err := decodeDelegationExtension(extension)
 		if err != nil {
 			t.Fatal(err)
 		}
-
 		t.Logf("%+v", roundTripBlockList)
 		if len(roundTripBlockList) != len(netblockList) {
 			t.Fatal(errors.New("bad rountrip lenght"))

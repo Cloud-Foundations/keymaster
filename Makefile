@@ -107,6 +107,7 @@ fuzz:
 	go test github.com/Cloud-Foundations/keymaster/lib/certgen -fuzztime 20s -fuzz  FuzzDecodeIPV4AddressChoice 
 	go test github.com/Cloud-Foundations/keymaster/lib/certgen -fuzztime 20s -fuzz  FuzzDecodeIPV6AddressChoice
 	go test github.com/Cloud-Foundations/keymaster/lib/certgen -fuzztime 20s -fuzz FuzzDecodeExtensionValueSingle
+
 format:
 	gofmt -s -w .
 
