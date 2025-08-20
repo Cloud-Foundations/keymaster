@@ -17,7 +17,7 @@ func TestComputePublicKeyKeyID(t *testing.T) {
 	}
 }
 
-// TODO: We  should be a forward test to ensure that we encode into well
+// TODO: We should have a forward test to ensure that we encode into well
 // known values. But this will be another day, for now we will use
 // local round-trip as "good enough"
 func TestGenDelegationExtension(t *testing.T) {
@@ -91,7 +91,7 @@ func TestGenDelegationExtension(t *testing.T) {
 		}
 		t.Logf("%+v", roundTripBlockList)
 		if len(roundTripBlockList) != len(netblockList) {
-			t.Fatal(errors.New("bad rountrip lenght"))
+			t.Fatal(errors.New("bad roundtrip lenght"))
 		}
 		for i, block := range netblockList {
 			if !block.IP.Equal(roundTripBlockList[i].IP) {
@@ -99,7 +99,7 @@ func TestGenDelegationExtension(t *testing.T) {
 
 			}
 			if block.Mask.String() != roundTripBlockList[i].Mask.String() {
-				t.Fatal(fmt.Errorf("masks do not match  not matching %d %s %s", i, block.Mask.String(), (roundTripBlockList[i].String())))
+				t.Fatal(fmt.Errorf("masks do not match %d %s %s", i, block.Mask.String(), (roundTripBlockList[i].String())))
 			}
 		}
 	}
@@ -262,7 +262,7 @@ func TestDecodeDelegationExtensionFail(t *testing.T) {
 	}
 }
 
-// Thus function generates a single extension in valid asn1 form.
+// This function generates a single extension in valid asn1 form.
 // The purpose is to make the fuzzer be able to  scan actual decoding issues
 // and not get stuck fuzzing the asn1 decoder
 func buildExvalueSingle(numZeroes byte, addrType []byte, encodedIP []byte) []byte {
