@@ -18,9 +18,8 @@ func TestComputePublicKeyKeyID(t *testing.T) {
 }
 
 // TODO: We  should be a forward test to ensure that we encode into well
-// known value. But this will be another day, for now we will use
+// known values. But this will be another day, for now we will use
 // local round-trip as "good enough"
-
 func TestGenDelegationExtension(t *testing.T) {
 
 	netblock := net.IPNet{
@@ -263,6 +262,9 @@ func TestDecodeDelegationExtensionFail(t *testing.T) {
 	}
 }
 
+// Thus function generates a single extension in valid asn1 form.
+// The purpose is to make the fuzzer be able to  scan actual decoding issues
+// and not get stuck fuzzing the asn1 decoder
 func buildExvalueSingle(numZeroes byte, addrType []byte, encodedIP []byte) []byte {
 	addrBitStringSize := len(encodedIP) + 1
 	addrseqSize := addrBitStringSize + 2
@@ -283,6 +285,7 @@ func buildExvalueSingle(numZeroes byte, addrType []byte, encodedIP []byte) []byt
 	intval = append(intval, encodedIP...)
 	return intval
 }
+
 func FuzzDecodeExtensionValueSingle(f *testing.F) {
 	f.Add(byte(0), ipV4FamilyEncoding, []byte{0x0d, 0xff})
 	f.Add(byte(0), ipV6FamilyEncoding, []byte{0x0d, 0xff})
@@ -309,44 +312,6 @@ func FuzzDecodeExtensionValue(f *testing.F) {
 	f.Add([]byte{0x30, 0x0e, 0x30, 0x0c, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x05, 0x03, 0x03, 00, 0x0d, 0xff})
 	f.Add([]byte{0x30, 0x0f, 0x30, 0x0d, 0x04, 0x03, 0x00, 0x01, 0x01, 0x30, 0x06, 0x03, 0x04, 00, 0x0a, 0x0b, 0x0c})
 
-	//04 28 30 26 30 15 04 03 00 01 01 30 0E 03 02 00 7F 03 02 00 0A 03 04 00 C0 A8 18 30 0D 04 02 00 02 30 07 03 05 00 20 01 0D B8
-	// (40 byte)
-	//3026
-	//3015
-	//0403000101
-	//300E
-	//0302007F
-	//0302000A
-	//030400C0A818
-	//300D0
-	//4020002
-	//3007
-	//0305 00 20 01 0D B8
-
-	// Single element
-	// Tag: 0x30
-	// Len:
-	// Tag 0x30
-	// Len
-	// Tag: 0x04 octe
-	// Len: 0x03 -> this is the
-	//   // data1 -> type of addr
-	// Tag: 0x30 ->Sequence
-	// Len:
-	// Tag: 0x03 Bit sequence
-	// // data -> actual data
-
-	//with 1 addr
-	//ipdata []byte
-	//numzeros (nibble)
-	//addr_type (bool)... -> 3bytes
-
-	// bistringlenght <- len(ipdata)+1  //0x02
-	// addrseqlen <- 2 + bistringlength // 0x0E***
-	// addrtypebitlenn <- len(addr_type)
-	// addrblocklen<- addrseqlen + 2 + addrtypebitlenn + 2  // 0x15
-	// totallen <- addrblocklen + 2
-
 	f.Fuzz(func(t *testing.T, extValue []byte) {
 		extension := pkix.Extension{
 			Id:    oidIPAddressDelegation,
@@ -370,14 +335,12 @@ func FuzzDecodeIPV4AddressChoice(f *testing.F) {
 			BitLength: int(bitLength),
 			Bytes:     encValue,
 		}
-		//emptyNet := net.IPNet{}
 		out, err := decodeIPV4AddressChoice(encodedBlock)
 		if err != nil {
 			if out.IP != nil {
 				t.Errorf("%q, %v", out, err)
 			}
 		}
-
 	})
 }
 
@@ -392,13 +355,11 @@ func FuzzDecodeIPV6AddressChoice(f *testing.F) {
 			BitLength: int(bitLength),
 			Bytes:     encValue,
 		}
-		//emptyNet := net.IPNet{}
 		out, err := decodeIPV6AddressChoice(encodedBlock)
 		if err != nil {
 			if out.IP != nil {
 				t.Errorf("%q, %v", out, err)
 			}
 		}
-
 	})
 }
