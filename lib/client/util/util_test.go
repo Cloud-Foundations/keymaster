@@ -151,6 +151,22 @@ func TestGetUserCreds(t *testing.T) {
 	}
 }
 
+func TestGetUserCredsFromEnv(t *testing.T) {
+	// Set environment variable
+	const testPassword = "test-password-123"
+	os.Setenv("KEYMASTER_PASSWORD", testPassword)
+	defer os.Unsetenv("KEYMASTER_PASSWORD") // Clean up
+
+	password, err := getUserCreds("username")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(password) != testPassword {
+		t.Errorf("got password %q, want %q", string(password), testPassword)
+	}
+}
+
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
 //
 //	gopass checks
