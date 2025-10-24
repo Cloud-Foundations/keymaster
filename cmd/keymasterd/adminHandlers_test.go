@@ -46,10 +46,16 @@ func testCreateRuntimeStateWithBothCAs(t *testing.T) (
 		return nil, "", err
 	}
 	state.Signer = signer
-	state.caCertDer, err = generateCADer(state, state.Signer)
+	caCertDer, err := generateCADer(state, state.Signer)
 	if err != nil {
 		return nil, "", err
 	}
+	state.caCertDer = append(state.caCertDer, caCertDer)
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
+	if err != nil {
+		return nil, "", err
+	}
+
 	state.signerPublicKeyToKeymasterKeys()
 	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	if err := initDB(state); err != nil {
@@ -99,6 +105,7 @@ func TestAuthNoTLS(t *testing.T) {
 	if authData.Username != "" {
 		t.Errorf("expected no username, got: %s", authData.Username)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestAuthCertAdminUser(t *testing.T) {
@@ -122,6 +129,7 @@ func TestAuthCertAdminUser(t *testing.T) {
 	if authData.Username != "alice" {
 		t.Fatalf("unexpected username: alice, got: %s", authData.Username)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestAuthCertPlainUser(t *testing.T) {
@@ -145,6 +153,7 @@ func TestAuthCertPlainUser(t *testing.T) {
 	if authData != nil {
 		t.Errorf("expected no authData, got: %v", authData)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestAuthCertFakeAdminUser(t *testing.T) {
@@ -168,6 +177,7 @@ func TestAuthCertFakeAdminUser(t *testing.T) {
 	if authData != nil {
 		t.Errorf("expected no authData, got: %v", authData)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestEnsurePostAndGetUsernameNotPost(t *testing.T) {
@@ -191,6 +201,7 @@ func TestEnsurePostAndGetUsernameNotPost(t *testing.T) {
 	if username != "" {
 		t.Errorf("expected no username, got: %s", username)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestEnsurePostAndGetUsernameNoUsername(t *testing.T) {
@@ -214,6 +225,7 @@ func TestEnsurePostAndGetUsernameNoUsername(t *testing.T) {
 	if username != "" {
 		t.Errorf("expected no username, got: %s", username)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestEnsurePostAndGetUsernameBadUsername(t *testing.T) {
@@ -239,6 +251,7 @@ func TestEnsurePostAndGetUsernameBadUsername(t *testing.T) {
 	if username != "" {
 		t.Errorf("expected no username, got: %s", username)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestGenerateBootstrapOtpNotAdminUser(t *testing.T) {
@@ -261,6 +274,7 @@ func TestGenerateBootstrapOtpNotAdminUser(t *testing.T) {
 		t.Errorf("unexpected status code: %d, status: %s, body: %s",
 			resp.StatusCode, resp.Status, string(body))
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestGenerateBootstrapOtpAdminUser(t *testing.T) {
@@ -300,4 +314,5 @@ func TestGenerateBootstrapOtpAdminUser(t *testing.T) {
 	if len(profile.BootstrapOTP.Sha512Hash) < 1 {
 		t.Error("got empty Bootstrap OTP hash")
 	}
+	state.dbDone <- struct{}{}
 }

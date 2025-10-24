@@ -1,22 +1,63 @@
 on: [push, pull_request]
 name: Test
 jobs:
-  test:
+  testlinux:
     strategy:
       matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest, macos-latest]
+        go-version: [1.24.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
+    - uses: actions/checkout@v4
+    - run: make test
+  testmacos:
+    strategy:
+      matrix:
+        go-version: [1.24.x]
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: actions/checkout@v4
+    - run: make test
+  testwindowsclient:
+    strategy:
+      matrix:
+        go-version: [1.24.x]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/setup-go@v3
       with:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3
-    - run: make test
+    - run: go test -v  ./cmd/keymaster/...
+
+  testwindowsclientlibs:
+    strategy:
+      matrix:
+        go-version: [1.24.x]
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@v3
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: actions/checkout@v3
+    - run: go test -v  ./lib/client/util/...
+
   buildlinuxpackage:
     strategy:
       matrix:
-        go-version: [1.22.x]
+        go-version: [1.24.x]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-go@v3
@@ -24,7 +65,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: gcc rpm alien rsync pkg-config libudev-dev
+        packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
     - uses: actions/checkout@v3
     - run: make rpm
 

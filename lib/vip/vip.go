@@ -418,7 +418,6 @@ func (client *Client) VerifySingleToken(tokenID string, tokenValue int) (bool, e
 	default:
 		return false, nil
 	}
-	panic("should never have reached this point")
 }
 
 func (client *Client) GetActiveTokens(userID string) ([]string, error) {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -16,7 +17,7 @@ import (
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/golib/pkg/log"
-	"github.com/howeyc/gopass"
+	"golang.org/x/term"
 )
 
 var (
@@ -32,6 +33,8 @@ var (
 	retryInterval = flag.Duration("retryInterval", 0, "If > 0: retry")
 )
 
+const maxPasswordLength = 512
+
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
 	flag.PrintDefaults()
@@ -40,10 +43,18 @@ func Usage() {
 func getPassword(password string) (string, error) {
 	if password == "" {
 		fmt.Printf("Password for unlocking %s: ", *keymasterHostname)
-		passwd, err := gopass.GetPasswd()
+		passwd, err := term.ReadPassword(int(os.Stdin.Fd()))
+
+		// Add a newline after the password input
+		fmt.Println()
+
 		if err != nil {
 			return "", err
-			// Handle gopass.ErrInterrupted or getch() read error
+		}
+
+		// Check password length
+		if len(password) > maxPasswordLength {
+			return "", errors.New("maximum length exceeded")
 		}
 		password = string(passwd)
 	}

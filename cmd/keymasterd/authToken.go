@@ -8,15 +8,12 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
-	"gopkg.in/square/go-jose.v2"
-	"gopkg.in/square/go-jose.v2/jwt"
+
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{
-		Algorithm: jose.RS256,
-		Key:       state.Signer,
-	}, (&jose.SignerOptions{}).WithType("JWT"))
+	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", err
 	}
@@ -32,7 +29,7 @@ func (state *RuntimeState) generateAuthJWT(username string) (string, error) {
 		IssuedAt:  now,
 		TokenType: "keymaster_webauth_for_cli_identity",
 	}
-	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
+	return jwt.Signed(signer).Claims(authToken).Serialize()
 }
 
 func (state *RuntimeState) SendAuthDocumentHandler(w http.ResponseWriter,

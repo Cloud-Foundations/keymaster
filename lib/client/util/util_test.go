@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
@@ -82,6 +83,72 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 	}
 	//
 
+}
+
+func TestGetUserCreds(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "basic password",
+			input: "password\n",
+			want:  "password",
+		},
+		{
+			name:  "password with backspace",
+			input: "passworrd\x08\x08d\n", // \x08 is backspace
+			want:  "password",
+		},
+		{
+			name:  "ignore null bytes",
+			input: "pass\x00word\n",
+			want:  "password",
+		},
+		{
+			name:    "ctrl-c interruption",
+			input:   "pass\x03word\n",
+			wantErr: true,
+			errMsg:  "interrupted",
+		},
+		{
+			name:    "max length exceeded",
+			input:   string(make([]byte, maxPasswordLength+1)) + "\n",
+			wantErr: true,
+			errMsg:  "maximum length exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := pipeToStdin(tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			password, err := getUserCreds("username")
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errMsg)
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errMsg, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if string(password) != tt.want {
+				t.Errorf("got password %q, want %q", string(password), tt.want)
+			}
+		})
+	}
 }
 
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using

@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -18,6 +21,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,13 +42,17 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
 	"github.com/Cloud-Foundations/keymaster/lib/server/aws_identity_cert"
+	"github.com/Cloud-Foundations/keymaster/lib/signers/kmssigner"
+	"github.com/Cloud-Foundations/keymaster/lib/signers/yksigner"
 	"github.com/Cloud-Foundations/keymaster/lib/vip"
-	"github.com/duo-labs/webauthn/webauthn"
-	"github.com/howeyc/gopass"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
+	"golang.org/x/term"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
 )
@@ -70,33 +78,35 @@ type baseConfig struct {
 	TLSCertFilename                 string `yaml:"tls_cert_filename"`
 	TLSKeyFilename                  string `yaml:"tls_key_filename"`
 	ACME                            acmecfg.AcmeConfig
-	SSHCAFilename                   string        `yaml:"ssh_ca_filename"`
-	Ed25519CAFilename               string        `yaml:"ed25519_ca_keyfilename"`
-	AutoUnseal                      autoUnseal    `yaml:"auto_unseal"`
-	HtpasswdFilename                string        `yaml:"htpasswd_filename"`
-	ExternalAuthCmd                 string        `yaml:"external_auth_command"`
-	ClientCAFilename                string        `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename     string        `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                    string        `yaml:"host_identity"`
-	KerberosRealm                   string        `yaml:"kerberos_realm"`
-	DataDirectory                   string        `yaml:"data_directory"`
-	SharedDataDirectory             string        `yaml:"shared_data_directory"`
-	AllowedAuthBackendsForCerts     []string      `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI     []string      `yaml:"allowed_auth_backends_for_webui"`
-	AllowSelfServiceBootstrapOTP    bool          `yaml:"allow_self_service_bootstrap_otp"`
-	AdminUsers                      []string      `yaml:"admin_users"`
-	AdminGroups                     []string      `yaml:"admin_groups"`
-	PublicLogs                      bool          `yaml:"public_logs"`
-	SecsBetweenDependencyChecks     int           `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups            []string      `yaml:"automation_user_groups"`
-	AutomationUsers                 []string      `yaml:"automation_users"`
-	DisableUsernameNormalization    bool          `yaml:"disable_username_normalization"`
-	EnableLocalTOTP                 bool          `yaml:"enable_local_totp"`
-	EnableBootstrapOTP              bool          `yaml:"enable_bootstrapotp"`
-	WebauthTokenForCliLifetime      time.Duration `yaml:"webauth_token_for_cli_lifetime"`
-	PasswordAttemptGlobalBurstLimit uint          `yaml:"password_attempt_global_burst_limit"`
-	PasswordAttemptGlobalRateLimit  rate.Limit    `yaml:"password_attempt_global_rate_limit"`
-	SSHCertConfig                   sshCertConfig `yaml:"ssh_cert_config"`
+	SSHCAFilename                   string               `yaml:"ssh_ca_filename"`
+	Ed25519CAFilename               string               `yaml:"ed25519_ca_keyfilename"`
+	AutoUnseal                      autoUnseal           `yaml:"auto_unseal"`
+	HtpasswdFilename                string               `yaml:"htpasswd_filename"`
+	ExternalAuthCmd                 string               `yaml:"external_auth_command"`
+	ClientCAFilename                string               `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename     string               `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                    string               `yaml:"host_identity"`
+	KerberosRealm                   string               `yaml:"kerberos_realm"`
+	DataDirectory                   string               `yaml:"data_directory"`
+	SharedDataDirectory             string               `yaml:"shared_data_directory"`
+	AllowedAuthBackendsForCerts     []string             `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI     []string             `yaml:"allowed_auth_backends_for_webui"`
+	AllowSelfServiceBootstrapOTP    bool                 `yaml:"allow_self_service_bootstrap_otp"`
+	AdminUsers                      []string             `yaml:"admin_users"`
+	AdminGroups                     []string             `yaml:"admin_groups"`
+	PublicLogs                      bool                 `yaml:"public_logs"`
+	SecsBetweenDependencyChecks     int                  `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups            []string             `yaml:"automation_user_groups"`
+	AutomationUsers                 []string             `yaml:"automation_users"`
+	AutomationAdmins                []string             `yaml:"automation_admins"`
+	DisableUsernameNormalization    bool                 `yaml:"disable_username_normalization"`
+	EnableLocalTOTP                 bool                 `yaml:"enable_local_totp"`
+	EnableBootstrapOTP              bool                 `yaml:"enable_bootstrapotp"`
+	WebauthTokenForCliLifetime      time.Duration        `yaml:"webauth_token_for_cli_lifetime"`
+	PasswordAttemptGlobalBurstLimit uint                 `yaml:"password_attempt_global_burst_limit"`
+	PasswordAttemptGlobalRateLimit  rate.Limit           `yaml:"password_attempt_global_rate_limit"`
+	SSHCertConfig                   sshCertConfig        `yaml:"ssh_cert_config"`
+	ExternalSignerConf              ExternalSignerConfig `yaml:"external_signer_config"`
 }
 
 type awsCertsConfig struct {
@@ -188,6 +198,31 @@ type SymantecVIPConfig struct {
 	RequireAppAproval bool   `yaml:"require_app_approval"`
 }
 
+type DenyKeyConfig struct {
+	KeyDenyFPsshSha256 []string `yaml:"key_deny_list_ssh_sha256"`
+}
+
+type ExternalSignerType int
+
+const (
+	ExternalSignerInvalid ExternalSignerType = iota
+	ExternalSignerYubiPIV
+	ExternalSignerAWSKMS
+)
+
+type ExternalSignerConfig struct {
+	Type     string `yaml:"type"` // AWS|yubipiv
+	Location string `yaml:"location"`
+}
+
+type ParsedExternaSignerConfig struct {
+	Type      ExternalSignerType
+	PIVPin    string
+	PublicKey crypto.PublicKey
+	YKSerial  uint32
+	ARN       string
+}
+
 type AppConfigFile struct {
 	Base             baseConfig
 	AwsCerts         awsCertsConfig  `yaml:"aws_certs"`
@@ -201,12 +236,14 @@ type AppConfigFile struct {
 	OpenIDConnectIDP OpenIDConnectIDPConfig `yaml:"openid_connect_idp"`
 	SymantecVIP      SymantecVIPConfig
 	ProfileStorage   ProfileStorageConfig
+	DenyTrustData    DenyKeyConfig
 }
 
 const (
 	defaultRSAKeySize                  = 3072
 	defaultSecsBetweenDependencyChecks = 60
 	defaultOktaUsernameFilterRegexp    = "@.*"
+	maxPasswordLength                  = 512
 )
 
 func (state *RuntimeState) loadTemplates() (err error) {
@@ -261,23 +298,30 @@ func (state *RuntimeState) loadTemplates() (err error) {
 func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))
-	signerPKFingerprint, err := getKeyFingerprint(state.Signer.Public())
-	if err != nil {
-		return err
+	var localSigners []crypto.Signer
+	if state.Ed25519Signer != nil {
+		localSigners = append(localSigners, state.Ed25519Signer)
 	}
-	found := false
-	for _, key := range state.KeymasterPublicKeys {
-		fp, err := getKeyFingerprint(key)
+	localSigners = append(localSigners, state.Signer)
+	for _, signer := range localSigners {
+		signerPKFingerprint, err := getKeyFingerprint(signer.Public())
 		if err != nil {
 			return err
 		}
-		if signerPKFingerprint == fp {
-			found = true
+		found := false
+		for _, key := range state.KeymasterPublicKeys {
+			fp, err := getKeyFingerprint(key)
+			if err != nil {
+				return err
+			}
+			if signerPKFingerprint == fp {
+				found = true
+			}
 		}
-	}
-	if !found {
-		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
-			state.Signer.Public())
+		if !found {
+			state.KeymasterPublicKeys = append(state.KeymasterPublicKeys,
+				signer.Public())
+		}
 	}
 	state.logger.Debugf(3, "number of pk known=%d",
 		len(state.KeymasterPublicKeys))
@@ -311,6 +355,12 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 		default:
 			return fmt.Errorf("Ed2559 configred file is not really an Ed25519 key. Type is %T!\n", v)
 		}
+		ed25519CaCertDer, err := generateCADer(state, edSigner)
+		if err != nil {
+			state.logger.Printf("Cannot generate Ed25519 CA DER")
+			return err
+		}
+		state.caCertDer = append(state.caCertDer, ed25519CaCertDer)
 		state.Ed25519Signer = edSigner
 	}
 	signer, err := getSignerFromPEMBytes(signerPem)
@@ -326,50 +376,166 @@ func (state *RuntimeState) loadSignersFromPemData(signerPem, ed25519Pem []byte) 
 	default:
 		return fmt.Errorf("Signer file is a valid Signer key. Type is %T!\n", v)
 	}
-	state.caCertDer, err = generateCADer(state, signer)
+	caCertDer, err := generateCADer(state, signer)
 	if err != nil {
 		state.logger.Printf("Cannot generate CA DER")
 		return err
 	}
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
+	if err != nil {
+		state.logger.Printf("Cannot generate role requesting CA DER")
+		return err
+	}
+
+	state.caCertDer = append(state.caCertDer, caCertDer)
 	// Assignment of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
 	return nil
 }
 
+func (sconfig *ExternalSignerConfig) Parse() (*ParsedExternaSignerConfig, error) {
+	var parsedConfig ParsedExternaSignerConfig
+	switch sconfig.Type {
+	case "yubipiv":
+		parsedConfig.Type = ExternalSignerYubiPIV
+		parsedYK, err := url.Parse(sconfig.Location)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot parse url for yubipiv")
+		}
+		serial, err := strconv.ParseUint(parsedYK.Host, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid Host name '%s' is not converable to serial", parsedYK.Host)
+		}
+		parsedConfig.YKSerial = uint32(serial)
+		parsedConfig.PIVPin = "123456"
+		if parsedYK.User == nil {
+			parsedConfig.PublicKey = nil
+			return &parsedConfig, nil
+		}
+		b64derPubKey := parsedYK.User.Username()
+		derPubKey, err := base64.URLEncoding.DecodeString(b64derPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid pub key encoding err=%s", err)
+		}
+		parsedConfig.PublicKey, err = x509.ParsePKIXPublicKey(derPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid pub key err=%s", err)
+		}
+		pass, ok := parsedYK.User.Password()
+		if ok {
+			parsedConfig.PIVPin = pass
+		}
+		return &parsedConfig, nil
+	case "AWS":
+		parsedArn, err := arn.Parse(sconfig.Location)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot parse arn for kms")
+		}
+		switch parsedArn.Service {
+		case "kms":
+			parsedConfig.Type = ExternalSignerAWSKMS
+			parsedConfig.ARN = sconfig.Location
+		default:
+			return nil, fmt.Errorf("Is not an kms urn for external signer")
+		}
+		return &parsedConfig, nil
+	default:
+		return nil, fmt.Errorf("Invalid External Signer type")
+	}
+}
+
+func (state *RuntimeState) loadExternalSigners() error {
+	state.logger.Debugf(3, "Top of loadExternalSigners")
+	var signer crypto.Signer
+	parsedConfig, err := state.Config.Base.ExternalSignerConf.Parse()
+	if err != nil {
+		return err
+	}
+	switch parsedConfig.Type {
+	case ExternalSignerYubiPIV:
+		state.logger.Debugf(3, "loadExternalSigners yubipiv branch")
+		// TODO: if using default pin and failed we should try to do unsealing.
+		signer, err = yksigner.NewYkPivSigner(
+			parsedConfig.YKSerial, parsedConfig.PIVPin, parsedConfig.PublicKey)
+		if err != nil {
+			return err
+		}
+		state.logger.Debugf(3, "loadExternalSigners signer created")
+	case ExternalSignerAWSKMS:
+		ctx := context.Background()
+		cfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return err
+		}
+		signer, err = kmssigner.NewKmsSigner(cfg, ctx, parsedConfig.ARN)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown external signer type")
+	}
+	caCertDer, err := generateCADer(state, signer)
+	if err != nil {
+		state.logger.Printf("Cannot generate CA DER")
+		return err
+	}
+	state.selfRoleCaCertDer, err = generateSelfRoleRequestingCADer(state, signer)
+	if err != nil {
+		state.logger.Printf("Cannot generate role requesting CA DER")
+		return err
+	}
+
+	state.caCertDer = append(state.caCertDer, caCertDer)
+	state.Signer = signer
+	return nil
+
+}
+
 // Loads the verifies consistency of signers and loads them if plaintext
 // or starts the autounselaing if encrypted
 func (state *RuntimeState) tryLoadAndVerifySigners() error {
 	state.logger.Debugf(2, "Top of tryLoadAndVerifySigners")
-	signerBlock, _ := pem.Decode(state.SSHCARawFileContent)
-	if signerBlock == nil {
-		// it is not PEM.. probably armor.. ie encrypted?
-		decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
-		armorSignerBlock, err := armor.Decode(decbuf)
-		if err != nil {
-			return fmt.Errorf("signer content is not pem encoded or armor encoded")
-		}
-		if len(state.Ed25519CAFileContent) > 0 {
-			ed255buf := bytes.NewBuffer(state.Ed25519CAFileContent)
-			ed255ArmorBlock, err := armor.Decode(ed255buf)
+
+	if state.SSHCARawFileContent != nil {
+		state.logger.Debugf(2, "tryLoadAndVerifySigners loading file")
+		signerBlock, _ := pem.Decode(state.SSHCARawFileContent)
+		if signerBlock == nil {
+			// it is not PEM.. probably armor.. ie encrypted?
+			decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
+			armorSignerBlock, err := armor.Decode(decbuf)
 			if err != nil {
-				return fmt.Errorf("Signer is armored but Ed25519 is not, will not start")
+				return fmt.Errorf("signer content is not pem encoded or armor encoded")
 			}
-			if ed255ArmorBlock.Type != armorSignerBlock.Type {
-				return fmt.Errorf("Ed25519 and Signer blocks do not match will not start")
+			if len(state.Ed25519CAFileContent) > 0 {
+				ed255buf := bytes.NewBuffer(state.Ed25519CAFileContent)
+				ed255ArmorBlock, err := armor.Decode(ed255buf)
+				if err != nil {
+					return fmt.Errorf("Signer is armored but Ed25519 is not, will not start")
+				}
+				if ed255ArmorBlock.Type != armorSignerBlock.Type {
+					return fmt.Errorf("Ed25519 and Signer blocks do not match will not start")
+				}
 			}
+			state.logger.Debugf(3, "tryLoadAndVerifySigners: PEM is PGP")
+			logger.Println("Starting up in sealed state")
+			if state.ClientCAPool == nil {
+				state.logger.Println("No client CA: manual unsealing not possible")
+			}
+			state.beginAutoUnseal()
+			return nil
 		}
-		state.logger.Debugf(3, "tryLoadAndVerifySigners: PEM is PGP")
-		logger.Println("Starting up in sealed state")
-		if state.ClientCAPool == nil {
-			state.logger.Println("No client CA: manual unsealing not possible")
+		err := state.loadSignersFromPemData(state.SSHCARawFileContent, state.Ed25519CAFileContent)
+		if err != nil {
+			return err
 		}
-		state.beginAutoUnseal()
-		return nil
-	}
-	err := state.loadSignersFromPemData(state.SSHCARawFileContent, state.Ed25519CAFileContent)
-	if err != nil {
-		return err
+	} else {
+		state.logger.Debugf(2, "tryLoadAndVerifySigners loadingExternalSigners")
+		err := state.loadExternalSigners()
+		if err != nil {
+			return err
+		}
+
 	}
 	state.signerPublicKeyToKeymasterKeys()
 	state.SignerIsReady <- true
@@ -438,7 +604,7 @@ func loadVerifyConfigFile(configFilename string,
 	runtimeState.webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Keymaster Server",        // Display Name for your site
 		RPID:          runtimeState.HostIdentity, // Generally the domain name for your site
-		RPOrigin:      u2fAppID,                  // The origin URL for WebAuthn requests
+		RPOrigins:     u2fTrustedFacets,          // The origin URL for WebAuthn requests
 		// RPIcon: "https://duo.com/logo.png", // Optional icon URL for your site
 	})
 	if err != nil {
@@ -452,16 +618,24 @@ func loadVerifyConfigFile(configFilename string,
 		return nil, err
 	}
 	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
-	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
-	if err != nil {
-		logger.Printf("Cannot load ssh CA File")
-		return nil, err
-	}
-	if len(runtimeState.Config.Base.Ed25519CAFilename) > 0 {
-		runtimeState.Ed25519CAFileContent, err = exitsAndCanRead(runtimeState.Config.Base.Ed25519CAFilename, "ssh CA File")
+	if sshCAFilename != "" {
+		runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 		if err != nil {
-			logger.Printf("Cannot load Ed25519 CA File")
+			logger.Printf("Cannot load ssh CA File")
 			return nil, err
+		}
+		if len(runtimeState.Config.Base.Ed25519CAFilename) > 0 {
+			runtimeState.Ed25519CAFileContent, err = exitsAndCanRead(runtimeState.Config.Base.Ed25519CAFilename, "ssh CA File")
+			if err != nil {
+				logger.Printf("Cannot load Ed25519 CA File")
+				return nil, err
+			}
+		}
+	} else {
+		// TODO maybe load external signers here?
+		if runtimeState.Config.Base.ExternalSignerConf.Type == "" {
+			return nil, fmt.Errorf("No signer file and invalid external signer type='%s'",
+				runtimeState.Config.Base.ExternalSignerConf.Type)
 		}
 	}
 
@@ -469,7 +643,7 @@ func loadVerifyConfigFile(configFilename string,
 		buffer, err := exitsAndCanRead(
 			runtimeState.Config.Base.ClientCAFilename, "client CA file")
 		if err != nil {
-			logger.Printf("Cannot load client CA File")
+			logger.Printf("Cannot load client CA File(%s)", runtimeState.Config.Base.ClientCAFilename)
 			return nil, err
 		}
 		runtimeState.ClientCAPool = x509.NewCertPool()
@@ -780,15 +954,29 @@ func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 func getPassphrase() ([]byte, error) {
 	///matching := false
 	for {
+		// Prompt for the passphrase 1
 		fmt.Printf("Please enter your passphrase:\n")
-		passphrase1, err := gopass.GetPasswd()
+		passphrase1, err := term.ReadPassword(int(os.Stdin.Fd()))
+		// Add a newline after the password input
+		fmt.Println()
+
 		if err != nil {
 			return nil, err
 		}
+
+		// Prompt for the passphrase 2
 		fmt.Printf("Please re-enter your passphrase:\n")
-		passphrase2, err := gopass.GetPasswd()
+		passphrase2, err := term.ReadPassword(int(os.Stdin.Fd()))
+		// Add a newline after the password input
+		fmt.Println()
+
 		if err != nil {
 			return nil, err
+		}
+
+		// Check passphrases length
+		if len(passphrase1) > maxPasswordLength || len(passphrase2) > maxPasswordLength {
+			return nil, errors.New("maximum length exceeded")
 		}
 		if bytes.Equal(passphrase1, passphrase2) {
 			return passphrase1, nil

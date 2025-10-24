@@ -31,6 +31,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: gcc pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
       - name: Gather dependencies
         run: go mod download
       - name: Run coverage

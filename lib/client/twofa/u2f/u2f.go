@@ -413,7 +413,6 @@ func authenticateHelper(req *u2fhost.AuthenticateRequest, devices []*u2fhost.Hid
 			}
 		}
 	}
-	return nil, fmt.Errorf("impossible Error")
 }
 
 // This ensures the hostname matches...at this moment we do NOT check port number

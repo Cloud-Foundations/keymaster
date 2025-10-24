@@ -66,12 +66,13 @@ var (
 		"(optional) name for using non OS root CA to verify TLS connections")
 	roundRobinDialer = flag.Bool("roundRobinDialer", false,
 		"If true, use the smart round-robin dialer")
-	cliUsername  = flag.String("username", "", "username for keymaster")
+	cliUsername      = flag.String("username", "", "username for keymaster")
+	preferredKeyType = flag.String("preferredKeyType", "rsa",
+		"Preferred key type for certificates. (rsa|p256|p384)")
 	printVersion = flag.Bool("version", false,
 		"Print version and exit")
 	webauthBrowser = flag.String("webauthBrowser", "",
 		"Browser command to use for webauth")
-
 	FilePrefix = "keymaster"
 )
 
@@ -191,10 +192,14 @@ func generateAwsRoleCert(homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
-	signers := makeSigners()
+	keyType, err := keyPreferenceFromString(configContents.Base.PreferredKeyType)
+	if err != nil {
+		return err
+	}
+	signers := makeSigners(keyType)
 	// Initialise the client connection.
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
-	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	err = backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
@@ -209,12 +214,12 @@ func generateAwsRoleCert(homeDir string,
 		KeymasterServer: targetURLs[0],
 		Logger:          logger,
 		HttpClient:      client,
-		Signer:          signers.X509Rsa,
+		Signer:          signers.X509,
 	})
 	if err != nil {
 		return err
 	}
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509)
 	if err != nil {
 		return err
 	}
@@ -249,9 +254,7 @@ func generateAwsRoleCert(homeDir string,
 		}
 		defer os.Remove(tempPath)
 		return os.Rename(tempPath, x509CertPath)
-
 	}
-	return nil
 }
 
 // Beware, this function has inverted path.... at the beggining
@@ -299,19 +302,19 @@ func insertSSHCertIntoAgentORWriteToFilesystem(certText []byte,
 		return nil
 	}
 	logger.Debugf(1, "Non fatal, failed to insert into agent without expiration")
-	encodedSigner, err := x509.MarshalPKCS8PrivateKey(signer)
+	encodedSigner, err := ssh.MarshalPrivateKey(signer, "")
 	if err != nil {
 		return err
 	}
 	err = ioutil.WriteFile(
 		privateKeyPath,
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedSigner}),
+		pem.EncodeToMemory(encodedSigner),
 		0600)
 	if err != nil {
 		return err
 	}
 	// now we need to write the certificate
-	sshCertPath := privateKeyPath + ".pub"
+	sshCertPath := privateKeyPath + "-cert.pub"
 	return ioutil.WriteFile(sshCertPath, certText, 0644)
 }
 
@@ -335,10 +338,14 @@ func setupCerts(
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) error {
-	signers := makeSigners()
+	keyType, err := keyPreferenceFromString(configContents.Base.PreferredKeyType)
+	if err != nil {
+		return err
+	}
+	signers := makeSigners(keyType)
 	//initialize the client connection
 	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
-	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	err = backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
 	if err != nil {
 		return err
 	}
@@ -374,21 +381,22 @@ func setupCerts(
 
 		}
 	}
+	logger.Debugf(1, "SetupCerts: authentication Complete")
 	if err := signers.Wait(); err != nil {
 		return err
 	}
-	x509Cert, err := twofa.DoCertRequest(signers.X509Rsa, client, userName,
+	x509Cert, err := twofa.DoCertRequest(signers.X509, client, userName,
 		baseUrl, "x509", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
 	}
-	kubernetesCert, err := twofa.DoCertRequest(signers.X509Rsa, client,
+	kubernetesCert, err := twofa.DoCertRequest(signers.X509, client,
 		userName, baseUrl, "x509-kubernetes", configContents.Base.AddGroups,
 		userAgentString, logger)
 	if err != nil {
 		logger.Debugf(0, "kubernetes cert not available")
 	}
-	sshRsaCert, err := twofa.DoCertRequest(signers.SshRsa, client, userName,
+	sshRsaCert, err := twofa.DoCertRequest(signers.SshMain, client, userName,
 		baseUrl, "ssh", configContents.Base.AddGroups, userAgentString, logger)
 	if err != nil {
 		return err
@@ -418,18 +426,19 @@ func setupCerts(
 			return err
 		}
 	}
+	keySuffix := "-" + configContents.Base.PreferredKeyType
 	err = insertSSHCertIntoAgentORWriteToFilesystem(sshRsaCert,
-		signers.SshRsa,
-		FilePrefix+"-rsa",
+		signers.SshMain,
+		FilePrefix+keySuffix,
 		userName,
-		sshKeyPath+"-rsa",
+		sshKeyPath+keySuffix,
 		confirmKeyUse,
 		logger)
 	if err != nil {
 		return err
 	}
 	// Now x509
-	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509Rsa)
+	encodedx509Signer, err := x509.MarshalPKCS8PrivateKey(signers.X509)
 	if err != nil {
 		return err
 	}
@@ -485,7 +494,7 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	} else {
 		dialer = rawDialer
 	}
-	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13}
 	return util.GetHttpClient(tlsConfig, dialer)
 }
 
@@ -536,6 +545,14 @@ func mainWithError(stdout io.Writer, logger log.DebugLogger) error {
 	}
 	if *cliFilePrefix != "" {
 		FilePrefix = *cliFilePrefix
+	}
+	if *preferredKeyType != "" {
+		//prefKey := *preferredKeyType
+		_, err = keyPreferenceFromString(*preferredKeyType)
+		if err != nil {
+			return fmt.Errorf("Invalid preferredKey type")
+		}
+		config.Base.PreferredKeyType = *preferredKeyType
 	}
 	if flag.Arg(0) == "aws-role-cert" {
 		err = generateAwsRoleCert(homeDir, config, client, logger)

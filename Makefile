@@ -10,7 +10,7 @@ endif
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION?=1.15.4
+VERSION?=1.17.1
 DEFAULT_HOST?=
 VERSION_FLAVOUR?=
 EXTRA_LDFLAGS?=
@@ -101,6 +101,10 @@ test:
 
 verbose-test:
 	go test -v ./...
+
+
+fuzz:
+	go test github.com/Cloud-Foundations/keymaster/lib/certgen -fuzztime 30s -fuzz  FuzzDecodeIPV4AddressChoice 
 
 format:
 	gofmt -s -w .

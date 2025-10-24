@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/tls"
@@ -30,6 +31,7 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
@@ -55,7 +57,8 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/cloudflare/cfssl/revoke"
-	"github.com/duo-labs/webauthn/webauthn"
+
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -193,7 +196,8 @@ type RuntimeState struct {
 	ClientCAPool                 *x509.CertPool
 	HostIdentity                 string
 	KerberosRealm                *string
-	caCertDer                    []byte
+	caCertDer                    [][]byte
+	selfRoleCaCertDer            []byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
 	localAuthData                map[string]localUserData
@@ -207,6 +211,7 @@ type RuntimeState struct {
 	db                           *sql.DB
 	dbType                       string
 	cacheDB                      *sql.DB
+	dbDone                       chan struct{}
 	remoteDBQueryTimeout         time.Duration
 	htmlTemplate                 *htmltemplate.Template
 	passwordChecker              pwauth.PasswordAuthenticator
@@ -364,6 +369,11 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
+func generateSelfRoleRequestingCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error) {
+	const rrCAorgName = "role-requesting-CA"
+	return certgen.GenSelfSignedCACert(rrCAorgName+"."+state.HostIdentity, rrCAorgName, keySigner)
+}
+
 func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 	for {
 		state.Mutex.Lock()
@@ -461,6 +471,9 @@ func browserSupportsU2F(r *http.Request) bool {
 		return true
 	}
 	if strings.Contains(r.UserAgent(), "Firefox/") {
+		return true
+	}
+	if strings.Contains(r.UserAgent(), "Safari/") {
 		return true
 	}
 	logger.Debugf(3, "browser doest NOT support u2f")
@@ -792,6 +805,15 @@ func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509
 		if err != nil {
 			return "", time.Time{}, err
 		}
+		userPubKeyFP, err := getKeyFingerprint(chain[0].PublicKey)
+		if err != nil {
+			return "", time.Time{}, err
+		}
+		for _, revokedKeyFP := range state.Config.DenyTrustData.KeyDenyFPsshSha256 {
+			if userPubKeyFP == revokedKeyFP {
+				return "", time.Time{}, fmt.Errorf("revoked key with FP:%s", revokedKeyFP)
+			}
+		}
 		for _, key := range state.KeymasterPublicKeys {
 			fp, err := getKeyFingerprint(key)
 			if err != nil {
@@ -867,36 +889,45 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.logger.Debugf(3,
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
-			if (requiredAuthType & AuthTypeKeymasterX509) != 0 {
-				tlsAuthUser, notBefore, err :=
-					state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
-				if err == nil && tlsAuthUser != "" {
-					return &authInfo{
-						AuthType: AuthTypeKeymasterX509,
-						IssuedAt: notBefore,
-						Username: tlsAuthUser,
-					}, nil
-				}
+			var authData authInfo
+			tlsAuthUser, notBefore, err :=
+				state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
+			if err == nil && tlsAuthUser != "" {
+				state.logger.Debugf(4, "Auth, Is keymastercert")
+				authData.AuthType = authData.AuthType | AuthTypeKeymasterX509
+				authData.IssuedAt = notBefore
+				authData.Username = tlsAuthUser
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
 				clientName, notBefore, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
-				if userErr != nil {
-					state.writeFailureResponse(w, r, http.StatusForbidden,
-						fmt.Sprintf("%s", userErr))
-					return nil, userErr
+				// if not keymasterd cert AND not ipcert either then we return
+				// more explicit errors
+				if authData.Username == "" {
+					state.logger.Printf("after eval, but username is empty")
+					if userErr != nil {
+						state.writeFailureResponse(w, r, http.StatusForbidden,
+							fmt.Sprintf("%s", userErr))
+						return nil, userErr
+					}
+					if err != nil {
+						state.writeFailureResponse(w, r,
+							http.StatusInternalServerError, "")
+						return nil, err
+					}
 				}
-				if err != nil {
-					state.writeFailureResponse(w, r,
-						http.StatusInternalServerError, "")
-					return nil, err
+
+				if err == nil && userErr == nil {
+					authData.AuthType = authData.AuthType | AuthTypeIPCertificate
+					authData.IssuedAt = notBefore
+					authData.Username = clientName
 				}
-				return &authInfo{
-					AuthType: AuthTypeIPCertificate,
-					IssuedAt: notBefore,
-					Username: clientName,
-				}, nil
 			}
+			if authData.Username != "" {
+				state.logger.Debugf(4, "returning tls cert authinfo")
+				return &authData, nil
+			}
+			state.logger.Debugf(4, "NOT returning tls cert authinfo authData=%+v", authData)
 		}
 	}
 	// Next we check for cookies
@@ -1033,6 +1064,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 	target := r.URL.Path[len(publicPath):]
 
+	caPubMaxSeconds := 30
 	switch target {
 	case "loginForm":
 		//fmt.Fprintf(w, "%s", loginFormText)
@@ -1040,11 +1072,46 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		state.writeHTMLLoginPage(w, r, 200, "", profilePath, "")
 		return
 	case "x509ca":
-		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
-
-		w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+		var outCABuf bytes.Buffer
+		for _, derCert := range state.caCertDer {
+			err := pem.Encode(&outCABuf, &pem.Block{Type: "CERTIFICATE", Bytes: derCert})
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing pemCA")
+				return
+			}
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymasterx509CA.pem"`)
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "%s", pemCert)
+		outCABuf.WriteTo(w)
+	case "sshca":
+		var outCABuf bytes.Buffer
+		for _, pub := range state.KeymasterPublicKeys {
+			sshPub, err := ssh.NewPublicKey(pub)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+			pubBytes := ssh.MarshalAuthorizedKey(sshPub)
+			_, err = fmt.Fprintf(&outCABuf, "%s", pubBytes)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				logger.Printf("Error computing sshCA")
+				return
+			}
+
+		}
+		w.Header().Add("Cache-Control",
+			fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate",
+				caPubMaxSeconds))
+		w.Header().Set("Content-Disposition", `attachment; filename=keymastersshCCA.pub"`)
+		w.WriteHeader(200)
+		outCABuf.WriteTo(w)
+
 	default:
 		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
@@ -1899,14 +1966,17 @@ func main() {
 		serviceMux.HandleFunc(paths.VerifyAuthToken,
 			runtimeState.VerifyAuthTokenHandler)
 	}
+	serviceMux.HandleFunc(getRoleRequestingPath, runtimeState.roleRequetingCertGenHandler)
+	serviceMux.HandleFunc(refreshRoleRequestingCertPath, runtimeState.refreshRoleRequestingCertGenHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
-		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
-		GetCertificate:           runtimeState.certManager.GetCertificate,
-		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		ClientCAs:      runtimeState.ClientCAPool,
+		ClientAuth:     tls.VerifyClientCertIfGiven,
+		GetCertificate: runtimeState.certManager.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256,
+			tls.X25519, tls.X25519MLKEM768},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -1959,21 +2029,30 @@ func main() {
 	if runtimeState.ClientCAPool == nil {
 		runtimeState.ClientCAPool = x509.NewCertPool()
 	}
-	myCert, err := x509.ParseCertificate(runtimeState.caCertDer)
+	for _, derCert := range runtimeState.caCertDer {
+		myCert, err := x509.ParseCertificate(derCert)
+		if err != nil {
+			panic(err)
+		}
+		runtimeState.ClientCAPool.AddCert(myCert)
+	}
+	parsedCert, err := x509.ParseCertificate(runtimeState.selfRoleCaCertDer)
 	if err != nil {
 		panic(err)
 	}
-	runtimeState.ClientCAPool.AddCert(myCert)
+	runtimeState.ClientCAPool.AddCert(parsedCert)
+
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
 	// when optional.
 	// Our usage shows this is less than 1% of users so we are now mandating
 	// verification on issues we will need to update clientAuth back  to tls.RequestClientCert
 	serviceTLSConfig := &tls.Config{
-		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
-		GetCertificate:           runtimeState.certManager.GetCertificate,
-		MinVersion:               tls.VersionTLS12,
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		ClientCAs:      runtimeState.ClientCAPool,
+		ClientAuth:     tls.VerifyClientCertIfGiven,
+		GetCertificate: runtimeState.certManager.GetCertificate,
+		MinVersion:     tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256,
+			tls.X25519, tls.X25519MLKEM768},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,

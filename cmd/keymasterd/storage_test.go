@@ -61,6 +61,7 @@ func TestDBCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state.dbDone <- struct{}{}
 }
 
 func TestFetchFromCache(t *testing.T) {
@@ -106,4 +107,5 @@ func TestFetchFromCache(t *testing.T) {
 	if ok {
 		t.Fatal("This should have failed for invalid user")
 	}
+	state.dbDone <- struct{}{}
 }

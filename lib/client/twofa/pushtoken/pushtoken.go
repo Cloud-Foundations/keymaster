@@ -2,6 +2,7 @@ package pushtoken
 
 import (
 	"bufio"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,11 @@ import (
 )
 
 const vipCheckTimeoutSecs = 180
+
+func debugLogCert(messageSuffix string, cert *x509.Certificate, logger log.DebugLogger) {
+	logger.Debugf(2, "%s.issuer=%+v", messageSuffix, cert.Issuer)
+	logger.Debugf(2, "%s.subject=%+v", messageSuffix, cert.Subject)
+}
 
 func startGenericPush(client *http.Client,
 	baseURL string,
@@ -42,6 +48,14 @@ func startGenericPush(client *http.Client,
 		return err
 	}
 	defer pushStartResp.Body.Close()
+
+	if pushStartResp.TLS != nil {
+		debugLogCert("startGenericPush peeerCerts[0]", pushStartResp.TLS.PeerCertificates[0], logger)
+		if pushStartResp.TLS.VerifiedChains != nil {
+			debugLogCert("startGenericPush verifiedcerts[0]", pushStartResp.TLS.VerifiedChains[0][0], logger)
+		}
+	}
+
 	// since we dont care about content we just consume it all.
 	io.Copy(ioutil.Discard, pushStartResp.Body)
 	if pushStartResp.StatusCode != 200 {
@@ -94,6 +108,7 @@ func doGenericPushCheck(client *http.Client,
 	baseURL string,
 	pushType string,
 	userAgentString string,
+	codeIsDone <-chan bool,
 	logger log.DebugLogger,
 	errorReturnDuration time.Duration) error {
 
@@ -118,7 +133,15 @@ func doGenericPushCheck(client *http.Client,
 			logger.Printf("") //To do a CR
 			return nil
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case codeSuccess := <-codeIsDone:
+			if codeSuccess {
+				return nil
+			}
+			continue
+		case <-time.After(2 * time.Second):
+			logger.Debugf(1, "doGenericPushCheck: timeout on checkGenericPollStatus loop")
+		}
 	}
 
 	err = errors.New("Vip Push Checked timeout out")
@@ -178,7 +201,7 @@ func genericAuthenticateWithToken(
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		logger.Printf("got error from login call %s", loginResp.Status)
-		return err
+		return fmt.Errorf("Failed to authenticate with token")
 	}
 
 	loginJSONResponse := proto.LoginResponse{}
@@ -203,14 +226,19 @@ func doGenericTokenPushAuthenticate(
 
 	timeout := time.Duration(time.Duration(vipCheckTimeoutSecs) * time.Second)
 	ch := make(chan error, 1)
+	doneCh := make(chan bool, 1)
 	go func() {
 		err := genericAuthenticateWithToken(client, baseURL, pushType, userAgentString, logger)
+		if err == nil {
+			doneCh <- true
+		}
 		ch <- err
 	}()
 	go func() {
 		err := doGenericPushCheck(client, baseURL,
 			pushType,
 			userAgentString,
+			doneCh,
 			logger, timeout)
 		ch <- err
 
@@ -226,5 +254,4 @@ func doGenericTokenPushAuthenticate(
 		err := fmt.Errorf("%s timeout", pushType)
 		return err
 	}
-	return nil
 }

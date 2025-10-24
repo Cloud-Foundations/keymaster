@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"crypto/rand"
@@ -8,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -21,20 +23,66 @@ import (
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/client/net"
-	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/http2"
 	"golang.org/x/net/publicsuffix"
+	"golang.org/x/term"
 )
 
 const rsaKeySize = 2048
 
+const maxPasswordLength = 512
+
 func getUserCreds(userName string) (password []byte, err error) {
 	fmt.Printf("Password for %s: ", userName)
-	password, err = gopass.GetPasswd()
-	if err != nil {
-		return nil, err
-		// Handle gopass.ErrInterrupted or getch() read error
+
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		password, err = term.ReadPassword(int(os.Stdin.Fd()))
+
+		// Always print newline, even on error
+		fmt.Println()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read password: %w", err)
+		}
+	} else {
+		// Read password from stdin without terminal operations
+		var pass []byte
+		reader := bufio.NewReader(os.Stdin)
+
+		for counter := 0; counter <= maxPasswordLength; counter++ {
+			b, err := reader.ReadByte()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read password: %w", err)
+			}
+
+			switch b {
+			case 0: // NULL byte - ignore
+				continue
+			case 127, 8: // Backspace
+				if len(pass) > 0 {
+					pass = pass[:len(pass)-1]
+				}
+				continue // Skip the current iteration after removing character
+			case 13, 10: // Enter/newline
+				password = pass
+				return password, nil
+			case 3: // Ctrl-C
+				return nil, errors.New("interrupted")
+			default:
+				pass = append(pass, b)
+			}
+		}
+
+		// If we get here, we've exceeded maxPasswordLength
+		return nil, errors.New("maximum length exceeded")
 	}
+
+	// Check password length
+	if len(password) > maxPasswordLength {
+		return nil, errors.New("maximum length exceeded")
+	}
+
 	return password, nil
 }
 
@@ -122,6 +170,11 @@ func getHttpClient(tlsConfig *tls.Config,
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
 		DialContext:     dialer.DialContext,
+	}
+	var err error
+	err = http2.ConfigureTransport(clientTransport)
+	if err != nil {
+		return nil, err
 	}
 
 	// proxy env variables in ascending order of preference, lower case 'http_proxy' dominates

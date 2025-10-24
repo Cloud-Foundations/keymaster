@@ -9,6 +9,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	"fmt"
+
 	//"log"
 	"math/big"
 	"net"
@@ -26,7 +28,7 @@ type IpAdressFamily struct {
 var oidIPAddressDelegation = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 7}
 var ipV4FamilyEncoding = []byte{0, 1, 1}
 
-//For now ipv4 only
+// For now ipv4 only
 func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 	ones, bits := netBlock.Mask.Size()
 	if bits != 32 {
@@ -80,7 +82,11 @@ func genDelegationExtension(ipv4Netblocks []net.IPNet) (*pkix.Extension, error) 
 
 func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	var encodedIP [4]byte
-	for i := 0; (i * 8) < encodedBlock.BitLength; i++ {
+	if encodedBlock.BitLength < 1 || encodedBlock.BitLength > 32 {
+		failval := net.IPNet{}
+		return failval, fmt.Errorf("invalid encoded bit length")
+	}
+	for i := 0; (i*8) < encodedBlock.BitLength && i < len(encodedBlock.Bytes); i++ {
 		encodedIP[i] = encodedBlock.Bytes[i]
 	}
 	netBlock := net.IPNet{
@@ -90,7 +96,31 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	return netBlock, nil
 }
 
-//
+// This function decodes a delegation extension doing both the
+// asn1 parsing of the data and the decoding of the parts
+func decodeDelegationExtension(extension *pkix.Extension) ([]net.IPNet, error) {
+	var ipAddressFamilyList []IpAdressFamily
+	var err error
+	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
+	if err != nil {
+		return nil, err
+	}
+	var rvalue []net.IPNet
+	for _, addressList := range ipAddressFamilyList {
+		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
+			return nil, fmt.Errorf("We only support ipv4 netblocks")
+		}
+		for _, encodedNetblock := range addressList.Addresses {
+			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+			if err != nil {
+				return nil, err
+			}
+			rvalue = append(rvalue, decoded)
+		}
+	}
+	return rvalue, nil
+}
+
 type subjectPublicKeyInfo struct {
 	Algorithm        pkix.AlgorithmIdentifier
 	SubjectPublicKey asn1.BitString
@@ -174,24 +204,28 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 	if extension == nil {
 		return false, nil
 	}
-	var ipAddressFamilyList []IpAdressFamily
-	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
+	parsedNetblocks, err := decodeDelegationExtension(extension)
 	if err != nil {
 		return false, err
 	}
-	for _, addressList := range ipAddressFamilyList {
-		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
-			continue
-		}
-		for _, encodedNetblock := range addressList.Addresses {
-			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
-			if err != nil {
-				return false, err
-			}
-			if decoded.Contains(remoteIP) {
-				return true, nil
-			}
+	for _, netblock := range parsedNetblocks {
+		if netblock.Contains(remoteIP) {
+			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func ExtractIPNetsFromIPRestrictedX509(userCert *x509.Certificate) ([]net.IPNet, error) {
+	var extension *pkix.Extension = nil
+	for _, certExtension := range userCert.Extensions {
+		if certExtension.Id.Equal(oidIPAddressDelegation) {
+			extension = &certExtension
+			break
+		}
+	}
+	if extension == nil {
+		return nil, fmt.Errorf("extension not found")
+	}
+	return decodeDelegationExtension(extension)
 }
