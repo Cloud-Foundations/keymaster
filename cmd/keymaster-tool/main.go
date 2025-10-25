@@ -16,6 +16,7 @@ import (
 	stdlog "log"
 	"os"
 
+	"github.com/alecthomas/kong"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
@@ -43,6 +44,32 @@ var (
 	printPublicFilenameIn = printPublicCmd.Flag("inFilename", "File to Read").Required().String()
 	printFormat           = printPublicCmd.Flag("printFormat", "format to use pem|ssh").Default("pem").String()
 )
+
+// begin kong migration
+type GenerateCmd struct {
+	KeyType string `help:"Type of key (ed25519|rsa)" default:"ed25519"`
+}
+
+type PrintPublicCmd struct {
+	InFilename  string `help:"file Ro Read" required:""`
+	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
+}
+
+type Globals struct {
+	Debug     bool            `short:"D" help:"Enable debug mode"`
+	SecretARN string          `help:"location of secret to use"`
+	AwsRegion string          `help:"AWS region for secret"`
+	Logger    log.DebugLogger `kong:"-"`
+}
+
+type CLI struct {
+	Globals
+
+	Generate    GenerateCmd    `cmd:"" help:"Attach local standard input, output, and error streams to a running container"`
+	PrintPublic PrintPublicCmd `cmd:"" help:"PrintPublicKey from AWS data"`
+}
+
+// end kong migration vats
 
 const rsaBits = 3072
 
@@ -122,7 +149,7 @@ func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, 
 			return err
 		}
 	default:
-		return fmt.Errorf("bad key type")
+		return fmt.Errorf("bad key type '%s'", keyType)
 	}
 	armoredBytes, err := armoredEncryptPrivateKey(privateKey, passPhrase)
 	if err != nil {
@@ -173,7 +200,7 @@ func goSSHPubToFileString(pub ssh.PublicKey, comment string) (string, error) {
 	return pub.Type() + " " + encoded + " " + comment, nil
 }
 
-//copied from https://golang.org/src/crypto/tls/generate_cert.go
+// copied from https://golang.org/src/crypto/tls/generate_cert.go
 func publicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
@@ -235,7 +262,58 @@ func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outW
 	}
 }
 
+// Kong migration p2
+
+func (cmd *GenerateCmd) Run(globals *Globals) error {
+	logger := globals.Logger
+	passPhrase, err := getPassPhrase(globals.SecretARN, globals.AwsRegion)
+	if err != nil {
+		return err
+	}
+	err = generateNewKeyPair(passPhrase, cmd.KeyType, os.Stdout, logger)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cmd *PrintPublicCmd) Run(globals *Globals) error {
+	logger := globals.Logger
+	passPhrase, err := getPassPhrase(globals.SecretARN, globals.AwsRegion)
+	if err != nil {
+		return err
+	}
+	err = printPublicKey(passPhrase, cmd.InFilename, cmd.PrintFormat, os.Stdout, logger)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// end of king migraiton p2
+
 func main() {
+	logger := cmdlogger.New()
+	cli := CLI{
+		Globals: Globals{
+			Logger: logger,
+		},
+	}
+	ctx := kong.Parse(&cli,
+		kong.Name("keymaster-tool"),
+		kong.Description("A self-sufficient runtime for containers"),
+		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+		}),
+		kong.Vars{
+			"version": "0.0.1",
+		})
+	err := ctx.Run(&cli.Globals)
+	ctx.FatalIfErrorf(err)
+}
+
+func oldmain() {
 
 	logger := cmdlogger.New()
 	//var err error
