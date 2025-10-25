@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -15,10 +14,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/secretsmanager"
-	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
@@ -27,44 +22,9 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 )
 
-const rsaBits = 3072
-
-// begin kong migration
+// /
 type GenerateCmd struct {
 	KeyType string `help:"Type of key (ed25519|rsa)" default:"ed25519"`
-}
-
-type PrintPublicCmd struct {
-	InFilename  string `help:"file Ro Read" required:""`
-	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
-}
-
-func getPasswordFromConsole() ([]byte, error) {
-	fmt.Fprintf(os.Stderr, "Passphrase for key ")
-	return gopass.GetPasswd()
-}
-
-func getPassphraseFromAWS(awsSecretId string, awsRegion string) ([]byte, error) {
-	svc := secretsmanager.New(session.New(),
-		aws.NewConfig().WithRegion(awsRegion))
-	input := &secretsmanager.GetSecretValueInput{
-		SecretId:     aws.String(awsSecretId),
-		VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
-	}
-	result, err := svc.GetSecretValue(input)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(*result.SecretString), nil
-
-}
-
-func getPassPhrase(secretArn string, awsRegion string) ([]byte, error) {
-	if secretArn != "" {
-		return getPassphraseFromAWS(secretArn, awsRegion)
-	}
-	return getPasswordFromConsole()
-
 }
 
 func armoredEncryptPrivateKey(privateKey interface{}, passphrase []byte) ([]byte, error) {
@@ -126,6 +86,25 @@ func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, 
 	return err
 }
 
+func (cmd *GenerateCmd) Run(globals *Globals) error {
+	logger := globals.Logger
+	passPhrase, err := getPassPhrase(globals.SecretARN, globals.AwsRegion)
+	if err != nil {
+		return err
+	}
+	err = generateNewKeyPair(passPhrase, cmd.KeyType, os.Stdout, logger)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// ////////
+type PrintPublicCmd struct {
+	InFilename  string `help:"file Ro Read" required:""`
+	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
+}
+
 func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
 	decbuf := bytes.NewBuffer(cipherText)
 	armorBlock, err := armor.Decode(decbuf)
@@ -164,22 +143,6 @@ func goSSHPubToFileString(pub ssh.PublicKey, comment string) (string, error) {
 	pubBytes := pub.Marshal()
 	encoded := base64.StdEncoding.EncodeToString(pubBytes)
 	return pub.Type() + " " + encoded + " " + comment, nil
-}
-
-// copied from https://golang.org/src/crypto/tls/generate_cert.go
-func publicKey(priv interface{}) interface{} {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &k.PublicKey
-	case *ecdsa.PrivateKey:
-		return &k.PublicKey
-	case ed25519.PrivateKey:
-		return k.Public().(ed25519.PublicKey)
-	case *ed25519.PrivateKey:
-		return k.Public().(*ed25519.PublicKey)
-	default:
-		return nil
-	}
 }
 
 func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outWriter io.Writer, logger log.DebugLogger) error {
@@ -226,21 +189,6 @@ func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outW
 	default:
 		return fmt.Errorf("invalid outpur format")
 	}
-}
-
-// Kong migration p2
-
-func (cmd *GenerateCmd) Run(globals *Globals) error {
-	logger := globals.Logger
-	passPhrase, err := getPassPhrase(globals.SecretARN, globals.AwsRegion)
-	if err != nil {
-		return err
-	}
-	err = generateNewKeyPair(passPhrase, cmd.KeyType, os.Stdout, logger)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (cmd *PrintPublicCmd) Run(globals *Globals) error {

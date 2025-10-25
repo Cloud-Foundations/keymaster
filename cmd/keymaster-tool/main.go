@@ -7,7 +7,6 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log"
 )
 
-// begin kong migration
 type Globals struct {
 	Debug     bool            `short:"D" help:"Enable debug mode"`
 	SecretARN string          `help:"location of secret to use"`
@@ -18,8 +17,8 @@ type Globals struct {
 type CLI struct {
 	Globals
 
-	Generate    GenerateCmd    `cmd:"" help:"Attach local standard input, output, and error streams to a running container"`
-	PrintPublic PrintPublicCmd `cmd:"" help:"PrintPublicKey from AWS data"`
+	GenerateKey GenerateCmd    `cmd:"" help:"Genereate a new encrypted keypair to stdout"`
+	PrintPublic PrintPublicCmd `cmd:"" help:"Print public key from encrypted file"`
 }
 
 func main() {
@@ -31,7 +30,7 @@ func main() {
 	}
 	ctx := kong.Parse(&cli,
 		kong.Name("keymaster-tool"),
-		kong.Description("A self-sufficient runtime for containers"),
+		kong.Description("A set of tools for keymaster secret management"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
