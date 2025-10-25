@@ -13,10 +13,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	stdlog "log"
 	"os"
 
-	"github.com/alecthomas/kong"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
@@ -24,26 +22,12 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/Cloud-Foundations/Dominator/lib/log/cmdlogger"
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 )
 
-var (
-	app         = kingpin.New("keyutil", "Tooling for puresigner2 secret management")
-	debug       = app.Flag("debug", "Enable debug mode.").Bool()
-	inSecretARN = app.Flag("secret-arn", "Location of secret to use").String()
-	inAWSRegion = app.Flag("aws-region", "AWS region for secret").Default("us-west-2").String()
-
-	generateCmd = app.Command("generate-new", "Generate a new keypair and encrypt")
-	keyTypeIn   = generateCmd.Flag("type", "Type of Key (ed25519 | rsa)").Default("ed25519").String()
-
-	printPublicCmd        = app.Command("printPublic", "Verify EMS secret")
-	printPublicFilenameIn = printPublicCmd.Flag("inFilename", "File to Read").Required().String()
-	printFormat           = printPublicCmd.Flag("printFormat", "format to use pem|ssh").Default("pem").String()
-)
+const rsaBits = 3072
 
 // begin kong migration
 type GenerateCmd struct {
@@ -54,10 +38,6 @@ type PrintPublicCmd struct {
 	InFilename  string `help:"file Ro Read" required:""`
 	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
 }
-
-// end kong migration vats
-
-const rsaBits = 3072
 
 func getPasswordFromConsole() ([]byte, error) {
 	fmt.Fprintf(os.Stderr, "Passphrase for key ")
@@ -274,56 +254,4 @@ func (cmd *PrintPublicCmd) Run(globals *Globals) error {
 		return err
 	}
 	return nil
-}
-
-// end of king migraiton p2
-
-func newmain() {
-	logger := cmdlogger.New()
-	cli := CLI{
-		Globals: Globals{
-			Logger: logger,
-		},
-	}
-	ctx := kong.Parse(&cli,
-		kong.Name("keymaster-tool"),
-		kong.Description("A self-sufficient runtime for containers"),
-		kong.UsageOnError(),
-		kong.ConfigureHelp(kong.HelpOptions{
-			Compact: true,
-		}),
-		kong.Vars{
-			"version": "0.0.1",
-		})
-	err := ctx.Run(&cli.Globals)
-	ctx.FatalIfErrorf(err)
-}
-
-func oldmain() {
-
-	logger := cmdlogger.New()
-	//var err error
-	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
-	// Register user
-	case generateCmd.FullCommand():
-		passPhrase, err := getPassPhrase(*inSecretARN, *inAWSRegion)
-		if err != nil {
-			stdlog.Fatalf("Error: %s", err)
-		}
-		err = generateNewKeyPair(passPhrase, *keyTypeIn, os.Stdout, logger)
-		if err != nil {
-			stdlog.Fatalf("Error: %s", err)
-		}
-	case printPublicCmd.FullCommand():
-		passPhrase, err := getPassPhrase(*inSecretARN, *inAWSRegion)
-		if err != nil {
-			stdlog.Fatalf("Error: %s", err)
-		}
-		err = printPublicKey(passPhrase, *printPublicFilenameIn, *printFormat, os.Stdout, logger)
-		if err != nil {
-			stdlog.Fatalf("Error: %s", err)
-		}
-
-	}
-
 }

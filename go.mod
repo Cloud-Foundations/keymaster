@@ -9,6 +9,7 @@ require (
 	github.com/Cloud-Foundations/golib v0.5.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168
+	github.com/alecthomas/kong v1.12.1
 	github.com/aws/aws-sdk-go v1.55.7
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
@@ -37,7 +38,6 @@ require (
 	golang.org/x/net v0.40.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/term v0.32.0
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/ldap.v2 v2.5.1
 	gopkg.in/yaml.v2 v2.4.0
 	mvdan.cc/sh/v3 v3.11.0
@@ -47,9 +47,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.2.0 // indirect
-	github.com/alecthomas/kong v1.12.1 // indirect
-	github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc // indirect
-	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.1 // indirect
