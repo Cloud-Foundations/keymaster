@@ -66,36 +66,36 @@ func serializePrivateKey(privateKey crypto.Signer, outWriter io.Writer) error {
 	return pem.Encode(outWriter, privateKeyPEM)
 }
 
-func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, logger log.DebugLogger) error {
+func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, logger log.DebugLogger) (crypto.PublicKey, error) {
 	var privateKey crypto.Signer
 	var err error
 	switch keyType {
 	case "ed25519":
 		_, privateKey, err = ed25519.GenerateKey(rand.Reader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	case "rsa":
 		privateKey, err = rsa.GenerateKey(rand.Reader, rsaBits)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	default:
-		return fmt.Errorf("bad key type '%s'", keyType)
+		return nil, fmt.Errorf("bad key type '%s'", keyType)
 	}
 	var plaintextBuffer bytes.Buffer
 	err = serializePrivateKey(privateKey, &plaintextBuffer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	armoredBytes, err := armorEncryptBytes(plaintextBuffer.Bytes(), passPhrase)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = outWriter.Write(armoredBytes)
 
-	return err
+	return privateKey.Public(), err
 }
 
 func (cmd *GenerateCmd) Run(globals *Globals) error {
@@ -104,7 +104,7 @@ func (cmd *GenerateCmd) Run(globals *Globals) error {
 	if err != nil {
 		return err
 	}
-	err = generateNewKeyPair(passPhrase, cmd.KeyType, os.Stdout, logger)
+	_, err = generateNewKeyPair(passPhrase, cmd.KeyType, os.Stdout, logger)
 	if err != nil {
 		return err
 	}
@@ -157,24 +157,7 @@ func goSSHPubToFileString(pub ssh.PublicKey, comment string) (string, error) {
 	return pub.Type() + " " + encoded + " " + comment, nil
 }
 
-func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outWriter io.Writer, logger log.DebugLogger) error {
-	inFile, err := os.Open(inFilename) // For read access.
-	if err != nil {
-		return err
-	}
-	defer inFile.Close()
-	cipherText, err := io.ReadAll(inFile)
-	if err != nil {
-		return err
-	}
-	signer, err := decryptDecodeArmoredPrivateKey(cipherText, passPhrase)
-	if err != nil {
-		return err
-	}
-	pubKey := publicKey(signer)
-	if pubKey == nil {
-		return fmt.Errorf("Invalid private key type")
-	}
+func serializePublic(pubKey crypto.PublicKey, outFormat string, outWriter io.Writer) error {
 	switch outFormat {
 	case "pem":
 		pubKeyBytes, err := x509.MarshalPKIXPublicKey(pubKey)
@@ -201,6 +184,23 @@ func printPublicKey(passPhrase []byte, inFilename string, outFormat string, outW
 	default:
 		return fmt.Errorf("invalid outpur format")
 	}
+	return nil
+}
+
+func printPublicKey(passPhrase []byte, inFile io.Reader, outFormat string, outWriter io.Writer, logger log.DebugLogger) error {
+	cipherText, err := io.ReadAll(inFile)
+	if err != nil {
+		return err
+	}
+	signer, err := decryptDecodeArmoredPrivateKey(cipherText, passPhrase)
+	if err != nil {
+		return err
+	}
+	pubKey := publicKey(signer)
+	if pubKey == nil {
+		return fmt.Errorf("Invalid private key type")
+	}
+	return serializePublic(pubKey, outFormat, outWriter)
 }
 
 func (cmd *PrintPublicCmd) Run(globals *Globals) error {
@@ -209,7 +209,12 @@ func (cmd *PrintPublicCmd) Run(globals *Globals) error {
 	if err != nil {
 		return err
 	}
-	err = printPublicKey(passPhrase, cmd.InFilename, cmd.PrintFormat, os.Stdout, logger)
+	inFile, err := os.Open(cmd.InFilename) // For read access.
+	if err != nil {
+		return err
+	}
+	defer inFile.Close()
+	err = printPublicKey(passPhrase, inFile, cmd.PrintFormat, os.Stdout, logger)
 	if err != nil {
 		return err
 	}
