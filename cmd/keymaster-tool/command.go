@@ -27,7 +27,7 @@ type GenerateCmd struct {
 	KeyType string `help:"Type of key (ed25519|rsa)" default:"ed25519"`
 }
 
-func armoredEncryptPrivateKey(privateKey interface{}, passphrase []byte) ([]byte, error) {
+func armorEncryptBytes(plaintext []byte, passphrase []byte) ([]byte, error) {
 	encryptionType := "PGP MESSAGE"
 	armoredBuf := new(bytes.Buffer)
 	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
@@ -40,15 +40,8 @@ func armoredEncryptPrivateKey(privateKey interface{}, passphrase []byte) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	derPrivateKey, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	_, err = plaintextWriter.Write(plaintext)
 	if err != nil {
-		return nil, err
-	}
-	privateKeyPEM := &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: derPrivateKey,
-	}
-	if err := pem.Encode(plaintextWriter, privateKeyPEM); err != nil {
 		return nil, err
 	}
 	if err := plaintextWriter.Close(); err != nil {
@@ -58,6 +51,19 @@ func armoredEncryptPrivateKey(privateKey interface{}, passphrase []byte) ([]byte
 		return nil, err
 	}
 	return armoredBuf.Bytes(), nil
+}
+
+// privateKey MUST be an encodable type
+func serializePrivateKey(privateKey crypto.Signer, outWriter io.Writer) error {
+	derPrivateKey, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return err
+	}
+	privateKeyPEM := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: derPrivateKey,
+	}
+	return pem.Encode(outWriter, privateKeyPEM)
 }
 
 func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, logger log.DebugLogger) error {
@@ -77,7 +83,13 @@ func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, 
 	default:
 		return fmt.Errorf("bad key type '%s'", keyType)
 	}
-	armoredBytes, err := armoredEncryptPrivateKey(privateKey, passPhrase)
+	var plaintextBuffer bytes.Buffer
+	err = serializePrivateKey(privateKey, &plaintextBuffer)
+	if err != nil {
+		return err
+	}
+
+	armoredBytes, err := armorEncryptBytes(plaintextBuffer.Bytes(), passPhrase)
 	if err != nil {
 		return err
 	}
