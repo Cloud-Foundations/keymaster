@@ -113,7 +113,7 @@ func (cmd *GenerateCmd) Run(globals *Globals) error {
 
 // ////////
 type PrintPublicCmd struct {
-	InFilename  string `help:"file Ro Read" required:""`
+	InFilename  string `help:"Encrypted file to read" required:""`
 	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
 }
 

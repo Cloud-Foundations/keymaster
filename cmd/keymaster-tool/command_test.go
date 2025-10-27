@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 )
@@ -44,6 +48,53 @@ func TestEncryptDecrypt(t *testing.T) {
 	equal := bytes.Equal([]byte(inData), outData)
 	if !equal {
 		t.Fatal("roundtrip fail")
+	}
+
+}
+
+func TestSerializePublicKey(t *testing.T) {
+	//var publicKeySet []crypto.PublicKey
+	ed255Public, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	/*
+		publicKeySet = append(publicKeySet, ed25519PrivateKey.PublicKey())
+		rsaPrivateKey, err = rsa.GenerateKey(rand.Reader, rsaBits)
+		if err != nil {
+			return nil, err
+		}
+	*/
+	allowedFormats := []string{"ssh", "pem"}
+
+	for _, format := range allowedFormats {
+		var serializedBuffer bytes.Buffer
+		err = serializePublic(ed255Public, format, &serializedBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parsedPublic crypto.PublicKey
+		switch format {
+		case "pem":
+			parsedPublic, err = getPubKeyFromPem(serializedBuffer.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+		case "ssh":
+			sshParsedPublic, _, _, _, err := ssh.ParseAuthorizedKey(serializedBuffer.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			cp, ok := sshParsedPublic.(ssh.CryptoPublicKey)
+			if !ok {
+				t.Fatalf("not convertable publicc")
+			}
+			parsedPublic = cp.CryptoPublicKey()
+		}
+		if !ed255Public.Equal(parsedPublic) {
+			t.Fatalf("keys dont match")
+		}
+
 	}
 
 }
