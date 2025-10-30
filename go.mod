@@ -9,6 +9,7 @@ require (
 	github.com/Cloud-Foundations/golib v0.5.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168
+	github.com/alecthomas/kong v1.12.1
 	github.com/aws/aws-sdk-go v1.55.7
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
@@ -23,6 +24,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.0
 	github.com/go-piv/piv-go/v2 v2.3.0
 	github.com/go-webauthn/webauthn v0.13.0
+	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
 	github.com/lib/pq v1.10.9
 	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
 	github.com/mattn/go-sqlite3 v1.14.28
