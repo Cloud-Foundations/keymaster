@@ -1,18 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"time"
 
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-
 	"github.com/Cloud-Foundations/golib/pkg/awsutil/metadata"
 	"github.com/Cloud-Foundations/golib/pkg/awsutil/secretsmgr"
+	"github.com/Cloud-Foundations/keymaster/lib/cryptoutils"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 )
 
@@ -118,31 +114,6 @@ func (state *RuntimeState) tryAwsUnseal(
 	return state.unsealCA([]byte(password), "AWS Secrets Manager")
 }
 
-func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
-	decbuf := bytes.NewBuffer(cipherText)
-	armorBlock, err := armor.Decode(decbuf)
-	if err != nil {
-		return nil, errors.New("cannot decode armored file")
-	}
-	failed := false
-	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
-		// If the given passphrase isn't correct, the function will be called
-		// again, forever.
-		// This method will fail fast.
-		// Ref: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
-		if failed {
-			return nil, errors.New("decryption failed")
-		}
-		failed = true
-		return password, nil
-	}
-	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
-	if err != nil {
-		return nil, fmt.Errorf("cannot decrypt key: %s", err)
-	}
-	return ioutil.ReadAll(md.UnverifiedBody)
-}
-
 func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	state.Mutex.Lock()
 	defer state.Mutex.Unlock()
@@ -150,13 +121,13 @@ func (state *RuntimeState) unsealCA(password []byte, clientName string) error {
 	if state.Signer != nil {
 		return errors.New("signer not null, already unlocked")
 	}
-	signerPlaintextBytes, err := pgpDecryptFileData(state.SSHCARawFileContent, password)
+	signerPlaintextBytes, err := cryptoutils.PGPDecryptArmoredBytes(state.SSHCARawFileContent, password)
 	if err != nil {
 		return err
 	}
 	var ed25519PlaintextBytes []byte
 	if state.Ed25519CAFileContent != nil && len(state.Ed25519CAFileContent) > 0 {
-		ed25519PlaintextBytes, err = pgpDecryptFileData(state.Ed25519CAFileContent, password)
+		ed25519PlaintextBytes, err = cryptoutils.PGPDecryptArmoredBytes(state.Ed25519CAFileContent, password)
 		if err != nil {
 			state.logger.Printf("failed to decrypt Ed25519 key file")
 			return err

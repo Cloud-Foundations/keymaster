@@ -11,46 +11,18 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/Cloud-Foundations/golib/pkg/log"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	"github.com/Cloud-Foundations/keymaster/lib/cryptoutils"
 )
 
 // /
 type GenerateCmd struct {
 	KeyType string `help:"Type of key (ed25519|rsa)" default:"ed25519"`
-}
-
-func armorEncryptBytes(plaintext []byte, passphrase []byte) ([]byte, error) {
-	encryptionType := "PGP MESSAGE"
-	armoredBuf := new(bytes.Buffer)
-	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
-	if err != nil {
-		return nil, err
-	}
-	var plaintextWriter io.WriteCloser
-	plaintextWriter, err = openpgp.SymmetricallyEncrypt(armoredWriter,
-		passphrase, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	_, err = plaintextWriter.Write(plaintext)
-	if err != nil {
-		return nil, err
-	}
-	if err := plaintextWriter.Close(); err != nil {
-		return nil, err
-	}
-	if err := armoredWriter.Close(); err != nil {
-		return nil, err
-	}
-	return armoredBuf.Bytes(), nil
 }
 
 // privateKey MUST be an encodable type
@@ -89,7 +61,7 @@ func generateNewKeyPair(passPhrase []byte, keyType string, outWriter io.Writer, 
 		return nil, err
 	}
 
-	armoredBytes, err := armorEncryptBytes(plaintextBuffer.Bytes(), passPhrase)
+	armoredBytes, err := cryptoutils.PGPArmorEncryptBytes(plaintextBuffer.Bytes(), passPhrase)
 	if err != nil {
 		return nil, err
 	}
@@ -117,34 +89,8 @@ type PrintPublicCmd struct {
 	PrintFormat string `help:"Format for output (pem|ssh)" default:"ssh"`
 }
 
-func pgpDecryptFileData(cipherText []byte, password []byte) ([]byte, error) {
-	decbuf := bytes.NewBuffer(cipherText)
-	armorBlock, err := armor.Decode(decbuf)
-	if err != nil {
-		fmt.Printf("ciphertext=%s", string(cipherText))
-		return nil, fmt.Errorf("cannot decode armored file")
-	}
-	failed := false
-	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
-		// If the given passphrase isn't correct, the function will be called
-		// again, forever.
-		// This method will fail fast.
-		// Ref: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
-		if failed {
-			return nil, fmt.Errorf("decryption failed")
-		}
-		failed = true
-		return password, nil
-	}
-	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
-	if err != nil {
-		return nil, fmt.Errorf("cannot decrypt key: %s", err)
-	}
-	return ioutil.ReadAll(md.UnverifiedBody)
-}
-
 func decryptDecodeArmoredPrivateKey(cipherText []byte, passPhrase []byte) (crypto.Signer, error) {
-	plaintext, err := pgpDecryptFileData(cipherText, passPhrase)
+	plaintext, err := cryptoutils.PGPDecryptArmoredBytes(cipherText, passPhrase)
 	if err != nil {
 		return nil, err
 	}
