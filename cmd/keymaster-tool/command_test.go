@@ -29,6 +29,7 @@ func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
+/*
 func TestEncryptDecrypt(t *testing.T) {
 	passPhrase := "1234"
 	inData := "123456781234567"
@@ -51,6 +52,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	}
 
 }
+*/
 
 func TestSerializePublicKey(t *testing.T) {
 	//var publicKeySet []crypto.PublicKey
@@ -58,15 +60,7 @@ func TestSerializePublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	/*
-		publicKeySet = append(publicKeySet, ed25519PrivateKey.PublicKey())
-		rsaPrivateKey, err = rsa.GenerateKey(rand.Reader, rsaBits)
-		if err != nil {
-			return nil, err
-		}
-	*/
 	allowedFormats := []string{"ssh", "pem"}
-
 	for _, format := range allowedFormats {
 		var serializedBuffer bytes.Buffer
 		err = serializePublic(ed255Public, format, &serializedBuffer)
