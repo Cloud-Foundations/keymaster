@@ -7,7 +7,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 )
 
-// symmtrically gpg encrypted ED25519 private key with password "password"
+// symmetrically gpg encrypted ED25519 private key with password "password"
 // openssl genpkey  -algorithm ED25519 -out ed25519.pem
 // gpg --symmetric --cipher-algo AES256 --armor ed_25519.pem
 const encryptedTestEd25519PrivateKey = `-----BEGIN PGP MESSAGE-----

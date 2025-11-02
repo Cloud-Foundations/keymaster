@@ -32,7 +32,7 @@ func PGPDecryptArmoredBytes(cipherText []byte, password []byte) ([]byte, error) 
 	if err != nil {
 		return nil, fmt.Errorf("cannot decrypt key: %s", err)
 	}
-	return ioutil.ReadAll(md.UnverifiedBody)
+	return io.ReadAll(md.UnverifiedBody)
 }
 
 func PGPArmorEncryptBytes(plaintext []byte, passphrase []byte) ([]byte, error) {
