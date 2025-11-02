@@ -934,16 +934,16 @@ func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 	if err != nil {
 		return err
 	}
-	//var fileContent []byte
+	var fileContent []byte
 	if len(passphrase) < 1 {
-		//fileContent = plaintextBuffer.Bytes()
-		return os.WriteFile(filepath, plaintextBuffer.Bytes(), 0600)
+		fileContent = plaintextBuffer.Bytes()
+	} else {
+		fileContent, err = cryptoutils.PGPArmorEncryptBytes(plaintextBuffer.Bytes(), passphrase)
+		if err != nil {
+			return err
+		}
 	}
-	armoredBytes, err := cryptoutils.PGPArmorEncryptBytes(plaintextBuffer.Bytes(), passphrase)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath, armoredBytes, 0600)
+	return os.WriteFile(filepath, fileContent, 0600)
 }
 
 func getPassphrase() ([]byte, error) {
