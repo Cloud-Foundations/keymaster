@@ -38,6 +38,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/watchdog"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/admincache"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
+	"github.com/Cloud-Foundations/keymaster/lib/cryptoutils"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/command"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/htpassword"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth/ldap"
@@ -48,7 +49,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
@@ -901,6 +901,19 @@ func (state *RuntimeState) setupHA() error {
 	return nil
 }
 
+// privateKey MUST be an encodable type
+func pemSerializePrivateKey(privateKey crypto.Signer, outWriter io.Writer) error {
+	derPrivateKey, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return err
+	}
+	privateKeyPEM := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: derPrivateKey,
+	}
+	return pem.Encode(outWriter, privateKeyPEM)
+}
+
 func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 	filepath string) error {
 	privateKey, err := rsa.GenerateKey(rand.Reader, defaultRSAKeySize)
@@ -916,39 +929,21 @@ func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 	if err != nil {
 		return err
 	}
-	encryptionType := "PGP MESSAGE"
-	armoredBuf := new(bytes.Buffer)
-	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
+	var plaintextBuffer bytes.Buffer
+	err = pemSerializePrivateKey(privateKey, &plaintextBuffer)
 	if err != nil {
 		return err
 	}
-	var plaintextWriter io.WriteCloser
+	var fileContent []byte
 	if len(passphrase) < 1 {
-		plaintextWriter, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY,
-			0600)
+		fileContent = plaintextBuffer.Bytes()
 	} else {
-		plaintextWriter, err = openpgp.SymmetricallyEncrypt(armoredWriter,
-			passphrase, nil, nil)
+		fileContent, err = cryptoutils.PGPArmorEncryptBytes(plaintextBuffer.Bytes(), passphrase)
+		if err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		return err
-	}
-	privateKeyPEM := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	}
-	if err := pem.Encode(plaintextWriter, privateKeyPEM); err != nil {
-		return err
-	}
-	if err := plaintextWriter.Close(); err != nil {
-		return err
-	}
-	if len(passphrase) < 1 {
-		return nil
-	} else {
-		armoredWriter.Close()
-		return ioutil.WriteFile(filepath, armoredBuf.Bytes(), 0600)
-	}
+	return os.WriteFile(filepath, fileContent, 0600)
 }
 
 func getPassphrase() ([]byte, error) {

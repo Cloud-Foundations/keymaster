@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 
-	//"log"
 	"math/big"
 	"net"
 	"time"
@@ -26,23 +25,35 @@ type IpAdressFamily struct {
 }
 
 var oidIPAddressDelegation = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 7}
-var ipV4FamilyEncoding = []byte{0, 1, 1}
+var ipV4FamilyEncoding = []byte{0, 1, 1} //NOTE this is only for unicast addresses
+var ipV6FamilyEncoding = []byte{0, 2}
 
-// For now ipv4 only
-func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
+// Ipv4 or ipv6 only. We assume ipv4 addresses are all unicast
+func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, []byte, error) {
+	if netBlock.IP == nil {
+		return asn1.BitString{}, nil, fmt.Errorf("invalid network nil netblock")
+	}
+
 	ones, bits := netBlock.Mask.Size()
-	if bits != 32 {
-		return asn1.BitString{}, errors.New("not an ipv4 address")
+	if bits != 32 && bits != 128 {
+		return asn1.BitString{}, nil, errors.New("not an ipv4/ipv6 address")
 	}
 	//unusedLen = uint8(ones) % 8
 	var output []byte
 	outlen := ((ones + 7) / 8)
-	//log.Printf("outlen=%d, ones=%d", outlen, ones)
+	//log.Printf("outlen=%d, ones=%d bits=%d", outlen, ones, bits)
 	output = make([]byte, outlen, outlen)
 	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
-	increment := 12
-	if len(netBlock.IP) == 4 {
-		increment = 0
+	increment := 0
+	if len(netBlock.IP) == 16 && bits == 32 {
+		// ipv4 addresses can be written within an 16 byte block, in this
+		// case the address is shifted by 12 bytes
+		increment = 12
+	}
+	var outFamily []byte
+	outFamily = ipV4FamilyEncoding
+	if bits == 128 {
+		outFamily = ipV6FamilyEncoding
 	}
 	for i := 0; i < outlen; i++ {
 		output[i] = netBlock.IP[increment+i]
@@ -53,21 +64,37 @@ func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 		BitLength: ones,
 	}
 
-	return bitString, nil
+	return bitString, outFamily, nil
 }
 
 func genDelegationExtension(ipv4Netblocks []net.IPNet) (*pkix.Extension, error) {
 	ipv4AddressFamily := IpAdressFamily{
 		AddressFamily: ipV4FamilyEncoding,
 	}
+	ipv6AddressFamily := IpAdressFamily{
+		AddressFamily: ipV6FamilyEncoding,
+	}
+
 	for _, netblock := range ipv4Netblocks {
-		encodedNetBlock, err := encodeIpAddressChoice(netblock)
+		encodedNetBlock, addressFamily, err := encodeIpAddressChoice(netblock)
 		if err != nil {
 			return nil, err
 		}
-		ipv4AddressFamily.Addresses = append(ipv4AddressFamily.Addresses, encodedNetBlock)
+		switch addressFamily[1] {
+		case 1:
+			// NOTE: we will need to do some changes if we start using multicast addresses
+			ipv4AddressFamily.Addresses = append(ipv4AddressFamily.Addresses, encodedNetBlock)
+		case 2:
+			ipv6AddressFamily.Addresses = append(ipv6AddressFamily.Addresses, encodedNetBlock)
+		}
 	}
-	addressFamilyList := []IpAdressFamily{ipv4AddressFamily}
+	addressFamilyList := []IpAdressFamily{}
+	if len(ipv4AddressFamily.Addresses) > 0 {
+		addressFamilyList = append(addressFamilyList, ipv4AddressFamily)
+	}
+	if len(ipv6AddressFamily.Addresses) > 0 {
+		addressFamilyList = append(addressFamilyList, ipv6AddressFamily)
+	}
 
 	encodedAddressFamily, err := asn1.Marshal(addressFamilyList)
 	if err != nil {
@@ -82,7 +109,11 @@ func genDelegationExtension(ipv4Netblocks []net.IPNet) (*pkix.Extension, error) 
 
 func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	var encodedIP [4]byte
-	for i := 0; (i * 8) < encodedBlock.BitLength; i++ {
+	if encodedBlock.BitLength < 1 || encodedBlock.BitLength > 32 {
+		failval := net.IPNet{}
+		return failval, fmt.Errorf("invalid encoded bit length")
+	}
+	for i := 0; (i*8) < encodedBlock.BitLength && i < len(encodedBlock.Bytes); i++ {
 		encodedIP[i] = encodedBlock.Bytes[i]
 	}
 	netBlock := net.IPNet{
@@ -90,6 +121,63 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 		Mask: net.CIDRMask(encodedBlock.BitLength, 32),
 	}
 	return netBlock, nil
+}
+
+func decodeIPV6AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
+	//var encodedIP [16]byte
+	encodedIP := make([]byte, 16)
+	if encodedBlock.BitLength < 1 || encodedBlock.BitLength > 128 {
+		failval := net.IPNet{}
+		return failval, fmt.Errorf("invalid encoded bit length")
+	}
+	for i := 0; (i*8) < encodedBlock.BitLength && i < len(encodedBlock.Bytes); i++ {
+		encodedIP[i] = encodedBlock.Bytes[i]
+	}
+	netBlock := net.IPNet{
+		IP:   encodedIP,
+		Mask: net.CIDRMask(encodedBlock.BitLength, 128),
+	}
+	return netBlock, nil
+}
+
+// This function decodes a delegation extension doing both the
+// asn1 parsing of the data and the decoding of the parts
+func decodeDelegationExtension(extension *pkix.Extension) ([]net.IPNet, error) {
+	var ipAddressFamilyList []IpAdressFamily
+	var err error
+	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
+	if err != nil {
+		return nil, err
+	}
+	var rvalue []net.IPNet
+	for _, addressList := range ipAddressFamilyList {
+		knownFamily := false
+		if bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
+			knownFamily = true
+			for _, encodedNetblock := range addressList.Addresses {
+				decoded, err := decodeIPV4AddressChoice(encodedNetblock)
+				if err != nil {
+					return nil, err
+				}
+				rvalue = append(rvalue, decoded)
+			}
+		}
+		if bytes.Equal(addressList.AddressFamily, ipV6FamilyEncoding) {
+			knownFamily = true
+			for _, encodedNetblock := range addressList.Addresses {
+				decoded, err := decodeIPV6AddressChoice(encodedNetblock)
+				if err != nil {
+					return nil, err
+				}
+				rvalue = append(rvalue, decoded)
+			}
+
+		}
+		if !knownFamily {
+			return nil, fmt.Errorf("invalid/unknown address family")
+		}
+	}
+	return rvalue, nil
 }
 
 type subjectPublicKeyInfo struct {
@@ -175,23 +263,13 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 	if extension == nil {
 		return false, nil
 	}
-	var ipAddressFamilyList []IpAdressFamily
-	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
+	parsedNetblocks, err := decodeDelegationExtension(extension)
 	if err != nil {
 		return false, err
 	}
-	for _, addressList := range ipAddressFamilyList {
-		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
-			continue
-		}
-		for _, encodedNetblock := range addressList.Addresses {
-			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
-			if err != nil {
-				return false, err
-			}
-			if decoded.Contains(remoteIP) {
-				return true, nil
-			}
+	for _, netblock := range parsedNetblocks {
+		if netblock.Contains(remoteIP) {
+			return true, nil
 		}
 	}
 	return false, nil
@@ -199,7 +277,6 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 
 func ExtractIPNetsFromIPRestrictedX509(userCert *x509.Certificate) ([]net.IPNet, error) {
 	var extension *pkix.Extension = nil
-	var err error
 	for _, certExtension := range userCert.Extensions {
 		if certExtension.Id.Equal(oidIPAddressDelegation) {
 			extension = &certExtension
@@ -209,24 +286,5 @@ func ExtractIPNetsFromIPRestrictedX509(userCert *x509.Certificate) ([]net.IPNet,
 	if extension == nil {
 		return nil, fmt.Errorf("extension not found")
 	}
-	var ipAddressFamilyList []IpAdressFamily
-	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
-	if err != nil {
-		return nil, err
-	}
-	var rvalue []net.IPNet
-	for _, addressList := range ipAddressFamilyList {
-		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
-			//continue
-			return nil, fmt.Errorf("We only support ipv4 netblocks")
-		}
-		for _, encodedNetblock := range addressList.Addresses {
-			decoded, err := decodeIPV4AddressChoice(encodedNetblock)
-			if err != nil {
-				return nil, err
-			}
-			rvalue = append(rvalue, decoded)
-		}
-	}
-	return rvalue, nil
+	return decodeDelegationExtension(extension)
 }
