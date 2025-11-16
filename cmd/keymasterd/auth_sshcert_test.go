@@ -54,31 +54,27 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 		t.Fatal(err)
 	}
 	signerPub := ssh.MarshalAuthorizedKey(sshSigner.PublicKey())
-	t.Logf("signerpub ='%s'", string(signerPub))
 
 	state.websshauthenticator = sshcertauth.NewAuthenticator([]string{"localhost", "127.0.0.1"}, []string{string(signerPub)})
 	// TODO: This should be eventually be provided by the state
 	serverMux := http.NewServeMux()
 	serverMux.HandleFunc(sshcertauth.DefaultCreateChallengePath, state.CreateChallengeHandler)
 	serverMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath, state.LoginWithChallengeHandler)
-	//certgenHadler := instrumentedwriter.NewLoggingHandler(http.HandlerFunc(state.certGenHander), l)
 	serverMux.HandleFunc(certgenPath, state.certGenHandler)
-	//serverMux.HandleFunc(certgenPath, certgenHadler)
 
-	// To isolate into separate function
+	// This key/cert setup should be turn into a separate function
 	userPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	userPub := userPrivateKey.Public()
-	t.Logf("userPub is %T", userPub)
 	sshPub, err := ssh.NewPublicKey(userPub)
 	if err != nil {
 		t.Fatal(err)
 	}
 	currentEpoch := uint64(time.Now().Unix())
 	expireEpoch := currentEpoch + uint64(30)
-	cert := ssh.Certificate{
+	userSSHcert := ssh.Certificate{
 		Key:             sshPub,
 		CertType:        ssh.UserCert,
 		SignatureKey:    sshSigner.PublicKey(),
@@ -86,14 +82,12 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 		ValidAfter:      currentEpoch,
 		ValidBefore:     expireEpoch,
 	}
-	err = cert.SignCert(bytes.NewReader(cert.Marshal()), sshSigner)
+	err = userSSHcert.SignCert(bytes.NewReader(userSSHcert.Marshal()), sshSigner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	//
 
 	// now we start plugging the setup
-	//ts := httptest.NewTLSServer(serverMux)
 	l := httpLogger{}
 	ts := httptest.NewTLSServer(instrumentedwriter.NewLoggingHandler(serverMux, l))
 	defer ts.Close()
@@ -107,7 +101,7 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	keyring := agent.NewKeyring()
 	toAdd := agent.AddedKey{
 		PrivateKey:   userPrivateKey,
-		Certificate:  &cert,
+		Certificate:  &userSSHcert,
 		LifetimeSecs: 10,
 	}
 	err = keyring.Add(toAdd)
@@ -126,8 +120,8 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	// TODO actually check returned data + cookie values
 	fmt.Printf("%s", returnedBody)
 
+	// Now we enable webauth ssh cert for certificates and try to fetch one
 	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypeSSHCert)
-
 	userCertgenPath := fmt.Sprintf("%s/certgen/%s?type=x509", ts.URL, webauthTestUsername)
 	certReq, err := createKeyBodyRequest("POST", userCertgenPath, testUserPEMPublicKey, "")
 	if err != nil {
@@ -142,8 +136,7 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("%s", pemCert)
-
+	//fmt.Printf("auth_sshcert generated cert%s", pemCert)
 	block, _ := pem.Decode(pemCert)
 	if block == nil || block.Type != "CERTIFICATE" {
 		t.Fatalf("content is not pem or a cert")
@@ -156,7 +149,8 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	if respCert.Subject.CommonName != webauthTestUsername {
 		t.Fatalf("subject does not match common name")
 	}
-
+	// The following  check is critical, the expiration of the new cert
+	// MUST not be after the expiration of the cert used for auth.
 	if respCert.NotAfter.After(time.Unix(int64(expireEpoch), 0)) {
 		fmt.Printf("now:%s  notAfter %s", time.Now().UTC(), respCert.NotAfter)
 		t.Fatalf("expires AFTER ssh cert expiration")
