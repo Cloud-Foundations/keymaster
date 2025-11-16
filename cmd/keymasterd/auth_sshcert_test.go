@@ -5,7 +5,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
@@ -14,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
+	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/Cloud-Foundations/webauth-sshcert/lib/client/sshautn"
 	"github.com/Cloud-Foundations/webauth-sshcert/lib/server/sshcertauth"
 	"golang.org/x/crypto/ssh"
@@ -29,13 +34,15 @@ import (
 // 2. Add server keypair to trusted set
 // 3. Create test ssh-cert
 // 4. Create test webport
-// 5. Create new client (with cookie store)
+// 5. Create new client (with cookie storeç)
 // 6. Add signer cert to client
 // 7. Make client do both calls
 // 8. Ensure client has valid auth cookie/
 
 func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	// This test just tests the happy path
+
+	const webauthTestUsername = "someuser"
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +61,9 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	serverMux := http.NewServeMux()
 	serverMux.HandleFunc(sshcertauth.DefaultCreateChallengePath, state.CreateChallengeHandler)
 	serverMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath, state.LoginWithChallengeHandler)
+	//certgenHadler := instrumentedwriter.NewLoggingHandler(http.HandlerFunc(state.certGenHander), l)
+	serverMux.HandleFunc(certgenPath, state.certGenHandler)
+	//serverMux.HandleFunc(certgenPath, certgenHadler)
 
 	// To isolate into separate function
 	userPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -72,7 +82,7 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 		Key:             sshPub,
 		CertType:        ssh.UserCert,
 		SignatureKey:    sshSigner.PublicKey(),
-		ValidPrincipals: []string{"someuser"},
+		ValidPrincipals: []string{webauthTestUsername},
 		ValidAfter:      currentEpoch,
 		ValidBefore:     expireEpoch,
 	}
@@ -83,7 +93,9 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	//
 
 	// now we start plugging the setup
-	ts := httptest.NewTLSServer(serverMux)
+	//ts := httptest.NewTLSServer(serverMux)
+	l := httpLogger{}
+	ts := httptest.NewTLSServer(instrumentedwriter.NewLoggingHandler(serverMux, l))
 	defer ts.Close()
 	client := ts.Client()
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
@@ -113,5 +125,41 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	}
 	// TODO actually check returned data + cookie values
 	fmt.Printf("%s", returnedBody)
+
+	state.Config.Base.AllowedAuthBackendsForCerts = append(state.Config.Base.AllowedAuthBackendsForCerts, proto.AuthTypeSSHCert)
+
+	userCertgenPath := fmt.Sprintf("%s/certgen/%s?type=x509", ts.URL, webauthTestUsername)
+	certReq, err := createKeyBodyRequest("POST", userCertgenPath, testUserPEMPublicKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(certReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemCert, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("%s", pemCert)
+
+	block, _ := pem.Decode(pemCert)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatalf("content is not pem or a cert")
+	}
+	respCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//fmt.Printf("%+v", respCert)
+	if respCert.Subject.CommonName != webauthTestUsername {
+		t.Fatalf("subject does not match common name")
+	}
+
+	if respCert.NotAfter.After(time.Unix(int64(expireEpoch), 0)) {
+		fmt.Printf("now:%s  notAfter %s", time.Now().UTC(), respCert.NotAfter)
+		t.Fatalf("expires AFTER ssh cert expiration")
+	}
 
 }

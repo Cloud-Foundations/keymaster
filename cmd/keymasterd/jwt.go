@@ -159,6 +159,9 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
 	rvalue.IssuedAt = time.Unix(inboundJWT.IssuedAt, 0)
 	rvalue.Username = inboundJWT.Subject
+	if inboundJWT.NotBefore > 0 && inboundJWT.NotBefore < inboundJWT.IssuedAt {
+		rvalue.IssuedAt = time.Unix(inboundJWT.NotBefore, 0)
+	}
 	return rvalue, nil
 }
 
