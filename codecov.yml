@@ -1,0 +1,7 @@
+coverage:
+  range: 40..60
+  round: down
+  precision: 2
+ignore:
+  - "cmd/server"
+  - "cmd/client"
