@@ -87,10 +87,10 @@ const (
 )
 
 type authInfo struct {
-	AuthType  int
-	ExpiresAt time.Time
-	IssuedAt  time.Time
-	Username  string
+	AuthType     int
+	ExpiresAt    time.Time //expiration of auth object
+	CertNotAfter time.Time
+	Username     string
 }
 
 type authInfoJWT struct {
@@ -902,10 +902,8 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			if err == nil && tlsAuthUser != "" {
 				state.logger.Debugf(4, "Auth, Is keymastercert")
 				authData.AuthType = authData.AuthType | AuthTypeKeymasterX509
-				authData.IssuedAt = userCert.NotBefore
+				authData.CertNotAfter = userCert.NotAfter
 				authData.Username = tlsAuthUser
-				// expiration should be cert maxage:q
-				authData.ExpiresAt = userCert.NotAfter
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
 				clientName, userCert, userErr, err :=
@@ -928,9 +926,8 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 
 				if err == nil && userErr == nil {
 					authData.AuthType = authData.AuthType | AuthTypeIPCertificate
-					authData.IssuedAt = time.Now()
 					authData.Username = clientName
-					authData.ExpiresAt = userCert.NotAfter
+					authData.CertNotAfter = userCert.NotAfter
 				}
 			}
 			if authData.Username != "" {
@@ -981,10 +978,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			return nil, err
 		}
 		return &authInfo{
-			AuthType:  AuthTypePassword,
-			IssuedAt:  time.Now(),
-			ExpiresAt: time.Now().Add(time.Second * 3600 * 8),
-			Username:  user,
+			AuthType:     AuthTypePassword,
+			CertNotAfter: time.Now().Add(maxCertificateLifetime),
+			Username:     user,
 		}, nil
 	}
 	//Critical section

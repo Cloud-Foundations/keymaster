@@ -157,11 +157,8 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	}
 	rvalue.AuthType = inboundJWT.AuthType
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
-	rvalue.IssuedAt = time.Unix(inboundJWT.IssuedAt, 0)
+	rvalue.CertNotAfter = time.Unix(inboundJWT.NotBefore, 0).Add(maxCertificateLifetime)
 	rvalue.Username = inboundJWT.Subject
-	if inboundJWT.NotBefore > 0 && inboundJWT.NotBefore < inboundJWT.IssuedAt {
-		rvalue.IssuedAt = time.Unix(inboundJWT.NotBefore, 0)
-	}
 	return rvalue, nil
 }
 

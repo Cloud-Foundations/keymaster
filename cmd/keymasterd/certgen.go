@@ -156,7 +156,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		}
 		duration = newDuration
 	}
-	maxDuration := time.Until(authData.IssuedAt.Add(maxCertificateLifetime))
+
+	maxDuration := time.Until(time.Now().Add(maxCertificateLifetime))
+	authMaxDuration := time.Until(authData.CertNotAfter)
+	if authMaxDuration < maxDuration {
+		maxDuration = authMaxDuration
+	}
+
 	if duration > maxDuration {
 		duration = maxDuration
 	}
