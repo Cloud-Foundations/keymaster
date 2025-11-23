@@ -100,6 +100,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 				AuthTypeWebauthForCLI) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeSSHCert &&
+			((authData.AuthType & AuthTypeSSHCert) == AuthTypeSSHCert) {
+			sufficientAuthLevel = true
+		}
 	}
 	// if you have u2f you can always get the cert
 	if (authData.AuthType & AuthTypeU2F) == AuthTypeU2F {
@@ -152,7 +156,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		}
 		duration = newDuration
 	}
-	maxDuration := time.Until(authData.IssuedAt.Add(maxCertificateLifetime))
+
+	maxDuration := time.Until(time.Now().Add(maxCertificateLifetime))
+	authMaxDuration := time.Until(authData.CertNotAfter)
+	if authMaxDuration < maxDuration {
+		maxDuration = authMaxDuration
+	}
+
 	if duration > maxDuration {
 		duration = maxDuration
 	}

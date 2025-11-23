@@ -208,10 +208,21 @@ func ComputePublicKeyKeyID(PublicKey interface{}) ([]byte, error) {
 func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	ipv4Netblocks []net.IPNet, duration time.Duration,
-	crlURL []string, OCPServer []string) ([]byte, error) {
+	crlURL []string, OCSPServer []string) ([]byte, error) {
 	// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
+
+	return GenIPRestrictedX509CertSubtle(userName, userPub, caCert, caPriv,
+		ipv4Netblocks, notBefore, notAfter, crlURL, OCSPServer)
+}
+
+// GenIPRestrictedX509CertSubtle returns an x509 cert for the username in the netblocks
+// specificed. Can be misused so use only for tests
+func GenIPRestrictedX509CertSubtle(userName string, userPub interface{},
+	caCert *x509.Certificate, caPriv crypto.Signer,
+	ipv4Netblocks []net.IPNet, notBefore time.Time, notAfter time.Time,
+	crlURL []string, OCPServer []string) ([]byte, error) {
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
