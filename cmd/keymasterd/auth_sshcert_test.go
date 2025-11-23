@@ -30,18 +30,10 @@ import (
 
 /// login with challenge
 
-// 1. Create server keypair
-// 2. Add server keypair to trusted set
-// 3. Create test ssh-cert
-// 4. Create test webport
-// 5. Create new client (with cookie storeç)
-// 6. Add signer cert to client
-// 7. Make client do both calls
-// 8. Ensure client has valid auth cookie/
-
 func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	// This test just tests the happy path
 
+	// Basic state setup
 	const webauthTestUsername = "someuser"
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
@@ -49,12 +41,13 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 
+	// initialize webauthenticator (as there is no plumbing yet)
+	// and prepare it for access on localhost
 	sshSigner, err := ssh.NewSignerFromSigner(state.Signer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	signerPub := ssh.MarshalAuthorizedKey(sshSigner.PublicKey())
-
 	state.websshauthenticator = sshcertauth.NewAuthenticator([]string{"localhost", "127.0.0.1"}, []string{string(signerPub)})
 	// TODO: This should be eventually be provided by the state
 	serverMux := http.NewServeMux()
@@ -62,7 +55,7 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	serverMux.HandleFunc(sshcertauth.DefaultLoginWithChallengePath, state.LoginWithChallengeHandler)
 	serverMux.HandleFunc(certgenPath, state.certGenHandler)
 
-	// This key/cert setup should be turn into a separate function
+	// Generate user sshkey and certificate (by signing with state.Signer)
 	userPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +80,6 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// now we start plugging the setup
 	l := httpLogger{}
 	ts := httptest.NewTLSServer(instrumentedwriter.NewLoggingHandler(serverMux, l))
 	defer ts.Close()
@@ -98,6 +90,8 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 	}
 	client.Jar = jar
 
+	// create new inmemory agent to so that we can reuse the
+	// authenticator client
 	keyring := agent.NewKeyring()
 	toAdd := agent.AddedKey{
 		PrivateKey:   userPrivateKey,
@@ -118,6 +112,8 @@ func TestCreateChallengeHandlerMinimal(t *testing.T) {
 		t.Fatal(err)
 	}
 	// TODO actually check returned data + cookie values
+	// but on success here have have authenticated and the agent
+	// as a valid cookie
 	fmt.Printf("%s", returnedBody)
 
 	// Now we enable webauth ssh cert for certificates and try to fetch one

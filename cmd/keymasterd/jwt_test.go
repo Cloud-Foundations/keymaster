@@ -125,5 +125,34 @@ func TestMixedKeyTypeSigners(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestGenNewSerializedAuthJWTWithNotBefore(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	testUsername := "username"
+
+	//Simple Success:
+	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
+		1, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//fail negative duration
+	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
+		1, -1, time.Now())
+	if err == nil {
+		t.Fatal("should have failed with negative duration")
+	}
+	// fail not before in the future
+	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
+		1, 1, time.Now().Add(time.Hour))
+	if err == nil {
+		t.Fatal("should have failed with notBefore in the future")
+	}
 }
