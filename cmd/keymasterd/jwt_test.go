@@ -137,22 +137,18 @@ func TestGenNewSerializedAuthJWTWithNotBefore(t *testing.T) {
 	testUsername := "username"
 
 	//Simple Success:
-	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
-		1, 1, time.Now())
+	_, err = state.genNewSerializedAuthJWTWithCertNotAfter(testUsername,
+		1, 1, time.Now().Add(maxCertificateLifetime))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	//fail negative duration
-	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
+	_, err = state.genNewSerializedAuthJWTWithCertNotAfter(testUsername,
+
 		1, -1, time.Now())
+
 	if err == nil {
 		t.Fatal("should have failed with negative duration")
-	}
-	// fail not before in the future
-	_, err = state.genNewSerializedAuthJWTWithNotBefore(testUsername,
-		1, 1, time.Now().Add(time.Hour))
-	if err == nil {
-		t.Fatal("should have failed with notBefore in the future")
 	}
 }

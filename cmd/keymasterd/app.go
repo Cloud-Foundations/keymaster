@@ -94,14 +94,15 @@ type authInfo struct {
 }
 
 type authInfoJWT struct {
-	Issuer     string   `json:"iss,omitempty"`
-	Subject    string   `json:"sub,omitempty"`
-	Audience   []string `json:"aud,omitempty"`
-	Expiration int64    `json:"exp,omitempty"`
-	NotBefore  int64    `json:"nbf,omitempty"`
-	IssuedAt   int64    `json:"iat,omitempty"`
-	TokenType  string   `json:"token_type"`
-	AuthType   int      `json:"auth_type"`
+	Issuer       string   `json:"iss,omitempty"`
+	Subject      string   `json:"sub,omitempty"`
+	Audience     []string `json:"aud,omitempty"`
+	Expiration   int64    `json:"exp,omitempty"`
+	NotBefore    int64    `json:"nbf,omitempty"`
+	IssuedAt     int64    `json:"iat,omitempty"`
+	CertNotAfter int64    `json:"cnbt,omitempty"`
+	TokenType    string   `json:"token_type"`
+	AuthType     int      `json:"auth_type"`
 }
 
 type storageStringDataJWT struct {
