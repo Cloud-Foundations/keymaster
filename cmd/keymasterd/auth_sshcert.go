@@ -37,10 +37,8 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 	if authMaxAge.After(time.Now().Add(maxCertificateLifetime)) {
 		maxAge = time.Now().Add(maxCertificateLifetime)
 	}
-	// maxCertificateLifetime is the thing that we should be adding
-	notBefore := maxAge.Add(-1 * maxCertificateLifetime)
-	cookieVal, err := s.genNewSerializedAuthJWTWithNotBefore(authUser, AuthTypeSSHCert,
-		int64(maxCertificateLifetime.Seconds()), notBefore)
+	cookieVal, err := s.genNewSerializedAuthJWTWithCertNotAfter(authUser, AuthTypeSSHCert,
+		int64(maxCertificateLifetime.Seconds()), maxAge)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
 		http.Error(w, "", http.StatusInternalServerError)
