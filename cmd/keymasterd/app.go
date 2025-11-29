@@ -56,8 +56,8 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/healthserver"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder"
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
+	"github.com/Cloud-Foundations/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/cloudflare/cfssl/revoke"
-
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -77,6 +77,7 @@ const (
 	AuthTypeKeymasterX509
 	AuthTypeWebauthForCLI
 	AuthTypeFIDO2
+	AuthTypeSSHCert
 )
 
 const (
@@ -86,21 +87,22 @@ const (
 )
 
 type authInfo struct {
-	AuthType  int
-	ExpiresAt time.Time
-	IssuedAt  time.Time
-	Username  string
+	AuthType     int
+	ExpiresAt    time.Time //expiration of auth object
+	CertNotAfter time.Time
+	Username     string
 }
 
 type authInfoJWT struct {
-	Issuer     string   `json:"iss,omitempty"`
-	Subject    string   `json:"sub,omitempty"`
-	Audience   []string `json:"aud,omitempty"`
-	Expiration int64    `json:"exp,omitempty"`
-	NotBefore  int64    `json:"nbf,omitempty"`
-	IssuedAt   int64    `json:"iat,omitempty"`
-	TokenType  string   `json:"token_type"`
-	AuthType   int      `json:"auth_type"`
+	Issuer       string   `json:"iss,omitempty"`
+	Subject      string   `json:"sub,omitempty"`
+	Audience     []string `json:"aud,omitempty"`
+	Expiration   int64    `json:"exp,omitempty"`
+	NotBefore    int64    `json:"nbf,omitempty"`
+	IssuedAt     int64    `json:"iat,omitempty"`
+	CertNotAfter int64    `json:"cnbt,omitempty"`
+	TokenType    string   `json:"token_type"`
+	AuthType     int      `json:"auth_type"`
 }
 
 type storageStringDataJWT struct {
@@ -223,6 +225,7 @@ type RuntimeState struct {
 	webAuthn                     *webauthn.WebAuthn
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
+	websshauthenticator          *sshcertauth.Authenticator
 	logger                       log.DebugLogger
 }
 
@@ -735,6 +738,10 @@ func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter,
 	}
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) *
 		time.Second)
+	return state.withCookieSetNewAuthCookie(w, cookieVal, expiration)
+}
+func (state *RuntimeState) withCookieSetNewAuthCookie(w http.ResponseWriter,
+	cookieVal string, expiration time.Time) (string, error) {
 	authCookie := http.Cookie{
 		Name:    authCookieName,
 		Value:   cookieVal,
@@ -794,60 +801,61 @@ func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
 	return false, nil
 }
 
-func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, time.Time, error) {
+func (state *RuntimeState) getUsernameIfKeymasterSigned(VerifiedChains [][]*x509.Certificate) (string, *x509.Certificate, error) {
 	for _, chain := range VerifiedChains {
 		if len(chain) < 2 {
 			continue
 		}
 		username := chain[0].Subject.CommonName
+		userCert := chain[0]
 		//keymaster certs as signed directly
 		certSignerPKFingerprint, err := getKeyFingerprint(chain[1].PublicKey)
 		if err != nil {
-			return "", time.Time{}, err
+			return "", nil, err
 		}
 		userPubKeyFP, err := getKeyFingerprint(chain[0].PublicKey)
 		if err != nil {
-			return "", time.Time{}, err
+			return "", nil, err
 		}
 		for _, revokedKeyFP := range state.Config.DenyTrustData.KeyDenyFPsshSha256 {
 			if userPubKeyFP == revokedKeyFP {
-				return "", time.Time{}, fmt.Errorf("revoked key with FP:%s", revokedKeyFP)
+				return "", nil, fmt.Errorf("revoked key with FP:%s", revokedKeyFP)
 			}
 		}
 		for _, key := range state.KeymasterPublicKeys {
 			fp, err := getKeyFingerprint(key)
 			if err != nil {
-				return "", time.Time{}, err
+				return "", nil, err
 			}
 			if certSignerPKFingerprint == fp {
-				return username, chain[0].NotBefore, nil
+				return username, userCert, nil
 			}
 		}
 
 	}
-	return "", time.Time{}, nil
+	return "", nil, nil
 }
 
-func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, time.Time, error, error) {
+func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Certificate, r *http.Request) (string, *x509.Certificate, error, error) {
 	clientName := VerifiedChains[0][0].Subject.CommonName
 	userCert := VerifiedChains[0][0]
 
 	validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
 	if err != nil {
 		logger.Printf("Error verifying up restricted cert: %s", err)
-		return "", time.Time{}, nil, err
+		return "", nil, nil, err
 	}
 	if !validIP {
 		logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
-		return "", time.Time{}, fmt.Errorf("Bad incoming ip addres"), nil
+		return "", nil, fmt.Errorf("Bad incoming ip addres"), nil
 	}
 	// Check if there are group restrictions on
 	ok, err := state.isAutomationUser(clientName)
 	if err != nil {
-		return "", time.Time{}, nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
+		return "", nil, nil, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
 	}
 	if !ok {
-		return "", time.Time{}, fmt.Errorf("Bad username  for ip restricted cert"), nil
+		return "", nil, fmt.Errorf("Bad username  for ip restricted cert"), nil
 	}
 
 	revoked, ok, err := revoke.VerifyCertificateError(userCert)
@@ -858,9 +866,9 @@ func (state *RuntimeState) getUsernameIfIPRestricted(VerifiedChains [][]*x509.Ce
 	if revoked == true && ok {
 		logger.Printf("Cert is revoked")
 		//state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
-		return "", time.Time{}, fmt.Errorf("revoked cert"), nil
+		return "", nil, fmt.Errorf("revoked cert"), nil
 	}
-	return clientName, time.Now(), nil, nil
+	return clientName, userCert, nil, nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
@@ -890,16 +898,16 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			"looks like authtype tls keymaster or ip cert, r.tls=%+v", r.TLS)
 		if len(r.TLS.VerifiedChains) > 0 {
 			var authData authInfo
-			tlsAuthUser, notBefore, err :=
+			tlsAuthUser, userCert, err :=
 				state.getUsernameIfKeymasterSigned(r.TLS.VerifiedChains)
 			if err == nil && tlsAuthUser != "" {
 				state.logger.Debugf(4, "Auth, Is keymastercert")
 				authData.AuthType = authData.AuthType | AuthTypeKeymasterX509
-				authData.IssuedAt = notBefore
+				authData.CertNotAfter = userCert.NotAfter
 				authData.Username = tlsAuthUser
 			}
 			if (requiredAuthType & AuthTypeIPCertificate) != 0 {
-				clientName, notBefore, userErr, err :=
+				clientName, userCert, userErr, err :=
 					state.getUsernameIfIPRestricted(r.TLS.VerifiedChains, r)
 				// if not keymasterd cert AND not ipcert either then we return
 				// more explicit errors
@@ -919,8 +927,8 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 
 				if err == nil && userErr == nil {
 					authData.AuthType = authData.AuthType | AuthTypeIPCertificate
-					authData.IssuedAt = notBefore
 					authData.Username = clientName
+					authData.CertNotAfter = userCert.NotAfter
 				}
 			}
 			if authData.Username != "" {
@@ -971,9 +979,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			return nil, err
 		}
 		return &authInfo{
-			AuthType: AuthTypePassword,
-			IssuedAt: time.Now(),
-			Username: user,
+			AuthType:     AuthTypePassword,
+			CertNotAfter: time.Now().Add(maxCertificateLifetime),
+			Username:     user,
 		}, nil
 	}
 	//Critical section
