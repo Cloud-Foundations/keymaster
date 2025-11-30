@@ -152,3 +152,37 @@ func TestSendAuthDocumentHandlerBase(t *testing.T) {
 	t.Logf("authinfo=%+v", authinfo)
 
 }
+
+func TestVerifyAuthTokenHandlerSuccess(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	state.Config.Base.WebauthTokenForCliLifetime = time.Hour
+	//generate authDoc
+	testUsername := "testuser"
+	authToken, err := state.generateAuthJWT(testUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//generate request
+	tokenForm := url.Values{}
+	tokenForm.Add("token", authToken)
+	tokenForm.Add("port", "12345")
+	t.Logf("tokenVal=%s", authToken)
+
+	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
+	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	_, err = checkRequestHandlerCode(tokenReq, state.VerifyAuthTokenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
