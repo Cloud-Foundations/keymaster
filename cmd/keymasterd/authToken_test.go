@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"golang.org/x/net/html"
+	"golang.org/x/time/rate"
 )
 
 // See if we can start getting some coverage here
@@ -183,6 +185,55 @@ func TestVerifyAuthTokenHandlerSuccess(t *testing.T) {
 	_, err = checkRequestHandlerCode(tokenReq, state.VerifyAuthTokenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+}
+
+func TestAuthTokenSimpleFails(t *testing.T) {
+
+	// Part1 uninitialized state
+	logger := testlogger.New(t)
+	state := &RuntimeState{
+		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
+		logger:                       logger,
+	}
+	handlersToTest := []http.HandlerFunc{state.VerifyAuthTokenHandler, state.ShowAuthTokenHandler, state.SendAuthDocumentHandler}
+	for _, handler := range handlersToTest {
+		tokenForm := url.Values{}
+		tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = checkRequestHandlerCode(tokenReq, handler, http.StatusInternalServerError)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+	}
+
+	//part2 bad httpmethods
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	state.Config.Base.WebauthTokenForCliLifetime = time.Hour
+
+	handlersToTest = []http.HandlerFunc{state.VerifyAuthTokenHandler, state.ShowAuthTokenHandler, state.SendAuthDocumentHandler}
+
+	for _, handler := range handlersToTest {
+		tokenForm := url.Values{}
+		tokenReq, err := http.NewRequest("PUT", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = checkRequestHandlerCode(tokenReq, handler, http.StatusMethodNotAllowed)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 }
