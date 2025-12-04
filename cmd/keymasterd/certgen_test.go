@@ -7,7 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -117,7 +117,10 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 		Mask: net.CIDRMask(8, 32),
 	}
 	netblockList := []net.IPNet{netblock, netblock2}
-	derCert, err := certgen.GenIPRestrictedX509Cert("username", userPub, caCert, caPriv, netblockList, testDuration, nil, nil)
+	monthDuration := time.Hour * 24 * 30 // Kind of a month
+	derCert, err := certgen.GenIPRestrictedX509CertSubtle("username", userPub, caCert,
+		caPriv, netblockList, time.Now().Add(-1*monthDuration), time.Now().Add(monthDuration),
+		nil, nil)
 
 	cert, err := x509.ParseCertificate(derCert)
 	if err != nil {
@@ -140,11 +143,35 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 	}
 	// Now add username to the set of valid users to get certs from
 	state.Config.Base.AutomationUsers = append(state.Config.Base.AutomationUsers, "username")
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	rr, err := checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
-	//TODO check return content
+	//Check return cert content
+	resp := rr.Result()
+	pemCert, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(pemCert)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatalf("content is not pem or a cert")
+	}
+	respCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//Time validity
+	if respCert.NotAfter.Before(time.Now()) {
+		t.Fatalf("cert is expired")
+	}
+	if respCert.NotBefore.After(time.Now()) {
+		t.Fatalf("cert is not valid yet")
+	}
+	// CN
+	if respCert.Subject.CommonName != "username" {
+		t.Fatalf("invalid common name")
+	}
 
 	//now test with failure
 	req.RemoteAddr = "192.168.255.255:12345"
@@ -209,7 +236,7 @@ func TestGenSSHEd25519(t *testing.T) {
 	}
 
 	resp := rr.Result()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,8 @@ github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92 h1:EGeQTdS
 github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92/go.mod h1:/CR255D7rw/CQr61exJfyW94EXs8dX/w0fLws1cMSwY=
 github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168 h1:MKB8ovKEveTxJOQuO8x2O4XccNOZmJVaRD6sd8CPtvw=
 github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168/go.mod h1:g6+RIAw5BCofg90lKHt/er2+ar+Y9eO2CJchLhq3hms=
+github.com/Cloud-Foundations/webauth-sshcert v0.0.0-20251110023320-a3f8b0317108 h1:t+192aV9K6+Et5zk3VTUw0hlQmfJhkPoALyka+JpuDs=
+github.com/Cloud-Foundations/webauth-sshcert v0.0.0-20251110023320-a3f8b0317108/go.mod h1:pxbv2FSwXjPDmiraTebZ0xU8OajAVQyWAOEv7Eu5pZc=
 github.com/GehirnInc/crypt v0.0.0-20190301055215-6c0105aabd46/go.mod h1:kC29dT1vFpj7py2OvG1khBdQpo3kInWP+6QipLbdngo=
 github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5 h1:IEjq88XO4PuBDcvmjQJcQGg+w+UaafSy8G5Kcb5tBhI=
 github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5/go.mod h1:exZ0C/1emQJAw5tHOaUDyY1ycttqBAPcxuzf7QbY6ec=

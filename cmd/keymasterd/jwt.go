@@ -101,16 +101,27 @@ func getJoseSignerFromSigner(signer crypto.Signer) (jose.Signer, error) {
 
 func (state *RuntimeState) genNewSerializedAuthJWT(username string,
 	authLevel int, durationSeconds int64) (string, error) {
+	return state.genNewSerializedAuthJWTWithCertNotAfter(username, authLevel, durationSeconds,
+		time.Now().Add(maxCertificateLifetime))
+}
+
+func (state *RuntimeState) genNewSerializedAuthJWTWithCertNotAfter(username string,
+	authLevel int, durationSeconds int64, certNotAfter time.Time) (string, error) {
 	signer, err := getJoseSignerFromSigner(state.Signer)
 	if err != nil {
 		return "", fmt.Errorf("cannot create new jose signer err=%s", err)
+	}
+	if durationSeconds < 0 {
+		return "", fmt.Errorf("Duration Must be non-negative")
 	}
 	issuer := state.idpGetIssuer()
 	authToken := authInfoJWT{Issuer: issuer, Subject: username,
 		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
-	authToken.Expiration = authToken.IssuedAt + durationSeconds
+	authToken.Expiration = authToken.NotBefore + durationSeconds
+	authToken.CertNotAfter = certNotAfter.Unix()
+
 	return jwt.Signed(signer).Claims(authToken).Serialize()
 }
 
@@ -144,7 +155,9 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 	}
 	rvalue.AuthType = inboundJWT.AuthType
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
-	rvalue.IssuedAt = time.Unix(inboundJWT.IssuedAt, 0)
+	if inboundJWT.CertNotAfter == 0 { //backwards compat
+		rvalue.CertNotAfter = time.Unix(inboundJWT.NotBefore, 0).Add(maxCertificateLifetime)
+	}
 	rvalue.Username = inboundJWT.Subject
 	return rvalue, nil
 }

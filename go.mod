@@ -9,6 +9,7 @@ require (
 	github.com/Cloud-Foundations/golib v0.5.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.0.0-20191102180116-cf6bbf6d0168
+	github.com/Cloud-Foundations/webauth-sshcert v0.0.0-20251110023320-a3f8b0317108
 	github.com/alecthomas/kong v1.12.1
 	github.com/aws/aws-sdk-go v1.55.7
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -101,5 +102,4 @@ require (
 	golang.org/x/time v0.11.0
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
-	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 )
