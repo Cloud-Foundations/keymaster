@@ -68,7 +68,7 @@ func TestShowAuthTokenHandlerBase(t *testing.T) {
 			continue
 		}
 		if authToken != "" {
-			t.Fatal("oops more than jwt founc (this parser could be buggy)")
+			t.Fatal("oops more than jwt found (this parser could be buggy)")
 		}
 		authToken = nodeContent
 		//t.Logf("%+v", n)
