@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// CreateChallengeHandler is an example of how to write a handler for
-// the path to create the challenge
+// CreateChallengeHandler is just a wrapper against the library create challenge handler
 func (s *RuntimeState) CreateChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	err := s.websshauthenticator.CreateChallengeHandler(w, r)
 	if err != nil {
@@ -17,10 +16,9 @@ func (s *RuntimeState) CreateChallengeHandler(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// LoginWithChallengeHandler is an example on how to handle the call to login withChallenge
-// path. Notice that we fist do the authentication checks, then we create the session
-// and we finalize with setting a cookie (which in this implementaiton) is used to track
-// user sessions.
+// LoginWithChallengeHandler authenticates the user and creates an authcookie
+// in this case the authcooke is marked with a maxCertAge bound by the incoming certificate
+// expiration
 func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	authUser, authMaxAge, userErrString, err := s.websshauthenticator.LoginWithChallenge(r)
 	if err != nil {
@@ -29,7 +27,7 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 		if userErrString == "" {
 			errorCode = http.StatusInternalServerError
 		}
-		http.Error(w, userErrString, errorCode)
+		s.writeFailureResponse(w, r, errorCode, userErrString)
 		return
 	}
 	// Ensure even a brokenMaxAge is bound to be the maximum cert lifetime
@@ -41,18 +39,18 @@ func (s *RuntimeState) LoginWithChallengeHandler(w http.ResponseWriter, r *http.
 		int64(maxCertificateLifetime.Seconds()), maxAge)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
-		http.Error(w, "", http.StatusInternalServerError)
+		s.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	_, err = s.withCookieSetNewAuthCookie(w, cookieVal, maxAge)
 	if err != nil {
 		s.logger.Printf("error=%s", err)
-		http.Error(w, "", http.StatusInternalServerError)
+		s.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	//send OK
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "OK\n")
 
-	s.logger.Printf("Success auth %s", authUser)
+	s.logger.Debugf(1, "webauth Success for user %s", authUser)
 }
