@@ -153,9 +153,11 @@ func (state *RuntimeState) getAuthInfoFromJWT(serializedToken,
 		err = errors.New("invalid JWT values")
 		return rvalue, err
 	}
+	state.logger.Debugf(3, "inbound jwtinfo=%+v", inboundJWT)
 	rvalue.AuthType = inboundJWT.AuthType
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
-	if inboundJWT.CertNotAfter == 0 { //backwards compat
+	rvalue.CertNotAfter = time.Unix(inboundJWT.CertNotAfter, 0)
+	if inboundJWT.CertNotAfter < inboundJWT.NotBefore { //backwards compat
 		rvalue.CertNotAfter = time.Unix(inboundJWT.NotBefore, 0).Add(maxCertificateLifetime)
 	}
 	rvalue.Username = inboundJWT.Subject
