@@ -65,9 +65,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
-	logger.Debugf(1,
-		"Certgen, authenticated at level=%x, username=`%s`, expires=%s",
-		authData.AuthType, authData.Username, authData.ExpiresAt)
+	state.logger.Debugf(2,
+		"Certgen, authenticated at level=%x, username=`%s`, expires=%s, full=%+v",
+		authData.AuthType, authData.Username, authData.ExpiresAt, authData)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here

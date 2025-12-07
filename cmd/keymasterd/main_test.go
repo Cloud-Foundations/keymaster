@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/time/rate"
 
@@ -294,10 +297,31 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	rr, err := checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
+	resp := rr.Result()
+	pemCert, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(pemCert)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatalf("content is not pem or a cert")
+	}
+	respCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//Time validity
+	if respCert.NotAfter.Before(time.Now()) {
+		t.Fatalf("cert is expired notafter=%+v", respCert.NotAfter)
+	}
+	if respCert.NotBefore.After(time.Now()) {
+		t.Fatalf("cert is not valid yet")
+	}
+
 }
 
 func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
