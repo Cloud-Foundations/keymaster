@@ -4,68 +4,68 @@ jobs:
   testlinux:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v5
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: make test
   testmacos:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v5
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: make test
   testwindowsclient:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v3
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - run: go test -v  ./cmd/keymaster/...
 
   testwindowsclientlibs:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v3
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - run: go test -v  ./lib/client/util/...
 
   buildlinuxpackage:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/setup-go@v3
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: gcc rpm alien rsync pkg-config libudev-dev libudev1 libpcsclite1 libpcsclite-dev
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - run: make rpm
 
