@@ -1799,6 +1799,111 @@ func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 	}
 }
 
+func (state *RuntimeState) setupServiceMux() (*http.ServeMux, error) {
+
+	var err error
+	serviceMux := http.NewServeMux()
+	serviceMux.HandleFunc(certgenPath, state.certGenHandler)
+	serviceMux.HandleFunc(publicPath, state.publicPathHandler)
+	serviceMux.HandleFunc(proto.LoginPath, state.loginHandler)
+	serviceMux.HandleFunc(logoutPath, state.logoutHandler)
+	serviceMux.HandleFunc(profilePath, state.profileHandler)
+	serviceMux.HandleFunc(usersPath, state.usersHandler)
+	serviceMux.HandleFunc(addUserPath, state.addUserHandler)
+	serviceMux.HandleFunc(deleteUserPath, state.deleteUserHandler)
+	//TODO: should enable only if bootraptop is enabled
+	serviceMux.HandleFunc(generateBoostrapOTPPath,
+		state.generateBootstrapOTP)
+
+	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath,
+		state.idpOpenIDCDiscoveryHandler)
+	serviceMux.HandleFunc(idpOpenIDCJWKSPath,
+		state.idpOpenIDCJWKSHandler)
+	serviceMux.HandleFunc(idpOpenIDCAuthorizationPath,
+		state.idpOpenIDCAuthorizationHandler)
+	serviceMux.HandleFunc(idpOpenIDCTokenPath,
+		state.idpOpenIDCTokenHandler)
+	serviceMux.HandleFunc(idpOpenIDCUserinfoPath,
+		state.idpOpenIDCUserinfoHandler)
+
+	staticFilesPath :=
+		filepath.Join(state.Config.Base.SharedDataDirectory,
+			"static_files")
+	serviceMux.Handle("/static/", cacheControlHandler(
+		http.StripPrefix("/static/",
+			http.FileServer(http.Dir(staticFilesPath)))))
+	serviceMux.Handle("/static/compiled/", cacheControlHandler(
+		http.StripPrefix("/static/compiled/",
+			http.FileServer(getCompiledDataFS()))))
+	customWebResourcesPath :=
+		filepath.Join(state.Config.Base.SharedDataDirectory,
+			"customization_data", "web_resources")
+	if _, err = os.Stat(customWebResourcesPath); err == nil {
+		serviceMux.Handle("/custom_static/", cacheControlHandler(
+			http.StripPrefix("/custom_static/",
+				http.FileServer(http.Dir(customWebResourcesPath)))))
+	}
+
+	serviceMux.HandleFunc(u2fRegustisterRequestPath,
+		state.u2fRegisterRequest)
+	serviceMux.HandleFunc(u2fRegisterRequesponsePath,
+		state.u2fRegisterResponse)
+	serviceMux.HandleFunc(u2fSignRequestPath, state.u2fSignRequest)
+	serviceMux.HandleFunc(u2fSignResponsePath, state.u2fSignResponse)
+	serviceMux.HandleFunc(webAutnRegististerRequestPath, state.webauthnBeginRegistration)
+	serviceMux.HandleFunc(webAutnRegististerFinishPath, state.webauthnFinishRegistration)
+	serviceMux.HandleFunc(webAuthnAuthBeginPath, state.webauthnAuthLogin)
+	serviceMux.HandleFunc(webAuthnAuthFinishPath, state.webauthnAuthFinish)
+
+	serviceMux.HandleFunc(vipAuthPath, state.VIPAuthHandler)
+	serviceMux.HandleFunc(u2fTokenManagementPath,
+		state.u2fTokenManagerHandler)
+	serviceMux.HandleFunc(oauth2LoginBeginPath,
+		state.oauth2DoRedirectoToProviderHandler)
+	serviceMux.HandleFunc(redirectPath, state.oauth2RedirectPathHandler)
+	serviceMux.HandleFunc(clientConfHandlerPath,
+		state.serveClientConfHandler)
+	serviceMux.HandleFunc(vipPushStartPath, state.vipPushStartHandler)
+	serviceMux.HandleFunc(vipPollCheckPath, state.VIPPollCheckHandler)
+	serviceMux.HandleFunc(totpGeneratNewPath, state.GenerateNewTOTP)
+	serviceMux.HandleFunc(totpValidateNewPath, state.validateNewTOTP)
+	serviceMux.HandleFunc(totpTokenManagementPath,
+		state.totpTokenManagerHandler)
+	serviceMux.HandleFunc(totpVerifyHandlerPath, state.verifyTOTPHandler)
+	serviceMux.HandleFunc(totpAuthPath, state.TOTPAuthHandler)
+	if state.Config.Okta.Domain != "" {
+		serviceMux.HandleFunc(okta2FAauthPath, state.Okta2FAuthHandler)
+		serviceMux.HandleFunc(oktaPushStartPath,
+			state.oktaPushStartHandler)
+		serviceMux.HandleFunc(oktaPollCheckPath,
+			state.oktaPollCheckHandler)
+	}
+
+	if state.checkAwsRolesEnabled() {
+		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
+			state.requestAwsRoleCertificateHandler)
+	}
+	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
+	//               The inline calls to getRequiredWebUIAuthLevel() should be
+	//               moved to the config section and replaced with a simple
+	//               bitfield test.
+	serviceMux.HandleFunc(bootstrapOtpAuthPath,
+		state.BootstrapOtpAuthHandler)
+	if state.Config.Base.WebauthTokenForCliLifetime > 0 {
+		serviceMux.HandleFunc(paths.SendAuthDocument,
+			state.SendAuthDocumentHandler)
+		serviceMux.HandleFunc(paths.ShowAuthToken,
+			state.ShowAuthTokenHandler)
+		serviceMux.HandleFunc(paths.VerifyAuthToken,
+			state.VerifyAuthTokenHandler)
+	}
+	serviceMux.HandleFunc(getRoleRequestingPath, state.roleRequetingCertGenHandler)
+	serviceMux.HandleFunc(refreshRoleRequestingCertPath, state.refreshRoleRequestingCertGenHandler)
+	serviceMux.HandleFunc("/", state.defaultPathHandler)
+
+	return serviceMux, nil
+}
+
 func Usage() {
 	displayVersion := Version
 	if Version == "" {
@@ -1881,102 +1986,10 @@ func main() {
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 	http.HandleFunc(readyzPath, runtimeState.readyzHandler)
 
-	serviceMux := http.NewServeMux()
-	serviceMux.HandleFunc(certgenPath, runtimeState.certGenHandler)
-	serviceMux.HandleFunc(publicPath, runtimeState.publicPathHandler)
-	serviceMux.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
-	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
-	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
-	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
-	serviceMux.HandleFunc(addUserPath, runtimeState.addUserHandler)
-	serviceMux.HandleFunc(deleteUserPath, runtimeState.deleteUserHandler)
-	//TODO: should enable only if bootraptop is enabled
-	serviceMux.HandleFunc(generateBoostrapOTPPath,
-		runtimeState.generateBootstrapOTP)
-
-	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath,
-		runtimeState.idpOpenIDCDiscoveryHandler)
-	serviceMux.HandleFunc(idpOpenIDCJWKSPath,
-		runtimeState.idpOpenIDCJWKSHandler)
-	serviceMux.HandleFunc(idpOpenIDCAuthorizationPath,
-		runtimeState.idpOpenIDCAuthorizationHandler)
-	serviceMux.HandleFunc(idpOpenIDCTokenPath,
-		runtimeState.idpOpenIDCTokenHandler)
-	serviceMux.HandleFunc(idpOpenIDCUserinfoPath,
-		runtimeState.idpOpenIDCUserinfoHandler)
-
-	staticFilesPath :=
-		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
-			"static_files")
-	serviceMux.Handle("/static/", cacheControlHandler(
-		http.StripPrefix("/static/",
-			http.FileServer(http.Dir(staticFilesPath)))))
-	serviceMux.Handle("/static/compiled/", cacheControlHandler(
-		http.StripPrefix("/static/compiled/",
-			http.FileServer(getCompiledDataFS()))))
-	customWebResourcesPath :=
-		filepath.Join(runtimeState.Config.Base.SharedDataDirectory,
-			"customization_data", "web_resources")
-	if _, err = os.Stat(customWebResourcesPath); err == nil {
-		serviceMux.Handle("/custom_static/", cacheControlHandler(
-			http.StripPrefix("/custom_static/",
-				http.FileServer(http.Dir(customWebResourcesPath)))))
+	serviceMux, err := runtimeState.setupServiceMux()
+	if err != nil {
+		panic(err)
 	}
-	serviceMux.HandleFunc(u2fRegustisterRequestPath,
-		runtimeState.u2fRegisterRequest)
-	serviceMux.HandleFunc(u2fRegisterRequesponsePath,
-		runtimeState.u2fRegisterResponse)
-	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
-	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
-	serviceMux.HandleFunc(webAutnRegististerRequestPath, runtimeState.webauthnBeginRegistration)
-	serviceMux.HandleFunc(webAutnRegististerFinishPath, runtimeState.webauthnFinishRegistration)
-	serviceMux.HandleFunc(webAuthnAuthBeginPath, runtimeState.webauthnAuthLogin)
-	serviceMux.HandleFunc(webAuthnAuthFinishPath, runtimeState.webauthnAuthFinish)
-
-	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
-	serviceMux.HandleFunc(u2fTokenManagementPath,
-		runtimeState.u2fTokenManagerHandler)
-	serviceMux.HandleFunc(oauth2LoginBeginPath,
-		runtimeState.oauth2DoRedirectoToProviderHandler)
-	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
-	serviceMux.HandleFunc(clientConfHandlerPath,
-		runtimeState.serveClientConfHandler)
-	serviceMux.HandleFunc(vipPushStartPath, runtimeState.vipPushStartHandler)
-	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
-	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
-	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
-	serviceMux.HandleFunc(totpTokenManagementPath,
-		runtimeState.totpTokenManagerHandler)
-	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
-	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
-	if runtimeState.Config.Okta.Domain != "" {
-		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
-		serviceMux.HandleFunc(oktaPushStartPath,
-			runtimeState.oktaPushStartHandler)
-		serviceMux.HandleFunc(oktaPollCheckPath,
-			runtimeState.oktaPollCheckHandler)
-	}
-	if runtimeState.checkAwsRolesEnabled() {
-		serviceMux.HandleFunc(paths.RequestAwsRoleCertificatePath,
-			runtimeState.requestAwsRoleCertificateHandler)
-	}
-	// TODO(rgooch): Condition this on whether Bootstrap OTP is configured.
-	//               The inline calls to getRequiredWebUIAuthLevel() should be
-	//               moved to the config section and replaced with a simple
-	//               bitfield test.
-	serviceMux.HandleFunc(bootstrapOtpAuthPath,
-		runtimeState.BootstrapOtpAuthHandler)
-	if runtimeState.Config.Base.WebauthTokenForCliLifetime > 0 {
-		serviceMux.HandleFunc(paths.SendAuthDocument,
-			runtimeState.SendAuthDocumentHandler)
-		serviceMux.HandleFunc(paths.ShowAuthToken,
-			runtimeState.ShowAuthTokenHandler)
-		serviceMux.HandleFunc(paths.VerifyAuthToken,
-			runtimeState.VerifyAuthTokenHandler)
-	}
-	serviceMux.HandleFunc(getRoleRequestingPath, runtimeState.roleRequetingCertGenHandler)
-	serviceMux.HandleFunc(refreshRoleRequestingCertPath, runtimeState.refreshRoleRequestingCertGenHandler)
-	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:      runtimeState.ClientCAPool,
