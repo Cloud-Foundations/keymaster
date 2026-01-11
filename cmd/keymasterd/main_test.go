@@ -560,16 +560,37 @@ func TestPublicHandleLoginForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	serverMux, err := state.setupServiceMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+	//l := httpLogger{}
+	//handler := instrumentedwriter.NewLoggingHandler(http.HandlerFunc(handlerFunc), l)
+	ts := httptest.NewTLSServer(serverMux)
+	defer ts.Close()
+	client := ts.Client()
 	for _, url := range urlList {
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest("GET", ts.URL+url, nil)
 		if err != nil {
 			t.Fatal(err)
 			//return nil, err
 		}
-		_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusOK)
+		/*
+			_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusOK)
+			if err != nil {
+				t.Fatal(err)
+			}
+		*/
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer resp.Body.Close()
+		//io.Copy(io.Discard, resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected ok go %s", resp.Status)
+		}
+
 	}
 	req, err := http.NewRequest("GET", "/public/foo", nil)
 	if err != nil {
