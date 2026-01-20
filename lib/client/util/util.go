@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
@@ -33,7 +34,20 @@ const rsaKeySize = 2048
 
 const maxPasswordLength = 512
 
-func getUserCreds(userName string) (password []byte, err error) {
+func getUserCreds(userName string, useStdin bool) (password []byte, err error) {
+	if useStdin {
+		// Read from stdin
+		password, err = io.ReadAll(os.Stdin)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read password from stdin: %w", err)
+		}
+		// Trim any trailing newline
+		password = bytes.TrimSpace(password)
+
+		return password, nil
+	}
+
 	fmt.Printf("Password for %s: ", userName)
 
 	if term.IsTerminal(int(os.Stdin.Fd())) {
