@@ -39,7 +39,7 @@ func TestWebAuthnRegistrationBegin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.HostIdentity = "testHost"
+	state.HostIdentity = "testHost.example.com"
 	// end of copy
 	logger = state.logger
 
@@ -131,7 +131,7 @@ func TestWebAuthnLoginBegin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.HostIdentity = "testHost"
+	state.HostIdentity = "testHost.example.com"
 	// end of copy
 	logger = state.logger
 

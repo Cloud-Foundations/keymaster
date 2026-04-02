@@ -375,7 +375,8 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		// func (p *ParsedCredentialAssertionData) Verify(storedChallenge string, relyingPartyID string, rpOrigins, rpTopOrigins []string, rpTopOriginsVerify TopOriginVerificationMode, appID string, verifyUser bool, credentialBytes []byte) error {
 		// Handle steps 4 through 16
 		rpTopOrigins := rpOrigins // FIXME: we actually have to compute this
-		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginAutoVerificationMode, appID, shouldVerifyUser, loginCredential.PublicKey)
+		verifyUserPresence := true
+		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginAutoVerificationMode, appID, shouldVerifyUser, verifyUserPresence, loginCredential.PublicKey)
 		if validError != nil {
 			logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
