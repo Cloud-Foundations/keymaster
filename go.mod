@@ -22,7 +22,7 @@ require (
 	github.com/duo-labs/webauthn v0.0.0-20221205164246-ebaf9b74c6ec
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
-	github.com/go-jose/go-jose/v4 v4.1.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-piv/piv-go/v2 v2.3.0
 	github.com/go-webauthn/webauthn v0.13.0
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
