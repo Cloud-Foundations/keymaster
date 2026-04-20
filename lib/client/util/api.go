@@ -13,8 +13,8 @@ import (
 )
 
 // GetUserCreds prompts the user for their password and returns it.
-func GetUserCreds(userName string) (password []byte, err error) {
-	return getUserCreds(userName)
+func GetUserCreds(userName string, useStdin bool) (password []byte, err error) {
+	return getUserCreds(userName, useStdin)
 }
 
 // GetUserNameAndHomeDir gets the user name and home directory.

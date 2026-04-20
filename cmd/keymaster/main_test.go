@@ -22,6 +22,7 @@ import (
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
 	"github.com/Cloud-Foundations/keymaster/lib/client/config"
+	"github.com/Cloud-Foundations/keymaster/lib/client/twofa"
 	"github.com/Cloud-Foundations/keymaster/lib/client/twofa/u2f"
 	"github.com/Cloud-Foundations/keymaster/lib/client/util"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
@@ -309,4 +310,56 @@ func TestMainSimple(t *testing.T) {
 	*checkDevices = false
 	b.Reset()
 
+}
+
+func TestPasswordStdinWithU2F(t *testing.T) {
+	logger := testlogger.New(t)
+	var b bytes.Buffer
+
+	// Test case 1: password-stdin with U2F disabled should fail
+	*passwordStdin = true
+	twofa.SetNoU2F(true)
+	twofa.SetNoTOTP(false)
+	twofa.SetNoVIPAccess(false)
+
+	err := mainWithError(&b, logger)
+	if err == nil {
+		t.Fatal("Expected error when using password-stdin with U2F disabled")
+	}
+	if err.Error() != "U2F must be enabled when using --password-stdin" {
+		t.Fatalf("Unexpected error message: %s", err.Error())
+	}
+
+	// Test case 2: password-stdin with U2F enabled should enforce TOTP and VIPAccess disabled
+	twofa.SetNoU2F(false)
+	twofa.SetNoTOTP(false)
+	twofa.SetNoVIPAccess(false)
+
+	// Pipe a password to stdin for the test
+	_, err = pipeToStdin("testpassword\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = mainWithError(&b, logger)
+	if err != nil {
+		// The error should be from trying to connect to the server, not from the U2F validation
+		if err.Error() == "U2F must be enabled when using --password-stdin" {
+			t.Fatal("U2F validation failed when it should have passed")
+		}
+	}
+
+	// Verify TOTP and VIPAccess were disabled
+	if !twofa.GetNoTOTP() {
+		t.Error("TOTP should be disabled when using password-stdin")
+	}
+	if !twofa.GetNoVIPAccess() {
+		t.Error("VIPAccess should be disabled when using password-stdin")
+	}
+
+	// Reset the flags
+	*passwordStdin = false
+	twofa.SetNoU2F(false)
+	twofa.SetNoTOTP(false)
+	twofa.SetNoVIPAccess(false)
 }
