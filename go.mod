@@ -34,7 +34,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/tstranex/u2f v1.0.0
 	github.com/vjeantet/ldapserver v1.0.1
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
