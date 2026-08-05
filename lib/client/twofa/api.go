@@ -21,6 +21,31 @@ var (
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
 
+// Getter and setter functions for the flags
+func SetNoU2F(value bool) {
+	*noU2F = value
+}
+
+func GetNoU2F() bool {
+	return *noU2F
+}
+
+func SetNoTOTP(value bool) {
+	*noTOTP = value
+}
+
+func GetNoTOTP() bool {
+	return *noTOTP
+}
+
+func SetNoVIPAccess(value bool) {
+	*noVIPAccess = value
+}
+
+func GetNoVIPAccess() bool {
+	return *noVIPAccess
+}
+
 // AuthenticateToTargetUrls does an authentication to the keymasted server
 // it performs 2fa if needed using the server side specified methods
 // it assumes the http client has a valid cookiejar
