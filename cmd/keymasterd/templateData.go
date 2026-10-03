@@ -63,6 +63,7 @@ const loginFormText = `
 <html style="height:100%; padding:0;border:0;margin:0">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{.Title}}</title>
 	<link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
 	<link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
@@ -71,7 +72,7 @@ const loginFormText = `
     <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-        <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+        <div class="bodyContainer">
         <h2> Keymaster Login </h2>
 	{{if .ErrorMessage}}
 	<p style="color:red;">{{.ErrorMessage}} </p>
@@ -128,6 +129,7 @@ const secondFactorAuthFormText = `
 <html style="height:100%; padding:0;border:0;margin:0">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{.Title}}</title>
         {{if .JSSources -}}
         {{- range .JSSources }}
@@ -141,7 +143,7 @@ const secondFactorAuthFormText = `
     <body>
         <div  style="min-height:100%;position:relative;">
 	{{template "header" .}}
-	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+	<div class="bodyContainer">
         <h2> Keymaster second factor authentication </h2>
 	{{if .ShowBootstrapOTP}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/bootstrapOtpAuth" method="post">
@@ -237,6 +239,8 @@ const usersHTML = `
 <!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     {{if .JSSources -}}
     {{- range .JSSources }}
@@ -253,7 +257,7 @@ const usersHTML = `
   <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+    <div class="bodyContainer">
 
     <h1>{{.Title}}</h1>
     <ul>
@@ -319,6 +323,8 @@ const profileHTML = `
 <!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     {{if .JSSources -}}
     {{- range .JSSources }}
@@ -335,7 +341,7 @@ const profileHTML = `
   <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+    <div class="bodyContainer">
 
     {{with $top := . }}
     <h1>Keymaster User Profile</h1>
@@ -481,6 +487,8 @@ const newTOTPHTML = `
 <!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     {{if .JSSources -}}
     {{- range .JSSources }}
@@ -497,7 +505,7 @@ const newTOTPHTML = `
   <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+    <div class="bodyContainer">
 
     <h1>{{.Title}}</h1>
 
@@ -543,6 +551,8 @@ const newBootstrapOTPPHTML = `
 <!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     {{if .JSSources -}}
     {{- range .JSSources }}
@@ -556,7 +566,7 @@ const newBootstrapOTPPHTML = `
   <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+    <div class="bodyContainer">
 
     <h1>{{.Title}}</h1>
 
@@ -596,6 +606,8 @@ const showAuthTokenHTML = `
 <!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
     {{if .JSSources -}}
     {{- range .JSSources }}
@@ -609,7 +621,7 @@ const showAuthTokenHTML = `
   <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+    <div class="bodyContainer">
 
     <h1>{{.Title}}</h1>
 
