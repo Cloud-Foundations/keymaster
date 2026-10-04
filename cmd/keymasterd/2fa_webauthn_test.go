@@ -7,16 +7,19 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/Cloud-Foundations/keymaster/lib/attest/fido"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/stretchr/testify/require"
 	"github.com/tstranex/u2f"
@@ -934,4 +937,191 @@ func TestWebAuthnRegistrationFinish(t *testing.T) {
 	}
 
 	state.dbDone <- struct{}{}
+}
+
+func makeTestX5CCert(t *testing.T, subject string, notBefore, notAfter time.Time,
+	isCA bool, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (
+	*x509.Certificate, *ecdsa.PrivateKey) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: subject},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		BasicConstraintsValid: true,
+		IsCA:                  isCA,
+	}
+	if parent == nil {
+		parent = template
+		parentKey = key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, parent,
+		&key.PublicKey, parentKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, key
+}
+
+func TestVerifyX5CChain(t *testing.T) {
+	now := time.Now()
+	notBefore := now.Add(-time.Hour)
+	notAfter := now.Add(time.Hour)
+	root, rootKey := makeTestX5CCert(t, "root", notBefore, notAfter, true, nil, nil)
+	leaf, _ := makeTestX5CCert(t, "leaf", notBefore, notAfter, false, root, rootKey)
+	otherRoot, _ := makeTestX5CCert(t, "other", notBefore, notAfter, true, nil, nil)
+	expiredLeaf, _ := makeTestX5CCert(t, "expired", now.Add(-2*time.Hour),
+		now.Add(-time.Hour), false, root, rootKey)
+
+	// Self standing attestation cert (fido-u2f style)
+	require.NoError(t, verifyX5CChain([]any{leaf.Raw}, now))
+	// Full chain
+	require.NoError(t, verifyX5CChain([]any{leaf.Raw, root.Raw}, now))
+	// Empty
+	require.Error(t, verifyX5CChain([]any{}, now))
+	// Not bytes
+	require.Error(t, verifyX5CChain([]any{"notbytes"}, now))
+	// Garbage
+	require.Error(t, verifyX5CChain([]any{[]byte("garbage")}, now))
+	// Wrong issuer
+	require.Error(t, verifyX5CChain([]any{leaf.Raw, otherRoot.Raw}, now))
+	// Expired
+	require.Error(t, verifyX5CChain([]any{expiredLeaf.Raw, root.Raw}, now))
+	// Not yet valid
+	require.Error(t, verifyX5CChain([]any{leaf.Raw, root.Raw}, now.Add(-2*time.Hour)))
+
+	// Attestation statement level checks
+	parsed := &protocol.ParsedCredentialCreationData{}
+	require.NoError(t, verifyAttestationX5C(parsed, nil, nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	parsed.Response.AttestationObject.AttStatement = map[string]any{
+		"x5c": []any{leaf.Raw, root.Raw}}
+	require.NoError(t, verifyAttestationX5C(parsed, nil, nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	parsed.Response.AttestationObject.AttStatement["x5c"] = "notanarray"
+	require.Error(t, verifyAttestationX5C(parsed, nil, nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	parsed.Response.AttestationObject.AttStatement = nil
+	parsed.Response.AttestationObject.SubStatements = []protocol.NonCompoundAttestationObject{
+		{AttStatement: map[string]any{"x5c": []any{leaf.Raw, otherRoot.Raw}}},
+	}
+	require.Error(t, verifyAttestationX5C(parsed, nil, nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+}
+
+// makeTestPackedAttestationResponse builds a credential creation response
+// using the "packed" attestation format with an x5c chain made of a
+// freshly generated root and attestation certificate.
+func makeTestPackedAttestationResponse(t *testing.T, credential webauthn.Credential,
+	challenge string, rpID string, origin string) []byte {
+	now := time.Now()
+	root, rootKey := makeTestX5CCert(t, "root", now.Add(-time.Hour),
+		now.Add(time.Hour), true, nil, nil)
+	attKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject: pkix.Name{
+			Country:            []string{"US"},
+			Organization:       []string{"Keymaster Test"},
+			OrganizationalUnit: []string{"Authenticator Attestation"},
+			CommonName:         "test attestation",
+		},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		BasicConstraintsValid: true,
+	}
+	attDer, err := x509.CreateCertificate(rand.Reader, template, root,
+		&attKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientData := protocol.CollectedClientData{
+		Type:      protocol.CreateCeremony,
+		Challenge: challenge,
+		Origin:    origin,
+	}
+	clientDataJSON, err := json.Marshal(clientData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rpIDHash := sha256.Sum256([]byte(rpID))
+	authData := append([]byte{}, rpIDHash[:]...)
+	authData = append(authData,
+		byte(protocol.FlagUserPresent|protocol.FlagAttestedCredentialData))
+	authData = binary.BigEndian.AppendUint32(authData, 0)
+	authData = append(authData, make([]byte, 16)...) // AAGUID
+	authData = binary.BigEndian.AppendUint16(authData, uint16(len(credential.ID)))
+	authData = append(authData, credential.ID...)
+	authData = append(authData, credential.PublicKey...)
+
+	clientDataHash := sha256.Sum256(clientDataJSON)
+	signedHash := sha256.Sum256(append(append([]byte{}, authData...),
+		clientDataHash[:]...))
+	sig, err := ecdsa.SignASN1(rand.Reader, attKey, signedHash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	attestationObject, err := webauthncbor.Marshal(map[string]interface{}{
+		"fmt": "packed",
+		"attStmt": map[string]interface{}{
+			"alg": int64(webauthncose.AlgES256),
+			"sig": sig,
+			"x5c": []interface{}{attDer, root.Raw},
+		},
+		"authData": authData,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b64 := base64.RawURLEncoding.EncodeToString
+	response := map[string]interface{}{
+		"id":    b64(credential.ID),
+		"rawId": b64(credential.ID),
+		"type":  "public-key",
+		"response": map[string]string{
+			"clientDataJSON":    b64(clientDataJSON),
+			"attestationObject": b64(attestationObject),
+		},
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func TestVerifyAttestationX5CWithMetadata(t *testing.T) {
+	_, credential := makeTestWebauthnCredential(t)
+	body := makeTestPackedAttestationResponse(t, credential, "Y2hhbGxlbmdl",
+		"testHost.example.com", "https://testHost.example.com")
+	parsed, err := protocol.ParseCredentialCreationResponseBytes(body)
+	require.NoError(t, err)
+	clientDataHash := sha256.Sum256(parsed.Raw.AttestationResponse.ClientDataJSON)
+
+	// Without metadata the (self consistent) chain is accepted
+	require.NoError(t, verifyAttestationX5C(parsed, clientDataHash[:], nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, time.Now()))
+
+	// The signature is valid, so a metadata failure is due to the
+	// authenticator not being known to the FIDO MDS
+	require.NoError(t, parsed.Response.AttestationObject.VerifyAttestation(
+		clientDataHash[:], nil, protocol.AttestationPolicy{},
+		protocol.SignaturePolicy{}))
+	mds, err := fido.GetProvider()
+	require.NoError(t, err)
+	err = verifyAttestationX5C(parsed, clientDataHash[:], mds,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, time.Now())
+	require.Error(t, err)
+	t.Logf("expected metadata error: %s", err)
 }

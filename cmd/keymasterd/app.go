@@ -59,6 +59,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/Cloud-Foundations/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/go-webauthn/webauthn/metadata"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -237,6 +238,7 @@ type RuntimeState struct {
 	textTemplates                *texttemplate.Template
 	awsCertIssuer                *aws_identity_cert.Issuer
 	webAuthn                     *webauthn.WebAuthn
+	fidoMDS                      metadata.Provider
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
 	websshauthenticator          *sshcertauth.Authenticator

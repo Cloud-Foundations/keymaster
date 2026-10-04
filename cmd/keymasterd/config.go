@@ -30,6 +30,8 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"github.com/cviecco/webauthn-mds/fido"
+
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
@@ -609,6 +611,10 @@ func loadVerifyConfigFile(configFilename string,
 	})
 	if err != nil {
 		return nil, err
+	}
+	runtimeState.fidoMDS, err = fido.GetProvider()
+	if err != nil {
+		return nil, fmt.Errorf("cannot load FIDO metadata: %s", err)
 	}
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
