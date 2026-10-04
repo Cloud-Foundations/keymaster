@@ -243,9 +243,8 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	}
 
 	// TODO: there is an extension to ensure it is an actual secirity key... need to add this to the call.
-	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
 	options, sessionData, err := state.webAuthn.BeginLogin(profile,
-		webauthn.WithAssertionExtensions(extensions))
+		webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
 	if err != nil {
 		logger.Printf("webauthnAuthBegin: %s", err)
 		webauthnJsonResponse(w, err.Error(), http.StatusInternalServerError)
@@ -376,7 +375,11 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		// Handle steps 4 through 16
 		rpTopOrigins := rpOrigins // FIXME: we actually have to compute this
 		verifyUserPresence := true
-		validError := parsedResponse.Verify(session.Challenge, rpID, rpOrigins, rpTopOrigins, protocol.TopOriginAutoVerificationMode, appID, shouldVerifyUser, verifyUserPresence, loginCredential.PublicKey)
+		rpOpaqueOrigins := []string{}
+		allowCrossOrigin := false
+		validError := parsedResponse.Verify(session.Challenge, rpID, appID, rpOrigins, rpOpaqueOrigins, rpTopOrigins,
+			protocol.TopOriginAutoVerificationMode,
+			allowCrossOrigin, shouldVerifyUser, verifyUserPresence, loginCredential.PublicKey, protocol.SignaturePolicy{})
 		if validError != nil {
 			logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
