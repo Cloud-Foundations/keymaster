@@ -22,11 +22,11 @@ require (
 	github.com/duo-labs/webauthn v0.0.0-20221205164246-ebaf9b74c6ec
 	github.com/flynn/u2f v0.0.0-20180613185708-15554eb68e5d
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
-	github.com/go-jose/go-jose/v4 v4.1.4
-	github.com/go-piv/piv-go/v2 v2.5.0
+	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-piv/piv-go/v2 v2.6.0
 	github.com/go-webauthn/webauthn v0.16.1
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef
-	github.com/lib/pq v1.12.1
+	github.com/lib/pq v1.12.3
 	github.com/marshallbrekka/go-u2fhost v0.0.0-20210111072507-3ccdec8c8105
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/nirasan/go-oauth-pkce-code-verifier v0.0.0-20220510032225-4f9f17eaec4c
