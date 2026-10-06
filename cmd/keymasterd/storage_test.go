@@ -21,7 +21,7 @@ func init() {
 }
 
 func newTestingState(t *testing.T) (*RuntimeState, string, error) {
-	tmpdir := os.TempDir()
+	tmpdir := t.TempDir()
 	state := &RuntimeState{
 		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
 		logger:                       testlogger.New(t),
