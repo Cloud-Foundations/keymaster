@@ -113,11 +113,15 @@ func TestKnownValidProfile(t *testing.T) {
 	require.NoError(t, err)
 
 	defer os.RemoveAll(tmpdir)
+	// This username has a single webautnhn profile
 	state.Config.Base.DataDirectory = "testdata/webauth-compat-0.16/"
 	err = initDB(state)
 	require.NoError(t, err)
 	profile, _, _, err := state.LoadUserProfile("username")
 	require.NoError(t, err)
 	require.NotNil(t, profile)
-
+	// probably we need to migrate to a different test so that we can actually test
+	// all the different possibilities once migration is happening
+	require.NotNil(t, profile.WebauthnData)
+	require.True(t, len(profile.WebauthnData) > 0)
 }
