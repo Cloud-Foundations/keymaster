@@ -32,6 +32,7 @@ require (
 	github.com/nirasan/go-oauth-pkce-code-verifier v0.0.0-20220510032225-4f9f17eaec4c
 	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.24.1
+	github.com/stretchr/testify v1.12.1
 	github.com/tstranex/u2f v1.0.0
 	github.com/vjeantet/ldapserver v1.0.1
 	golang.org/x/crypto v0.57.0
@@ -96,6 +97,7 @@ require (
 	github.com/skeema/knownhosts v1.3.3 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
