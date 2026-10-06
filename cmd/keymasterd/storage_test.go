@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	stdlog "log"
 	"os"
 	"testing"
@@ -11,6 +10,8 @@ import (
 	"github.com/Cloud-Foundations/Dominator/lib/log/debuglogger"
 	"github.com/Cloud-Foundations/golib/pkg/log/testlogger"
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
+
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -20,10 +21,7 @@ func init() {
 }
 
 func newTestingState(t *testing.T) (*RuntimeState, string, error) {
-	tmpdir, err := ioutil.TempDir("", "keymasterd")
-	if err != nil {
-		return nil, "", err
-	}
+	tmpdir := t.TempDir()
 	state := &RuntimeState{
 		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
 		logger:                       testlogger.New(t),
@@ -108,4 +106,22 @@ func TestFetchFromCache(t *testing.T) {
 		t.Fatal("This should have failed for invalid user")
 	}
 	state.dbDone <- struct{}{}
+}
+
+func TestKnownValidProfile(t *testing.T) {
+	state, tmpdir, err := newTestingState(t)
+	require.NoError(t, err)
+
+	defer os.RemoveAll(tmpdir)
+	// This username has a single webautnhn profile
+	state.Config.Base.DataDirectory = "testdata/webauth-compat-0.16/"
+	err = initDB(state)
+	require.NoError(t, err)
+	profile, _, _, err := state.LoadUserProfile("username")
+	require.NoError(t, err)
+	require.NotNil(t, profile)
+	// probably we need to migrate to a different test so that we can actually test
+	// all the different possibilities once migration is happening
+	require.NotNil(t, profile.WebauthnData)
+	require.True(t, len(profile.WebauthnData) > 0)
 }
