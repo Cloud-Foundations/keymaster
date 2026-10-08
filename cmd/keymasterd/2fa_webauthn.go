@@ -96,7 +96,12 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 		webauthnJsonResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	profile.WebauthnSessionData = sessionData
+	localAuth := localUserData{
+		WebAuthLogin: sessionData,
+		ExpiresAt:    time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
+	}
+	state.localAuthData[authData.Username] = localAuth
+	//profile.WebauthnSessionData = sessionData
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
@@ -155,7 +160,19 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	}
 
 	// load the session data
-	credential, err := state.webAuthn.FinishRegistration(profile, *profile.WebauthnSessionData, r)
+	localData, ok := state.localAuthData[authData.Username] //check this
+	if !ok {
+		state.logger.Printf("unown transdaction for user")
+		http.Error(w, "error", http.StatusBadRequest)
+		return
+	}
+	if localData.ExpiresAt.After(time.Now()) {
+		state.logger.Printf("Expired Transaction")
+		http.Error(w, "error", http.StatusBadRequest)
+		return
+
+	}
+	credential, err := state.webAuthn.FinishRegistration(profile, *localData.WebAuthLogin, r)
 	if err != nil {
 		state.logger.Println(err)
 		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)

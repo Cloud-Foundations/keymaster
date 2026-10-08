@@ -47,6 +47,7 @@ import (
 	"github.com/Cloud-Foundations/keymaster/keymasterd/eventnotifier"
 	"github.com/Cloud-Foundations/keymaster/lib/authenticators/okta"
 	"github.com/Cloud-Foundations/keymaster/lib/certgen"
+	compatwebauthn "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/webauthn"
 	"github.com/Cloud-Foundations/keymaster/lib/instrumentedwriter"
 	"github.com/Cloud-Foundations/keymaster/lib/paths"
 	"github.com/Cloud-Foundations/keymaster/lib/pwauth"
@@ -130,7 +131,7 @@ type webauthAuthData struct {
 	Enabled    bool
 	CreatedAt  time.Time
 	Name       string
-	Credential webauthn.Credential
+	Credential compatwebauthn.Credential
 }
 
 type totpAuthData struct {
@@ -160,13 +161,14 @@ type userProfile struct {
 	WebauthnID          uint64 // maybe more specific?
 	DisplayName         string
 	Username            string
-	WebauthnSessionData *webauthn.SessionData
+	WebauthnSessionData *compatwebauthn.SessionData
 }
 
 type localUserData struct {
 	U2fAuthChallenge  *u2f.Challenge
 	WebAuthnChallenge *webauthn.SessionData
 	ExpiresAt         time.Time
+	WebAuthLogin      *webauthn.SessionData
 }
 
 type pendingAuth2Request struct {
