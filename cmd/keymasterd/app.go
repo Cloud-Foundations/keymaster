@@ -157,11 +157,12 @@ type userProfile struct {
 	BootstrapOTP               bootstrapOTPData
 	UserHasRegistered2ndFactor bool
 
-	WebauthnData        map[int64]*webauthAuthData
-	WebauthnID          uint64 // maybe more specific?
-	DisplayName         string
-	Username            string
-	WebauthnSessionData *compatwebauthn.SessionData
+	WebauthnData map[int64]*webauthAuthData
+	WebauthnID   uint64 // maybe more specific?
+	DisplayName  string
+	Username     string
+	// TODO: find a way to serialize-encrypt this
+	//WebauthnSessionData *compatwebauthn.SessionData
 }
 
 type localUserData struct {
