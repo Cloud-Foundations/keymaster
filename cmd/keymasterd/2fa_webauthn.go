@@ -105,7 +105,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	//profile.WebauthnSessionData = sessionData
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
-		logger.Printf("Saving profile error: %v", err)
+		state.logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -115,7 +115,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 const webAutnRegististerFinishPath = "/webauthn/RegisterFinish/"
 
 func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf(3, "top of webauthnFinishRegistration")
+	state.logger.Debugf(3, "top of webauthnFinishRegistration")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -167,8 +167,9 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 	}
-	if localData.ExpiresAt.After(time.Now()) {
+	if localData.ExpiresAt.Before(time.Now()) {
 		state.logger.Printf("Expired Transaction")
+		delete(state.localAuthData, assumedUser)
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 
@@ -179,21 +180,22 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	logger.Debugf(2, "new credential=%+v\n", *credential)
+	state.logger.Debugf(2, "new credential=%+v\n", *credential)
 
 	err = profile.AddWebAuthnCredential(*credential)
 	if err != nil {
-		logger.Printf("Saving adding credential error: %v", err)
+		state.logger.Printf("Saving adding credential error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
-		logger.Printf("Saving profile error: %v", err)
+		state.logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+	delete(state.localAuthData, assumedUser) //TODO : maybe always clean?
 	webauthnJsonResponse(w, "Registration Success", http.StatusOK)
 }
 
@@ -236,7 +238,7 @@ func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.Creden
 }
 
 func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf(3, "top of webauthnAuthBegin")
+	state.logger.Debugf(3, "top of webauthnAuthBegin")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -244,40 +246,40 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authData, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Debugf(1, "%v", err)
+		state.logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 
 	profile, _, fromCache, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
-		logger.Printf("loading profile error: %v", err)
+		state.logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
 	}
 	if fromCache {
-		logger.Debugf(1, "DB is being cached and requesting authentication, proceeding with cached values")
+		state.logger.Debugf(1, "DB is being cached and requesting authentication, proceeding with cached values")
 	}
 
 	// TODO: there is an extension to ensure it is an actual secirity key... need to add this to the call.
 	options, sessionData, err := state.webAuthn.BeginLogin(profile,
 		webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
 	if err != nil {
-		logger.Printf("webauthnAuthBegin: %s", err)
+		state.logger.Printf("webauthnAuthBegin: %s", err)
 		webauthnJsonResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
 	if err != nil {
-		logger.Printf("u2f.NewChallenge error: %v", err)
+		state.logger.Printf("u2f.NewChallenge error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 	c.Challenge, err = base64.RawURLEncoding.DecodeString(sessionData.Challenge)
 	if err != nil {
-		logger.Printf("webauthnAuthBegin base64  error: %v", err)
+		state.logger.Printf("webauthnAuthBegin base64  error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -291,18 +293,18 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Unlock()
 	compatOptions, err := state.webauthAuthBeginResponseToOldProto(*options)
 	if err != nil {
-		logger.Printf("webauthnAuthBegin convert to old  error: %v", err)
+		state.logger.Printf("webauthnAuthBegin convert to old  error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 	webauthnJsonResponse(w, compatOptions, http.StatusOK)
-	logger.Debugf(3, "end of webauthnAuthBegin")
+	state.logger.Debugf(3, "end of webauthnAuthBegin")
 }
 
 const webAuthnAuthFinishPath = "/webauthn/AuthFinish/"
 
 func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Request) {
-	logger.Debugf(3, "top of webauthnAuthFinish")
+	state.logger.Debugf(3, "top of webauthnAuthFinish")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -315,7 +317,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authData.Username)
 	profile, ok, _, err := state.LoadUserProfile(authData.Username)
 	if err != nil {
-		logger.Printf("loading profile error: %v", err)
+		state.logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -335,7 +337,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 
 	parsedResponse, err := protocol.ParseCredentialRequestResponse(r)
 	if err != nil {
-		logger.Printf("Error parsing Response err =%s", err)
+		state.logger.Printf("Error parsing Response err =%s", err)
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -370,7 +372,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		// DO STD webaautn verification
 		_, err = state.webAuthn.ValidateLogin(profile, *localAuth.WebAuthnChallenge, parsedResponse) // iFinishLogin(profile, *localAuth.WebAuthnChallenge, r)
 		if err != nil {
-			logger.Printf("webauthnAuthFinish: auth failure err=%s", err)
+			state.logger.Printf("webauthnAuthFinish: auth failure err=%s", err)
 			webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
 			return
 		}
