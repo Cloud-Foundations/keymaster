@@ -401,7 +401,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 			protocol.TopOriginAutoVerificationMode,
 			allowCrossOrigin, shouldVerifyUser, verifyUserPresence, loginCredential.PublicKey, protocol.SignaturePolicy{})
 		if validError != nil {
-			logger.Printf("failed to verify webauthn parsedResponse")
+			state.logger.Printf("failed to verify webauthn parsedResponse")
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Credential Not Found")
 			return
 		}
@@ -415,9 +415,9 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 		}
 
 		verifiedAuth = AuthTypeU2F
-		logger.Debugf(3, "success (LOCAL)")
+		state.logger.Debugf(3, "success (LOCAL)")
 	}
-	logger.Debugf(1, "webauthnAuthFinish: auth success")
+	state.logger.Debugf(1, "webauthnAuthFinish: auth success")
 
 	// TODO: disinguish better between the two protocols or just use one
 	//metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
