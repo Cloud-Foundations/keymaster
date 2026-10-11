@@ -108,6 +108,14 @@ func TestFetchFromCache(t *testing.T) {
 	state.dbDone <- struct{}{}
 }
 
+var testExpectedPublicKeyCompatData = []byte{165, 1, 2, 3, 38, 32, 1,
+	33, 88, 32, 215, 178, 128, 119, 192, 232, 160, 212, 198, 59,
+	219, 159, 99, 159, 52, 239, 36, 171, 82, 214, 125, 133,
+	189, 235, 57, 213, 114, 230, 151, 196, 10, 220, 34, 88,
+	32, 31, 161, 221, 129, 130, 87, 166, 95, 29, 127, 60,
+	72, 210, 88, 68, 110, 189, 18, 141, 174, 206,
+	49, 248, 139, 212, 76, 9, 127, 124, 168, 1, 182}
+
 func TestKnownValidProfile(t *testing.T) {
 	state, tmpdir, err := newTestingState(t)
 	require.NoError(t, err)
@@ -124,4 +132,19 @@ func TestKnownValidProfile(t *testing.T) {
 	// all the different possibilities once migration is happening
 	require.NotNil(t, profile.WebauthnData)
 	require.True(t, len(profile.WebauthnData) > 0)
+	for _, storedCred := range profile.WebauthnData {
+		//t.Logf("compat data: %+v", storedCred.Credential)
+		require.Equal(t, storedCred.Credential.PublicKey, testExpectedPublicKeyCompatData)
+	}
+
+	// TODO: enhance the checking of the finalized credential by
+	// actually calling a sequance of authenticaiton from
+	// a stored credential. For now we just check that the public
+	// key is recovered, but that is a very low bar to pass
+	credentials := profile.WebAuthnCredentials()
+	require.NotNil(t, credentials)
+	require.True(t, len(credentials) > 0)
+	require.Equal(t, credentials[0].PublicKey, testExpectedPublicKeyCompatData)
+	//t.Logf("processed=%+v", credentials[0])
+
 }
