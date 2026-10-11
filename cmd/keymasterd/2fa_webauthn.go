@@ -100,8 +100,10 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 		WebAuthLogin: sessionData,
 		ExpiresAt:    time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
 	}
-	// TODO: locks and/or sync
+
+	state.Mutex.Lock()
 	state.localAuthData[assumedUser] = localAuth
+	state.Mutex.Unlock()
 	//profile.WebauthnSessionData = sessionData
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
@@ -161,7 +163,11 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	}
 
 	// load the session data
+	// we use pair wise lock/unlocks as there could be long running
+	// functions sucha as db updates and http responses.
+	state.Mutex.Lock()
 	localData, ok := state.localAuthData[assumedUser] //check this
+	state.Mutex.Unlock()
 	if !ok {
 		state.logger.Printf("unown transdaction for user")
 		http.Error(w, "error", http.StatusBadRequest)
@@ -169,7 +175,9 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	}
 	if localData.ExpiresAt.Before(time.Now()) {
 		state.logger.Printf("Expired Transaction")
+		state.Mutex.Lock()
 		delete(state.localAuthData, assumedUser)
+		state.Mutex.Unlock()
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 
@@ -195,7 +203,9 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+	state.Mutex.Lock()
 	delete(state.localAuthData, assumedUser) //TODO : maybe always clean?
+	state.Mutex.Unlock()
 	webauthnJsonResponse(w, "Registration Success", http.StatusOK)
 }
 
