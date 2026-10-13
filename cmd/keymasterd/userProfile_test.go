@@ -18,6 +18,15 @@ import (
 	"github.com/tstranex/u2f"
 )
 
+/*
+This file was 99% create by Claude (Opus 5.5) after being asked
+To build tests for serializaiton/deserialization of the profile
+
+as we start the comple removal of u2f this file will need to be
+addressed.
+
+*/
+
 // makeTestU2fRegistration builds a u2f registration from raw registration
 // data, the same way it is decoded when a profile is deserialized.
 func makeTestU2fRegistration(t *testing.T) *u2f.Registration {
