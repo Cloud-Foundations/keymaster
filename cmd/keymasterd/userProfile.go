@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/gob"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -115,4 +117,33 @@ func (u *userProfile) AddWebAuthnCredential(cred webauthn.Credential) error {
 	}
 	u.WebauthnData[index] = &authData
 	return nil
+}
+
+func (u *userProfile) Serialize() ([]byte, error) {
+	var gobBuffer bytes.Buffer
+	encoder := gob.NewEncoder(&gobBuffer)
+	if err := encoder.Encode(u); err != nil {
+		return nil, err
+	}
+	return gobBuffer.Bytes(), nil
+}
+
+func DeserializeProfile(profileBytes []byte) (*userProfile, error) {
+	var loadedProfile userProfile
+	gobReader := bytes.NewReader(profileBytes)
+	decoder := gob.NewDecoder(gobReader)
+	err := decoder.Decode(&loadedProfile)
+	if err != nil {
+		return nil, err
+	}
+	if loadedProfile.WebauthnData == nil {
+		loadedProfile.WebauthnData = make(map[int64]*webauthAuthData)
+	}
+	if loadedProfile.U2fAuthData == nil {
+		loadedProfile.U2fAuthData = make(map[int64]*u2fAuthData)
+	}
+	if loadedProfile.TOTPAuthData == nil {
+		loadedProfile.TOTPAuthData = make(map[int64]*totpAuthData)
+	}
+	return &loadedProfile, nil
 }
