@@ -230,6 +230,7 @@ func TestDeserializeEmptyProfile(t *testing.T) {
 	// These maps must always be usable after loading
 	require.NotNil(t, loadedProfile.U2fAuthData)
 	require.NotNil(t, loadedProfile.TOTPAuthData)
+	require.NotNil(t, loadedProfile.WebauthnData)
 	require.Empty(t, loadedProfile.U2fAuthData)
 	require.Empty(t, loadedProfile.TOTPAuthData)
 	require.Empty(t, loadedProfile.WebauthnData)
