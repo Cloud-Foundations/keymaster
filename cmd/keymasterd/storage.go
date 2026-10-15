@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"os"
@@ -520,16 +518,13 @@ func (state *RuntimeState) LoadUserProfile(username string) (
 		logger.Println("LoadUserProfile: got data from DB cache")
 	}
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
-	//gobReader := bytes.NewReader(fileBytes)
-	gobReader := bytes.NewReader(profileBytes)
-	decoder := gob.NewDecoder(gobReader)
-	err = decoder.Decode(&defaultProfile)
+	loadedProfile, err := DeserializeProfile(profileBytes)
 	if err != nil {
 		return nil, false, fromCache,
 			fmt.Errorf("error decoding user profile: %s", err)
 	}
-	logger.Debugf(1, "loaded profile=%+v", defaultProfile)
-	return &defaultProfile, true, fromCache, nil
+	logger.Debugf(1, "loaded profile=%+v", loadedProfile)
+	return loadedProfile, true, fromCache, nil
 }
 
 var saveUserProfileStmt = map[string]string{
@@ -539,9 +534,8 @@ var saveUserProfileStmt = map[string]string{
 
 func (state *RuntimeState) SaveUserProfile(username string,
 	profile *userProfile) error {
-	var gobBuffer bytes.Buffer
-	encoder := gob.NewEncoder(&gobBuffer)
-	if err := encoder.Encode(profile); err != nil {
+	profileBytes, err := profile.Serialize()
+	if err != nil {
 		return err
 	}
 	start := time.Now()
@@ -557,7 +551,7 @@ func (state *RuntimeState) SaveUserProfile(username string,
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(username, gobBuffer.Bytes())
+	_, err = stmt.Exec(username, profileBytes)
 	if err != nil {
 		return err
 	}
