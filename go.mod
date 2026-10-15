@@ -5,7 +5,7 @@ go 1.27
 replace github.com/bearsh/hid v1.3.0 => github.com/bearsh/hid v1.5.0
 
 require (
-	github.com/Cloud-Foundations/Dominator v0.12.0
+	github.com/Cloud-Foundations/Dominator v0.15.0
 	github.com/Cloud-Foundations/golib v0.5.0
 	github.com/Cloud-Foundations/npipe v0.0.0-20191222161149-761e85df1f92
 	github.com/Cloud-Foundations/tricorder v0.1.0
@@ -100,6 +100,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
