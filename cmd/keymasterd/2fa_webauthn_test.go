@@ -362,9 +362,8 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	}
 
 	// create and store the login session (as webauthnAuthLogin does)
-	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
-	_, sessionData, err := state.webAuthn.BeginLogin(profile,
-		webauthn.WithAssertionExtensions(extensions))
+	_, sessionData, err := state.webAuthn.BeginLogin(loadedProfile,
+		webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
 	if err != nil {
 		t.Fatal(err)
 	}
