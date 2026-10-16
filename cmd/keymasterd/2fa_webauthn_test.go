@@ -6,9 +6,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
+	"github.com/stretchr/testify/require"
 
 	oldproto "github.com/duo-labs/webauthn/protocol"
 
@@ -432,5 +435,136 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 		t.Fatalf("no updated auth cookie in response")
 	}
 
+	state.dbDone <- struct{}{}
+}
+
+// This test is only run to create a new saved profile/key
+func TestSaveCredentialsToFile(t *testing.T) {
+	destPrefix := os.Getenv("TESTCREDPREFIX")
+	if destPrefix == "" {
+		t.Skip()
+	}
+	// add a valid webauthn credential to the user profile
+	username := "username"
+	profile := &userProfile{
+		WebauthnData: make(map[int64]*webauthAuthData),
+		U2fAuthData:  make(map[int64]*u2fAuthData),
+	}
+	profile.FixupCredential(username, username)
+	privKey, credential := makeTestWebauthnCredential(t)
+	err := profile.AddWebAuthnCredential(credential)
+	require.NoError(t, err)
+
+	serializedProfile, err := profile.Serialize()
+	require.NoError(t, err)
+	profileFilename := destPrefix + ".profile"
+	t.Logf("desPrefix=%s", destPrefix)
+	err = os.WriteFile(profileFilename, serializedProfile, 0644)
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(privKey)
+	require.NoError(t, err)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: der,
+	})
+	keyFilename := destPrefix + ".key.pem"
+	err = os.WriteFile(keyFilename, pemBytes, 0644)
+	require.NoError(t, err)
+}
+
+func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	require.NoError(t, err)
+
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	state.localAuthData = make(map[string]localUserData)
+
+	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
+
+	state.signerPublicKeyToKeymasterKeys()
+
+	dir, err := os.MkdirTemp("", "example")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
+	err = initDB(state)
+	require.NoError(t, err)
+
+	state.HostIdentity = "testHost.example.com"
+	logger = state.logger
+
+	u2fAppID = "https://" + state.HostIdentity // this should include the port...but not needed for this test as we assume 443
+	state.webAuthn, err = webauthn.New(&webauthn.Config{
+		RPDisplayName: "Keymaster Server", // Display Name for your site
+		RPID:          state.HostIdentity, // Generally the domain name for your site
+		RPOrigins:     []string{u2fAppID}, // The origin URL for WebAuthn requests
+	})
+	require.NoError(t, err)
+
+	username := "username"
+	profilePrefixes := []string{"testdata/webauth-0.16"}
+	for _, prefix := range profilePrefixes {
+		profilefilename := prefix + ".profile"
+		keyFilename := prefix + ".key.pem"
+		profileBytes, err := os.ReadFile(profilefilename)
+		require.NoError(t, err)
+		profile, err := DeserializeProfile(profileBytes)
+		require.NoError(t, err)
+
+		pemBytes, err := os.ReadFile(keyFilename)
+		require.NoError(t, err)
+		block, _ := pem.Decode(pemBytes)
+		require.NotNil(t, block)
+		parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		require.NoError(t, err)
+
+		privKey, ok := parsedKey.(*ecdsa.PrivateKey)
+		require.True(t, ok)
+
+		webauthCreds := profile.WebAuthnCredentials()
+		require.Len(t, webauthCreds, 1)
+		credential := webauthCreds[0]
+
+		err = state.SaveUserProfile(username, profile)
+		require.NoError(t, err)
+
+		// create and store the login session (as webauthnAuthLogin does)
+		extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
+		_, sessionData, err := state.webAuthn.BeginLogin(profile,
+			webauthn.WithAssertionExtensions(extensions))
+		if err != nil {
+			t.Fatal(err)
+		}
+		state.localAuthData[username] = localUserData{
+			WebAuthnChallenge: sessionData,
+			ExpiresAt:         time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
+		}
+		// end of setup
+
+		cookieVal, err := state.setNewAuthCookie(nil, username, AuthTypePassword)
+		if err != nil {
+			t.Fatal(err)
+		}
+		authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+		// A properly signed response must succeed
+		body := makeTestAssertionResponse(t, privKey, credential.ID,
+			sessionData.Challenge, state.HostIdentity, u2fAppID,
+			profile.WebAuthnID(), 1)
+		req, err := http.NewRequest("POST", webAuthnAuthFinishPath, bytes.NewReader(body))
+		require.NoError(t, err)
+
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&authCookie)
+		rr, err := checkRequestHandlerCode(req, state.webauthnAuthFinish, http.StatusOK)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("authFinish response=%s", rr.Body.String())
+
+	}
 	state.dbDone <- struct{}{}
 }
