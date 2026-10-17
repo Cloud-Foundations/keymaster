@@ -198,9 +198,14 @@ func TestUserProfileSerializeWebAuthnCredentials(t *testing.T) {
 			require.Equal(t, uint32(42), credential.Authenticator.SignCount)
 		default:
 			foundWebauthn = true
-			// TODO.. compat transoform seem to fail NEED to revise
-			//compatCred := newCredToOldCred(credential)
-			//require.Equal(t, profile.WebauthnData[3].Credential, compatCred)
+			// NOTE: the tranformation from new into old
+			// is not perfect to we transform old into new and then
+			// do the check
+			compatCred, err := compatToNew(profile.WebauthnData[3].Credential)
+			require.NoError(t, err)
+			//t.Logf("compatCred=%+v", compatCred)
+			require.Equal(t, compatCred, credential)
+
 		}
 	}
 	require.True(t, foundWebauthn)
