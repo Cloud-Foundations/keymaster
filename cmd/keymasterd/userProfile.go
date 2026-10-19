@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"time"
 
+	compatprotocol "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/protocol"
+	compatwebauthn "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/webauthn"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -33,6 +38,180 @@ func (u *userProfile) WebAuthnIcon() string {
 	return ""
 }
 
+// NOTE: The conversion from the compat to old and back was done via
+// Claude Code (Opus 5.5). This includes:
+// compatFlagsToNew, compatToNewFromAttestation, compatToNew, and newCredToOldCred
+
+// compatFlagsToNew rebuilds the raw authenticator flags from the compat
+// credential flags. The raw value of the compat flags is unexported and is
+// lost on serialization, so the boolean fields are authoritative.
+func compatFlagsToNew(inflags compatwebauthn.CredentialFlags) webauthn.CredentialFlags {
+	raw := protocol.AuthenticatorFlags(inflags.ProtocolValue())
+	setFlag := func(flag protocol.AuthenticatorFlags, value bool) {
+		if value {
+			raw |= flag
+		} else {
+			raw &^= flag
+		}
+	}
+	setFlag(protocol.FlagUserPresent, inflags.UserPresent)
+	setFlag(protocol.FlagUserVerified, inflags.UserVerified)
+	setFlag(protocol.FlagBackupEligible, inflags.BackupEligible)
+	setFlag(protocol.FlagBackupState, inflags.BackupState)
+	return webauthn.NewCredentialFlags(raw)
+}
+
+// compatToNewFromAttestation re-parses the stored raw attestation and builds
+// the credential using webauthn.NewCredential.
+func compatToNewFromAttestation(incred compatwebauthn.Credential) (*webauthn.Credential, error) {
+	rawResponse := protocol.AuthenticatorAttestationResponse{
+		AuthenticatorResponse: protocol.AuthenticatorResponse{
+			ClientDataJSON: incred.Attestation.ClientDataJSON,
+		},
+		AuthenticatorData:  incred.Attestation.AuthenticatorData,
+		PublicKey:          incred.PublicKey,
+		PublicKeyAlgorithm: incred.Attestation.PublicKeyAlgorithm,
+		AttestationObject:  incred.Attestation.Object,
+	}
+	for _, transport := range incred.Transport {
+		rawResponse.Transports = append(rawResponse.Transports, string(transport))
+	}
+	parsedResponse, err := rawResponse.Parse()
+	if err != nil {
+		return nil, err
+	}
+	creationData := protocol.ParsedCredentialCreationData{
+		ParsedPublicKeyCredential: protocol.ParsedPublicKeyCredential{
+			RawID: incred.ID,
+			AuthenticatorAttachment: protocol.AuthenticatorAttachment(
+				incred.Authenticator.Attachment),
+		},
+		Response: *parsedResponse,
+		Raw: protocol.CredentialCreationResponse{
+			AttestationResponse: rawResponse,
+		},
+	}
+	creationData.ID = base64.RawURLEncoding.EncodeToString(incred.ID)
+	creationData.Type = string(protocol.PublicKeyCredentialType)
+	cred, err := webauthn.NewCredential(incred.Attestation.ClientDataHash, &creationData)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(cred.ID, incred.ID) ||
+		!bytes.Equal(cred.PublicKey, incred.PublicKey) {
+		return nil, fmt.Errorf("stored attestation does not match credential")
+	}
+	return cred, nil
+}
+
+// compatToNew converts a credential stored with the compat (old library)
+// format into a credential of the current go-webauthn library.
+// Fields that cannot be recovered from the compat credential:
+//   - Extensions: client extension results (credProps.rk, prf, largeBlob,
+//     hmacCreateSecret) were never stored. Authenticator extension outputs
+//     (credProtect, minPinLength, credBlob, hmac-secret) are only recovered
+//     when the raw attestation object is stored.
+//   - AttestationType: the compat library stored the attestation *format* in
+//     this field. The real attestation type is only recovered when the raw
+//     attestation object is stored.
+func compatToNew(incred compatwebauthn.Credential) (webauthn.Credential, error) {
+	if len(incred.ID) == 0 || len(incred.PublicKey) == 0 {
+		return webauthn.Credential{}, fmt.Errorf("credential missing ID or public key")
+	}
+	var cred webauthn.Credential
+	if len(incred.Attestation.Object) > 0 &&
+		len(incred.Attestation.ClientDataJSON) > 0 {
+		newCred, err := compatToNewFromAttestation(incred)
+		if err != nil {
+			logger.Debugf(1, "compatToNew: cannot use stored attestation: %s", err)
+		} else {
+			cred = *newCred
+		}
+	}
+	if cred.ID == nil {
+		// No usable attestation: copy field by field.
+		cred = webauthn.Credential{
+			ID:        incred.ID,
+			PublicKey: incred.PublicKey,
+			Authenticator: webauthn.Authenticator{
+				AAGUID: incred.Authenticator.AAGUID,
+			},
+			Attestation: webauthn.CredentialAttestation{
+				ClientDataJSON:     incred.Attestation.ClientDataJSON,
+				ClientDataHash:     incred.Attestation.ClientDataHash,
+				AuthenticatorData:  incred.Attestation.AuthenticatorData,
+				PublicKeyAlgorithm: incred.Attestation.PublicKeyAlgorithm,
+				Object:             incred.Attestation.Object,
+			},
+		}
+		if protocol.IsAttestationFormatString(incred.AttestationType) {
+			cred.AttestationFormat = incred.AttestationType
+		} else {
+			cred.AttestationType = incred.AttestationType
+		}
+	}
+	// The following values change after registration, so the stored values
+	// win over the ones derived from the registration attestation.
+	cred.Transport = nil
+	for _, transport := range incred.Transport {
+		cred.Transport = append(cred.Transport,
+			protocol.AuthenticatorTransport(transport))
+	}
+	cred.Flags = compatFlagsToNew(incred.Flags)
+	cred.Authenticator.SignCount = incred.Authenticator.SignCount
+	cred.Authenticator.CloneWarning = incred.Authenticator.CloneWarning
+	cred.Authenticator.Attachment = protocol.AuthenticatorAttachment(
+		incred.Authenticator.Attachment)
+	return cred, nil
+}
+
+// newCredToOldCred converts a credential of the current go-webauthn library
+// into the compat (old library) format used for storage.
+// Fields that cannot be stored in the compat credential:
+//   - Extensions: the compat credential has no place for them.
+//   - AttestationType/AttestationFormat: the compat credential has a single
+//     field which historically holds the attestation *format*. The format is
+//     stored there when known, otherwise the attestation type. The type can
+//     be re-derived later from the stored raw attestation.
+func newCredToOldCred(incred webauthn.Credential) compatwebauthn.Credential {
+	attestationType := incred.AttestationFormat
+	if attestationType == "" {
+		attestationType = incred.AttestationType
+	}
+	cred := compatwebauthn.Credential{
+		ID:              incred.ID,
+		PublicKey:       incred.PublicKey,
+		AttestationType: attestationType,
+		Flags: compatwebauthn.NewCredentialFlags(
+			compatprotocol.AuthenticatorFlags(incred.Flags.ProtocolValue())),
+		Authenticator: compatwebauthn.Authenticator{
+			AAGUID:       incred.Authenticator.AAGUID,
+			SignCount:    incred.Authenticator.SignCount,
+			CloneWarning: incred.Authenticator.CloneWarning,
+			Attachment: compatprotocol.AuthenticatorAttachment(
+				incred.Authenticator.Attachment),
+		},
+		Attestation: compatwebauthn.CredentialAttestation{
+			ClientDataJSON:     incred.Attestation.ClientDataJSON,
+			ClientDataHash:     incred.Attestation.ClientDataHash,
+			AuthenticatorData:  incred.Attestation.AuthenticatorData,
+			PublicKeyAlgorithm: incred.Attestation.PublicKeyAlgorithm,
+			Object:             incred.Attestation.Object,
+		},
+	}
+	// The raw flags may be missing if the credential flags were not built
+	// with NewCredentialFlags, so the boolean fields are authoritative.
+	cred.Flags.UserPresent = incred.Flags.UserPresent
+	cred.Flags.UserVerified = incred.Flags.UserVerified
+	cred.Flags.BackupEligible = incred.Flags.BackupEligible
+	cred.Flags.BackupState = incred.Flags.BackupState
+	for _, transport := range incred.Transport {
+		cred.Transport = append(cred.Transport,
+			compatprotocol.AuthenticatorTransport(transport))
+	}
+	return cred
+}
+
 // This function is needed to create a unified view of all webauthn credentials
 func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 	logger.Debugf(3, "top of profile.WebAuthnCredentials %+v ", u)
@@ -41,7 +220,11 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 		if !authData.Enabled {
 			continue
 		}
-		rvalue = append(rvalue, authData.Credential)
+		converted, err := compatToNew(authData.Credential)
+		if err != nil {
+			continue
+		}
+		rvalue = append(rvalue, converted)
 	}
 	logger.Debugf(3, "profile.WebAuthnCredentials after webauthn.Credential loop")
 	for _, u2fAuthData := range u.U2fAuthData {
@@ -113,7 +296,7 @@ func (u *userProfile) AddWebAuthnCredential(cred webauthn.Credential) error {
 	authData := webauthAuthData{
 		CreatedAt:  time.Now(),
 		Enabled:    true,
-		Credential: cred,
+		Credential: newCredToOldCred(cred),
 	}
 	u.WebauthnData[index] = &authData
 	return nil
