@@ -212,7 +212,7 @@ func TestWebAuthnLoginBegin(t *testing.T) {
 	state.dbDone <- struct{}{}
 }
 
-// The next sections where added via Claude code (Opus 5.5)
+// The next sections were added via Claude code (Opus 5.5)
 // makeTestWebauthnCredential creates a new P-256 key pair and a webauthn
 // credential (non fido-u2f) holding its COSE encoded public key.
 func makeTestWebauthnCredential(t *testing.T) (*ecdsa.PrivateKey, webauthn.Credential) {
