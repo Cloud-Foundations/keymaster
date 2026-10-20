@@ -104,7 +104,6 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	state.Mutex.Lock()
 	state.localAuthData[assumedUser] = localAuth
 	state.Mutex.Unlock()
-	//profile.WebauthnSessionData = sessionData
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		state.logger.Printf("Saving profile error: %v", err)
