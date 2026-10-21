@@ -578,7 +578,7 @@ func loadVerifyConfigFile(configFilename string,
 	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 	runtimeState.SignerIsReady = make(chan bool, 1)
-	runtimeState.localAuthData = make(map[string]localUserData)
+	runtimeState.localAuthData = make(map[localDataKey]localUserData)
 	runtimeState.vipPushCookie = make(map[string]pushPollTransaction)
 	runtimeState.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 

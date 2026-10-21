@@ -282,7 +282,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	localAuth.U2fAuthChallenge = c
 	localAuth.ExpiresAt = time.Now().Add(maxAgeU2FVerifySeconds * time.Second)
 	state.Mutex.Lock()
-	state.localAuthData[authData.Username] = localAuth
+	state.localAuthData[localDataKey{username: authData.Username, dataType: localAuthTypeU2fChallenge}] = localAuth
 	state.Mutex.Unlock()
 
 	req := c.SignRequest(registrations)
@@ -345,7 +345,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	state.Mutex.Lock()
-	localAuth, ok := state.localAuthData[authData.Username]
+	localAuth, ok := state.localAuthData[localDataKey{username: authData.Username, dataType: localAuthTypeU2fChallenge}]
 	state.Mutex.Unlock()
 	if !ok {
 		http.Error(w, "challenge missing", http.StatusBadRequest)
@@ -368,7 +368,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			u2fReg.Counter = newCounter
 			profile.U2fAuthData[i] = u2fReg
 			//profile.U2fAuthChallenge = nil
-			delete(state.localAuthData, authData.Username)
+			delete(state.localAuthData, localDataKey{username: authData.Username, dataType: localAuthTypeU2fChallenge})
 
 			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authData.Username)
 			_, isXHR := r.Header["X-Requested-With"]

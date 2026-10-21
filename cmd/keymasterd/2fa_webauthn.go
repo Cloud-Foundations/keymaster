@@ -102,7 +102,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 	}
 
 	state.Mutex.Lock()
-	state.localAuthData[assumedUser] = localAuth
+	state.localAuthData[localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}] = localAuth
 	state.Mutex.Unlock()
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
@@ -165,7 +165,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	// we use pair wise lock/unlocks as there could be long running
 	// functions sucha as db updates and http responses.
 	state.Mutex.Lock()
-	localData, ok := state.localAuthData[assumedUser] //check this
+	localData, ok := state.localAuthData[localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}] //check this
 	state.Mutex.Unlock()
 	if !ok {
 		state.logger.Printf("unknown transaction for user")
@@ -175,7 +175,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	if localData.ExpiresAt.Before(time.Now()) {
 		state.logger.Printf("Expired Transaction")
 		state.Mutex.Lock()
-		delete(state.localAuthData, assumedUser)
+		delete(state.localAuthData, localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration})
 		state.Mutex.Unlock()
 		http.Error(w, "error", http.StatusBadRequest)
 		return
@@ -203,7 +203,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		return
 	}
 	state.Mutex.Lock()
-	delete(state.localAuthData, assumedUser) //TODO : maybe always clean?
+	delete(state.localAuthData, localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}) //TODO : maybe always clean?
 	state.Mutex.Unlock()
 	webauthnJsonResponse(w, "Registration Success", http.StatusOK)
 }
@@ -298,7 +298,7 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	localAuth.WebAuthnChallenge = sessionData
 	localAuth.ExpiresAt = time.Now().Add(maxAgeU2FVerifySeconds * time.Second)
 	state.Mutex.Lock()
-	state.localAuthData[authData.Username] = localAuth
+	state.localAuthData[localDataKey{username: authData.Username, dataType: localAuthTypeWebAuthLogin}] = localAuth
 	state.Mutex.Unlock()
 	compatOptions, err := state.webauthAuthBeginResponseToOldProto(*options)
 	if err != nil {
@@ -337,7 +337,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	}
 
 	state.Mutex.Lock()
-	localAuth, ok := state.localAuthData[authData.Username]
+	localAuth, ok := state.localAuthData[localDataKey{username: authData.Username, dataType: localAuthTypeWebAuthLogin}]
 	state.Mutex.Unlock()
 	if !ok {
 		http.Error(w, "challenge missing", http.StatusBadRequest)
@@ -431,7 +431,7 @@ func (state *RuntimeState) webauthnAuthFinish(w http.ResponseWriter, r *http.Req
 	// TODO: disinguish better between the two protocols or just use one
 	//metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 	state.Mutex.Lock()
-	delete(state.localAuthData, authData.Username)
+	delete(state.localAuthData, localDataKey{username: authData.Username, dataType: localAuthTypeWebAuthLogin})
 	state.Mutex.Unlock()
 
 	//TODO: distinguish here u2f vs webauthn
