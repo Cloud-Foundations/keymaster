@@ -103,6 +103,14 @@ All contributions must be unencumbered. It is the responsibility of
 the contributor to ensure compliance with all laws, copyrights,
 patents and contracts.
 
+### AI Contribution Policy
+Contributions with the use of AI are welcomed. However responsible use and disclosure is
+required in particular:
+1. A human is required to be in the loop. This person is expected to be fully responsible for the contributions and is expected to have reviewed the code before submitting for review. In addition the contributor is resposible for the accuracy and intent of the contribution.
+2. Clearly and explicitly Disclose the use of AI in the pull requeset. Please include the name of the AI tool used either on the affected file and/or the commit comments
+3. If questions arise in the review process do not use AI for answering such questions. 
+
+
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
