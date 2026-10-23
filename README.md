@@ -114,7 +114,7 @@ required; in particular:
 ## LICENSE
 Copyright 2016-2019 Symantec Corporation.
 
-Copyright 2019-2025 Cloud-Foundations.org
+Copyright 2019-2026 Cloud-Foundations.org
 
 Licensed under the Apache License, Version 2.0 (the “License”); you
 may not use this file except in compliance with the License.
@@ -126,6 +126,9 @@ License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for
 the specific language governing permissions and limitations under the
 License.
+
+In addition there are versioned derived files that use the BSD 3-Clause
+Revised license. 
 
 ## Versioning
 Keymaster versions follow the [Sementic Versioning](https://semver.org/)
