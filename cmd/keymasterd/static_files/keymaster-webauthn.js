@@ -40,6 +40,8 @@ function webAuthnRegisterUser() {
 		  console.log(credentialCreationOptions);
 		  credentialCreationOptions.publicKey.challenge = bufferDecode(credentialCreationOptions.publicKey.challenge);
                   credentialCreationOptions.publicKey.user.id = bufferDecode(credentialCreationOptions.publicKey.user.id);
+                  // TODO: the next line was breaking Firefox. We need to investigate JS flags on issue 311
+                  // For now we cooment this as does not affect functionality
                   //credentialCreationOptions.publicKey.authenticatorSelection.userVerification="discouraged";
                   console.log(credentialCreationOptions);
                   return navigator.credentials.create({
@@ -98,8 +100,6 @@ function webAuthnAuthenticateUser() {
       credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
         listItem.id = bufferDecodeB64(listItem.id)
       });
-      // TODO: the next line was breaking Firefox. We need to investigate JS flags on issue 311
-      // For now we cooment this as does not affect functionality
       //credentialRequestOptions.publicKey.authenticatorSelection.userVerification="discouraged";
       console.log("Authnenticated: " + credentialRequestOptions);
       return navigator.credentials.get({
