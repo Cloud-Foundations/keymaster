@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	compatprotocol "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/protocol"
+	compatwebauthn "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/webauthn"
+
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
@@ -104,25 +107,25 @@ func makeTestFullProfile(t *testing.T) *userProfile {
 				Enabled:   true,
 				CreatedAt: createdAt,
 				Name:      "webauthn-key",
-				Credential: webauthn.Credential{
+				Credential: compatwebauthn.Credential{
 					ID:              []byte{0x01, 0x02, 0x03, 0x04},
 					PublicKey:       []byte("cose-public-key"),
 					AttestationType: "packed",
-					Transport: []protocol.AuthenticatorTransport{
-						protocol.USB, protocol.NFC},
-					Flags: webauthn.CredentialFlags{
+					Transport: []compatprotocol.AuthenticatorTransport{
+						compatprotocol.USB, compatprotocol.NFC},
+					Flags: compatwebauthn.CredentialFlags{
 						UserPresent:    true,
 						UserVerified:   true,
 						BackupEligible: true,
 						BackupState:    true,
 					},
-					Authenticator: webauthn.Authenticator{
+					Authenticator: compatwebauthn.Authenticator{
 						AAGUID:       []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
 						SignCount:    7,
 						CloneWarning: true,
-						Attachment:   protocol.CrossPlatform,
+						Attachment:   compatprotocol.CrossPlatform,
 					},
-					Attestation: webauthn.CredentialAttestation{
+					Attestation: compatwebauthn.CredentialAttestation{
 						ClientDataJSON:     []byte(`{"type":"webauthn.create"}`),
 						ClientDataHash:     []byte("client-data-hash"),
 						AuthenticatorData:  []byte("authenticator-data"),
@@ -135,7 +138,7 @@ func makeTestFullProfile(t *testing.T) *userProfile {
 				Enabled:   false,
 				CreatedAt: createdAt,
 				Name:      "disabled-webauthn-key",
-				Credential: webauthn.Credential{
+				Credential: compatwebauthn.Credential{
 					ID:        []byte{0x05, 0x06},
 					PublicKey: []byte("other-cose-public-key"),
 				},
@@ -195,7 +198,14 @@ func TestUserProfileSerializeWebAuthnCredentials(t *testing.T) {
 			require.Equal(t, uint32(42), credential.Authenticator.SignCount)
 		default:
 			foundWebauthn = true
-			require.Equal(t, profile.WebauthnData[3].Credential, credential)
+			// NOTE: the tranformation from new into old
+			// is not perfect to we transform old into new and then
+			// do the check
+			compatCred, err := compatToNew(profile.WebauthnData[3].Credential)
+			require.NoError(t, err)
+			//t.Logf("compatCred=%+v", compatCred)
+			require.Equal(t, compatCred, credential)
+
 		}
 	}
 	require.True(t, foundWebauthn)

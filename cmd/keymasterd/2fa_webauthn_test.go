@@ -362,9 +362,8 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	}
 
 	// create and store the login session (as webauthnAuthLogin does)
-	extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
-	_, sessionData, err := state.webAuthn.BeginLogin(profile,
-		webauthn.WithAssertionExtensions(extensions))
+	_, sessionData, err := state.webAuthn.BeginLogin(loadedProfile,
+		webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,9 +531,8 @@ func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// create and store the login session (as webauthnAuthLogin does)
-		extensions := protocol.AuthenticationExtensions{"appid": u2fAppID}
 		_, sessionData, err := state.webAuthn.BeginLogin(profile,
-			webauthn.WithAssertionExtensions(extensions))
+			webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -566,5 +564,230 @@ func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
 		t.Logf("authFinish response=%s", rr.Body.String())
 
 	}
+	state.dbDone <- struct{}{}
+}
+
+// NOTE: Tests for registration where done via Claude (opus 5.5)
+// makeTestAttestationResponse builds the JSON body an authenticator/browser
+// would POST to finish a webauthn registration for the given challenge.
+// It uses the "none" attestation format.
+func makeTestAttestationResponse(t *testing.T, credential webauthn.Credential,
+	challenge string, rpID string, origin string) []byte {
+	clientData := protocol.CollectedClientData{
+		Type:      protocol.CreateCeremony,
+		Challenge: challenge,
+		Origin:    origin,
+	}
+	clientDataJSON, err := json.Marshal(clientData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rpIDHash := sha256.Sum256([]byte(rpID))
+	authData := append([]byte{}, rpIDHash[:]...)
+	authData = append(authData,
+		byte(protocol.FlagUserPresent|protocol.FlagAttestedCredentialData))
+	authData = binary.BigEndian.AppendUint32(authData, 0)
+	authData = append(authData, make([]byte, 16)...) // AAGUID
+	authData = binary.BigEndian.AppendUint16(authData, uint16(len(credential.ID)))
+	authData = append(authData, credential.ID...)
+	authData = append(authData, credential.PublicKey...)
+
+	attestationObject, err := webauthncbor.Marshal(map[string]interface{}{
+		"fmt":      "none",
+		"attStmt":  map[string]interface{}{},
+		"authData": authData,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b64 := base64.RawURLEncoding.EncodeToString
+	response := map[string]interface{}{
+		"id":    b64(credential.ID),
+		"rawId": b64(credential.ID),
+		"type":  "public-key",
+		"response": map[string]string{
+			"clientDataJSON":    b64(clientDataJSON),
+			"attestationObject": b64(attestationObject),
+		},
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func TestWebAuthnRegistrationFinish(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	state.localAuthData = make(map[string]localUserData)
+
+	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
+
+	state.signerPublicKeyToKeymasterKeys()
+
+	dir, err := os.MkdirTemp("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
+	err = initDB(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.HostIdentity = "testHost.example.com"
+	logger = state.logger
+
+	u2fAppID = "https://" + state.HostIdentity // this should include the port...but not needed for this test as we assume 443
+	state.webAuthn, err = webauthn.New(&webauthn.Config{
+		RPDisplayName: "Keymaster Server", // Display Name for your site
+		RPID:          state.HostIdentity, // Generally the domain name for your site
+		RPOrigins:     []string{u2fAppID}, // The origin URL for WebAuthn requests
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// end of setup
+
+	username := "username"
+	cookieVal, err := state.setNewAuthCookie(nil, username, AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	privKey, credential := makeTestWebauthnCredential(t)
+
+	newFinishRequest := func(user string, body []byte, cookie *http.Cookie) *http.Request {
+		req, err := http.NewRequest("POST", webAutnRegististerFinishPath+user,
+			bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		return req
+	}
+
+	// Finishing without a pending registration must fail
+	body := makeTestAttestationResponse(t, credential, "bm9zZXNzaW9u",
+		state.HostIdentity, u2fAppID)
+	_, err = checkRequestHandlerCode(newFinishRequest(username, body, &authCookie),
+		state.webauthnFinishRegistration, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Begin the registration, this stores the session data
+	req, err := http.NewRequest("GET", webAutnRegististerRequestPath+username, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&authCookie)
+	regData, err := checkRequestHandlerCode(req, state.webauthnBeginRegistration, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var options protocol.CredentialCreation
+	if err = json.Unmarshal(regData.Body.Bytes(), &options); err != nil {
+		t.Fatal(err)
+	}
+	challenge := options.Response.Challenge.String()
+	if _, ok := state.localAuthData[username]; !ok {
+		t.Fatalf("registration session not stored")
+	}
+
+	// A different user (non admin) cannot finish the registration
+	otherCookieVal, err := state.setNewAuthCookie(nil, "otheruser", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherCookie := http.Cookie{Name: authCookieName, Value: otherCookieVal}
+	body = makeTestAttestationResponse(t, credential, challenge,
+		state.HostIdentity, u2fAppID)
+	_, err = checkRequestHandlerCode(newFinishRequest(username, body, &otherCookie),
+		state.webauthnFinishRegistration, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A response for the wrong challenge must fail
+	body = makeTestAttestationResponse(t, credential, "d3JvbmdjaGFsbGVuZ2U",
+		state.HostIdentity, u2fAppID)
+	_, err = checkRequestHandlerCode(newFinishRequest(username, body, &authCookie),
+		state.webauthnFinishRegistration, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A response for the wrong origin must fail
+	body = makeTestAttestationResponse(t, credential, challenge,
+		state.HostIdentity, "https://evil.example.com")
+	_, err = checkRequestHandlerCode(newFinishRequest(username, body, &authCookie),
+		state.webauthnFinishRegistration, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A valid response must succeed
+	body = makeTestAttestationResponse(t, credential, challenge,
+		state.HostIdentity, u2fAppID)
+	rr, err := checkRequestHandlerCode(newFinishRequest(username, body, &authCookie),
+		state.webauthnFinishRegistration, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("registerFinish response=%s", rr.Body.String())
+
+	// session must be consumed
+	if _, ok := state.localAuthData[username]; ok {
+		t.Fatalf("session data was not removed after successful registration")
+	}
+
+	// The credential must be stored in the profile
+	profile, ok, _, err := state.LoadUserProfile(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatalf("profile for %s not found", username)
+	}
+	if len(profile.WebauthnData) != 1 {
+		t.Fatalf("expected 1 webauthn registration, got %d", len(profile.WebauthnData))
+	}
+	storedCreds := profile.WebAuthnCredentials()
+	if len(storedCreds) != 1 {
+		t.Fatalf("expected 1 credential, got %d", len(storedCreds))
+	}
+	if !bytes.Equal(storedCreds[0].ID, credential.ID) {
+		t.Fatalf("stored credential ID mismatch")
+	}
+	if !bytes.Equal(storedCreds[0].PublicKey, credential.PublicKey) {
+		t.Fatalf("stored credential public key mismatch")
+	}
+	if storedCreds[0].AttestationFormat != "none" {
+		t.Fatalf("unexpected attestation format %q", storedCreds[0].AttestationFormat)
+	}
+
+	// The registered credential must be usable for login
+	_, sessionData, err := state.webAuthn.BeginLogin(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedResponse, err := protocol.ParseCredentialRequestResponseBytes(
+		makeTestAssertionResponse(t, privKey, credential.ID,
+			sessionData.Challenge, state.HostIdentity, u2fAppID,
+			profile.WebAuthnID(), 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = state.webAuthn.ValidateLogin(profile, *sessionData, parsedResponse); err != nil {
+		t.Fatalf("login with registered credential failed: %s", err)
+	}
+
 	state.dbDone <- struct{}{}
 }
