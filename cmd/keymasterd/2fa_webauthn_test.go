@@ -567,6 +567,7 @@ func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
 	state.dbDone <- struct{}{}
 }
 
+// NOTE: Tests for registration where done via Claude (opus 5.5)
 // makeTestAttestationResponse builds the JSON body an authenticator/browser
 // would POST to finish a webauthn registration for the given challenge.
 // It uses the "none" attestation format.
@@ -616,7 +617,6 @@ func makeTestAttestationResponse(t *testing.T, credential webauthn.Credential,
 	return body
 }
 
-// NOTE: Tests for registration where done via Claude (opus 5.5)
 func TestWebAuthnRegistrationFinish(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
