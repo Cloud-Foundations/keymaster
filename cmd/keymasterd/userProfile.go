@@ -38,6 +38,10 @@ func (u *userProfile) WebAuthnIcon() string {
 	return ""
 }
 
+// NOTE: The conversion from the compat to old and back was done via
+// Claude Code (Opus 5.5). This includes:
+// compatFlagsToNew, compatToNewFromAttestation, compatToNew, and newCredToOldCred
+
 // compatFlagsToNew rebuilds the raw authenticator flags from the compat
 // credential flags. The raw value of the compat flags is unexported and is
 // lost on serialization, so the boolean fields are authoritative.

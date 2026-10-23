@@ -168,7 +168,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	localData, ok := state.localAuthData[assumedUser] //check this
 	state.Mutex.Unlock()
 	if !ok {
-		state.logger.Printf("unown transdaction for user")
+		state.logger.Printf("unknown transaction for user")
 		http.Error(w, "error", http.StatusBadRequest)
 		return
 	}

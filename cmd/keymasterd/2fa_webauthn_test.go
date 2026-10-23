@@ -616,6 +616,7 @@ func makeTestAttestationResponse(t *testing.T, credential webauthn.Credential,
 	return body
 }
 
+// NOTE: Tests for registration where done via Claude (opus 5.5)
 func TestWebAuthnRegistrationFinish(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner(t)
 	if err != nil {
