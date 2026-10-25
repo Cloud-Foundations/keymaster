@@ -248,9 +248,12 @@ func (u *userProfile) WebAuthnCredentials() []webauthn.Credential {
 		*/
 		pubKeyBytes := elliptic.Marshal(u2fAuthData.Registration.PubKey.Curve, u2fAuthData.Registration.PubKey.X, u2fAuthData.Registration.PubKey.Y)
 		credential := webauthn.Credential{
-			AttestationType: "fido-u2f",
-			ID:              u2fAuthData.Registration.KeyHandle,
-			PublicKey:       pubKeyBytes,
+			// AttestationType is checked by webauthnAuthFinish;
+			// AttestationFormat lets go-webauthn keep the appid extension.
+			AttestationType:   "fido-u2f",
+			AttestationFormat: "fido-u2f",
+			ID:                u2fAuthData.Registration.KeyHandle,
+			PublicKey:         pubKeyBytes,
 			Authenticator: webauthn.Authenticator{
 				// The AAGUID of the authenticator. An AAGUID is defined as an array containing the globally unique
 				// identifier of the authenticator model being sought.
