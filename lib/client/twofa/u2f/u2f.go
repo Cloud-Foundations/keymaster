@@ -438,6 +438,23 @@ func verifyAppId(baseURLStr string, AppIdStr string) (bool, error) {
 	return false, nil
 }
 
+// webAuthnFacet returns the clientData origin for a WebAuthn assertion: the
+// server provided appid if any, otherwise the scheme://host[:port] origin of
+// baseURLStr (as a browser would).
+func webAuthnFacet(baseURLStr string, extensionAppId string) (string, error) {
+	if extensionAppId != "" {
+		return extensionAppId, nil
+	}
+	baseURL, err := url.Parse(baseURLStr)
+	if err != nil {
+		return "", err
+	}
+	if baseURL.Scheme == "" || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid base URL: %s", baseURLStr)
+	}
+	return baseURL.Scheme + "://" + baseURL.Host, nil
+}
+
 func withDevicesDoU2FAuthenticate(
 	devices []*u2fhost.HidDevice,
 	client *http.Client,
@@ -563,14 +580,19 @@ func withDevicesDoWebAuthnAuthenticate(
 
 	logger.Debugf(2, "credential Assertion=%+v", credentialAssertion)
 	appId := credentialAssertion.Response.RelyingPartyID
+	extensionAppId := ""
 	if credentialAssertion.Response.Extensions != nil {
 		appIdIface, ok := credentialAssertion.Response.Extensions["appid"]
 		if ok {
-			extensionAppId, ok := appIdIface.(string)
+			extensionAppId, ok = appIdIface.(string)
 			if ok {
 				appId = extensionAppId
 			}
 		}
+	}
+	facet, err := webAuthnFacet(baseURL, extensionAppId)
+	if err != nil {
+		return err
 	}
 	// TODO: add check on length of returned data
 	validAppId, err := verifyAppId(baseURL, appId)
@@ -590,7 +612,7 @@ func withDevicesDoWebAuthnAuthenticate(
 	//
 	req := u2fhost.AuthenticateRequest{
 		Challenge: credentialAssertion.Response.Challenge.String(),
-		Facet:     appId,                                       //TODO: FIX this is actually Provided by client, so or at least compere with base url host
+		Facet:     facet,                                       //TODO: FIX this is actually Provided by client, so or at least compere with base url host
 		AppId:     credentialAssertion.Response.RelyingPartyID, // Provided by Server
 		//AppId: appId,
 

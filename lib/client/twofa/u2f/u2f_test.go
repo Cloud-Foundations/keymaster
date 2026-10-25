@@ -49,3 +49,27 @@ func TestVerifyAppId(t *testing.T) {
 	}
 
 }
+
+func TestWebAuthnFacet(t *testing.T) {
+	tests := []struct {
+		baseURL, appId, want string
+	}{
+		{"https://good.example.com", "https://good.example.com", "https://good.example.com"},
+		{"https://good.example.com", "", "https://good.example.com"},
+		{"https://good.example.com/", "", "https://good.example.com"},
+		{"https://good.example.com:33443", "", "https://good.example.com:33443"},
+	}
+	for _, test := range tests {
+		got, err := webAuthnFacet(test.baseURL, test.appId)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != test.want {
+			t.Fatalf("base=%s appid=%q: got %s, want %s",
+				test.baseURL, test.appId, got, test.want)
+		}
+	}
+	if _, err := webAuthnFacet("good.example.com", ""); err == nil {
+		t.Fatal("expected error for base URL without scheme")
+	}
+}

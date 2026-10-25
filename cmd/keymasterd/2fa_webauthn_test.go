@@ -19,6 +19,7 @@ import (
 
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
 	"github.com/stretchr/testify/require"
+	"github.com/tstranex/u2f"
 
 	oldproto "github.com/duo-labs/webauthn/protocol"
 
@@ -207,6 +208,10 @@ func TestWebAuthnLoginBegin(t *testing.T) {
 	var compatClient oldproto.CredentialAssertion
 	if err = json.Unmarshal(b.Bytes(), &compatClient); err != nil {
 		t.Fatal(err)
+	}
+	// CLI clients use the appid as clientData origin, it must always be sent.
+	if appID := compatClient.Response.Extensions["appid"]; appID != u2fAppID {
+		t.Fatalf("appid=%v, want %s", appID, u2fAppID)
 	}
 
 	state.dbDone <- struct{}{}
@@ -435,6 +440,145 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	}
 
 	state.dbDone <- struct{}{}
+}
+
+// newWebAuthnLoginTestState returns a RuntimeState ready for webauthn login
+// tests; the caller must run the returned cleanup function.
+func newWebAuthnLoginTestState(t *testing.T) (*RuntimeState, func()) {
+	state, passwdFile, err := setupValidRuntimeStateSigner(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.localAuthData = make(map[string]localUserData)
+	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
+	state.signerPublicKeyToKeymasterKeys()
+	dir, err := os.MkdirTemp("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Config.Base.DataDirectory = dir
+	if err := initDB(state); err != nil {
+		t.Fatal(err)
+	}
+	state.HostIdentity = "testHost.example.com"
+	logger = state.logger
+	u2fAppID = "https://" + state.HostIdentity
+	state.webAuthn, err = webauthn.New(&webauthn.Config{
+		RPDisplayName: "Keymaster Server",
+		RPID:          state.HostIdentity,
+		RPOrigins:     []string{u2fAppID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state, func() {
+		state.dbDone <- struct{}{}
+		os.RemoveAll(dir)
+		os.Remove(passwdFile.Name())
+	}
+}
+
+// TestWebAuthnLoginCLIOrigin runs AuthBegin/AuthFinish with clientData built
+// the way CLI clients (1.17.0 onward) do: origin is the appid from AuthBegin.
+func TestWebAuthnLoginCLIOrigin(t *testing.T) {
+	state, cleanup := newWebAuthnLoginTestState(t)
+	defer cleanup()
+
+	username := "username"
+	profile := &userProfile{
+		WebauthnData: make(map[int64]*webauthAuthData),
+		U2fAuthData:  make(map[int64]*u2fAuthData),
+	}
+	profile.FixupCredential(username, username)
+	privKey, credential := makeTestWebauthnCredential(t)
+	if err := profile.AddWebAuthnCredential(credential); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveUserProfile(username, profile); err != nil {
+		t.Fatal(err)
+	}
+	cookieVal, err := state.setNewAuthCookie(nil, username, AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	req, err := http.NewRequest("GET", webAuthnAuthBeginPath+username, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&authCookie)
+	rr, err := checkRequestHandlerCode(req, state.webauthnAuthLogin, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assertion oldproto.CredentialAssertion
+	if err := json.Unmarshal(rr.Body.Bytes(), &assertion); err != nil {
+		t.Fatal(err)
+	}
+	origin, ok := assertion.Response.Extensions["appid"].(string)
+	if !ok {
+		t.Fatalf("no appid in AuthBegin response: %s", rr.Body.String())
+	}
+
+	body := makeTestAssertionResponse(t, privKey, credential.ID,
+		assertion.Response.Challenge.String(), assertion.Response.RelyingPartyID,
+		origin, profile.WebAuthnID(), 1)
+	req, err = http.NewRequest("POST", webAuthnAuthFinishPath, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&authCookie)
+	if _, err := checkRequestHandlerCode(req, state.webauthnAuthFinish, http.StatusOK); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWebAuthnU2FCredentialKeepsAppID checks that U2F registered credentials
+// are flagged so go-webauthn keeps the appid extension (needed by browsers).
+func TestWebAuthnU2FCredentialKeepsAppID(t *testing.T) {
+	state, cleanup := newWebAuthnLoginTestState(t)
+	defer cleanup()
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &userProfile{
+		WebauthnData: make(map[int64]*webauthAuthData),
+		U2fAuthData: map[int64]*u2fAuthData{
+			1: {
+				Enabled: true,
+				Registration: &u2f.Registration{
+					KeyHandle: []byte{0x01, 0x02, 0x03, 0x04},
+					PubKey:    privKey.PublicKey,
+				},
+			},
+		},
+	}
+	profile.FixupCredential("username", "username")
+
+	creds := profile.WebAuthnCredentials()
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 credential, got %d", len(creds))
+	}
+	if creds[0].AttestationType != "fido-u2f" || creds[0].AttestationFormat != "fido-u2f" {
+		t.Fatalf("type=%q format=%q, want fido-u2f for both",
+			creds[0].AttestationType, creds[0].AttestationFormat)
+	}
+
+	options, sessionData, err := state.webAuthn.BeginLogin(profile,
+		webauthn.WithAssertionExtensions(webauthn.WithExtensionAppID(u2fAppID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Response.Extensions.AppID != u2fAppID {
+		t.Fatalf("options appid=%q, want %s", options.Response.Extensions.AppID, u2fAppID)
+	}
+	if sessionData.Extensions.AppID != u2fAppID {
+		t.Fatalf("session appid=%q, want %s", sessionData.Extensions.AppID, u2fAppID)
+	}
 }
 
 // This test is only run to create a new saved profile/key

@@ -241,6 +241,13 @@ func (state *RuntimeState) webauthAuthBeginResponseToOldProto(in protocol.Creden
 	for i, _ := range out.Response.AllowedCredentials {
 		out.Response.AllowedCredentials[i].CredentialID = []byte(in.Response.AllowedCredentials[i].CredentialID)
 	}
+	// CLI clients use the appid as the clientData origin and fall back to
+	// the bare RP ID without it. go-webauthn >= 0.18 drops the appid unless
+	// a fido-u2f credential is present, so always send it to the client.
+	if out.Response.Extensions == nil {
+		out.Response.Extensions = oldproto.AuthenticationExtensions{}
+	}
+	out.Response.Extensions["appid"] = u2fAppID
 	state.logger.Debugf(5, "conversion in=%+v, old=%+v", in, out)
 
 	return &out, nil
