@@ -165,6 +165,17 @@ type userProfile struct {
 	//WebauthnSessionData *compatwebauthn.SessionData
 }
 
+const (
+	localAuthTypeWebAuthLogin = iota
+	localAuthTypeWebAuthRegistration
+	localAuthTypeU2fChallenge
+)
+
+type localDataKey struct {
+	username string
+	dataType int
+}
+
 type localUserData struct {
 	U2fAuthChallenge  *u2f.Challenge
 	WebAuthnChallenge *webauthn.SessionData
@@ -205,7 +216,7 @@ type RuntimeState struct {
 	selfRoleCaCertDer            []byte
 	certManager                  *certmanager.CertificateManager
 	vipPushCookie                map[string]pushPollTransaction
-	localAuthData                map[string]localUserData
+	localAuthData                map[localDataKey]localUserData
 	SignerIsReady                chan bool
 	oktaUsernameFilterRE         *regexp.Regexp
 	passwordAttemptGlobalLimiter *rate.Limiter

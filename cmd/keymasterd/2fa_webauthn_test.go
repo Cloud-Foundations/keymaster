@@ -127,7 +127,7 @@ func TestWebAuthnLoginBegin(t *testing.T) {
 
 	defer os.Remove(passwdFile.Name()) // clean up
 
-	state.localAuthData = make(map[string]localUserData)
+	state.localAuthData = make(map[localDataKey]localUserData)
 
 	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
 
@@ -307,7 +307,7 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 
-	state.localAuthData = make(map[string]localUserData)
+	state.localAuthData = make(map[localDataKey]localUserData)
 
 	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
 
@@ -372,7 +372,7 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.localAuthData[username] = localUserData{
+	state.localAuthData[localDataKey{username: username, dataType: localAuthTypeWebAuthLogin}] = localUserData{
 		WebAuthnChallenge: sessionData,
 		ExpiresAt:         time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
 	}
@@ -417,7 +417,7 @@ func TestWebAuthnAuthFinish(t *testing.T) {
 	t.Logf("authFinish response=%s", rr.Body.String())
 
 	// session must be consumed
-	if _, ok := state.localAuthData[username]; ok {
+	if _, ok := state.localAuthData[localDataKey{username: username, dataType: localAuthTypeWebAuthLogin}]; ok {
 		t.Fatalf("session data was not removed after successful login")
 	}
 	// auth cookie must now be upgraded
@@ -622,7 +622,7 @@ func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
 
 	defer os.Remove(passwdFile.Name()) // clean up
 
-	state.localAuthData = make(map[string]localUserData)
+	state.localAuthData = make(map[localDataKey]localUserData)
 
 	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
 
@@ -680,7 +680,7 @@ func TestWebauthnAuthenticateWithSavedProfiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		state.localAuthData[username] = localUserData{
+		state.localAuthData[localDataKey{username: username, dataType: localAuthTypeWebAuthLogin}] = localUserData{
 			WebAuthnChallenge: sessionData,
 			ExpiresAt:         time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
 		}
@@ -768,7 +768,7 @@ func TestWebAuthnRegistrationFinish(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 
-	state.localAuthData = make(map[string]localUserData)
+	state.localAuthData = make(map[localDataKey]localUserData)
 
 	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
 
@@ -841,7 +841,7 @@ func TestWebAuthnRegistrationFinish(t *testing.T) {
 		t.Fatal(err)
 	}
 	challenge := options.Response.Challenge.String()
-	if _, ok := state.localAuthData[username]; !ok {
+	if _, ok := state.localAuthData[localDataKey{username: username, dataType: localAuthTypeWebAuthRegistration}]; !ok {
 		t.Fatalf("registration session not stored")
 	}
 
@@ -888,7 +888,7 @@ func TestWebAuthnRegistrationFinish(t *testing.T) {
 	t.Logf("registerFinish response=%s", rr.Body.String())
 
 	// session must be consumed
-	if _, ok := state.localAuthData[username]; ok {
+	if _, ok := state.localAuthData[localDataKey{username: username, dataType: localAuthTypeWebAuthRegistration}]; ok {
 		t.Fatalf("session data was not removed after successful registration")
 	}
 

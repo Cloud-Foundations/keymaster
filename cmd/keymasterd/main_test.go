@@ -191,7 +191,7 @@ func setupValidRuntimeStateSignerGeneric(signerPrivate string, t *testing.T) (
 	state := RuntimeState{
 		passwordAttemptGlobalLimiter: rate.NewLimiter(10.0, 100),
 		logger:                       logger,
-		localAuthData:                map[string]localUserData{},
+		localAuthData:                map[localDataKey]localUserData{},
 	}
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(signerPrivate))
