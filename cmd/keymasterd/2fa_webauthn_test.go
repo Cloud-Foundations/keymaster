@@ -449,7 +449,7 @@ func newWebAuthnLoginTestState(t *testing.T) (*RuntimeState, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.localAuthData = make(map[string]localUserData)
+	state.localAuthData = make(map[localDataKey]localUserData)
 	state.Config.Base.AllowedAuthBackendsForWebUI = append(state.Config.Base.AllowedAuthBackendsForWebUI, proto.AuthTypeU2F)
 	state.signerPublicKeyToKeymasterKeys()
 	dir, err := os.MkdirTemp("", "example")
