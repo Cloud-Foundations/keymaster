@@ -250,7 +250,7 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 
 	localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
 	// load the session data
-	localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
+	//localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
 	state.Mutex.Lock()
 	localData, ok := state.localAuthData[localDataIndex] //check this
 	state.Mutex.Unlock()
