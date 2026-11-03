@@ -157,22 +157,49 @@ func verifyX5CChain(x5c []any, now time.Time) error {
 	return nil
 }
 
+// x5cCommonName returns the subject common name of the first certificate of
+// an x5c array, or the empty string if it cannot be parsed.
+func x5cCommonName(x5c []any) string {
+	if len(x5c) == 0 {
+		return ""
+	}
+	raw, ok := x5c[0].([]byte)
+	if !ok {
+		return ""
+	}
+	cert, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return ""
+	}
+	return cert.Subject.CommonName
+}
+
 // verifyAttestationX5C verifies any x5c data present in the attestation
 // statement (or in the sub statements of a compound attestation) of a
-// credential creation response. Responses with no x5c data are accepted.
-// When mds is not nil the attestation is also verified against the FIDO
-// metadata, which checks the x5c chain against the trust anchors of the
-// authenticator and its status reports.
+// credential creation response. When mds is not nil the attestation is also
+// verified against the FIDO metadata, which checks the x5c chain against the
+// trust anchors of the authenticator and its status reports.
+// It returns the common name of the attestation certificate (x5c[0]) of the
+// first statement that has one, even if the chain does not validate, and
+// whether the attestation was validated against the FIDO metadata. Responses
+// with no x5c data, or when mds is nil, are never validated. The returned
+// error is only non nil on internal errors, invalid attestations are
+// reported by returning false.
 func verifyAttestationX5C(parsedResponse *protocol.ParsedCredentialCreationData,
 	clientDataHash []byte, mds metadata.Provider,
 	policy protocol.AttestationPolicy, signature protocol.SignaturePolicy,
-	now time.Time) error {
+	now time.Time) (string, bool, error) {
+	if parsedResponse == nil {
+		return "", false, fmt.Errorf("nil credential creation response")
+	}
 	attObj := &parsedResponse.Response.AttestationObject
 	statements := []map[string]any{attObj.AttStatement}
 	for _, sub := range attObj.SubStatements {
 		statements = append(statements, sub.AttStatement)
 	}
+	var commonName string
 	hasX5C := false
+	chainsValid := true
 	for _, stmt := range statements {
 		rawX5C, ok := stmt["x5c"]
 		if !ok {
@@ -181,25 +208,33 @@ func verifyAttestationX5C(parsedResponse *protocol.ParsedCredentialCreationData,
 		hasX5C = true
 		x5c, ok := rawX5C.([]any)
 		if !ok {
-			return fmt.Errorf("x5c is not an array")
+			logger.Printf("verifyAttestationX5C: x5c is not an array")
+			chainsValid = false
+			continue
+		}
+		if commonName == "" {
+			commonName = x5cCommonName(x5c)
 		}
 		if err := verifyX5CChain(x5c, now); err != nil {
-			return err
+			logger.Printf("verifyAttestationX5C: %s", err)
+			chainsValid = false
 		}
 	}
-	if !hasX5C || mds == nil {
-		return nil
+	if !hasX5C || !chainsValid || mds == nil {
+		return commonName, false, nil
 	}
 	if err := attObj.VerifyAttestation(clientDataHash, mds, policy, signature); err != nil {
 		var protoErr *protocol.Error
-		if errors.As(err, &protoErr) {
-			return fmt.Errorf("metadata verification failed: %s (%s)",
-				protoErr.Details, protoErr.DevInfo)
+		if !errors.As(err, &protoErr) {
+			return commonName, false,
+				fmt.Errorf("metadata verification error: %s", err)
 		}
-		return fmt.Errorf("metadata verification failed: %s", err)
+		logger.Printf("verifyAttestationX5C: metadata verification failed: %s (%s)",
+			protoErr.Details, protoErr.DevInfo)
+		return commonName, false, nil
 	}
-	logger.Printf("verification succeeded")
-	return nil
+	logger.Debugf(1, "verifyAttestationX5C: verification succeeded")
+	return commonName, true, nil
 }
 
 func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *http.Request) {
@@ -247,10 +282,10 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
-
-	localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
 	// load the session data
-	//localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
+	// we use pair wise lock/unlocks as there could be long running
+	// functions sucha as db updates and http responses.
+	localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
 	state.Mutex.Lock()
 	localData, ok := state.localAuthData[localDataIndex] //check this
 	state.Mutex.Unlock()
@@ -276,7 +311,6 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	}
 	state.logger.Debugf(2, "parsed reg response=%+v", parsedResponse)
 
-	//credential, err := state.webAuthn.FinishRegistration(profile, *localData.WebAuthLogin, r)
 	credential, err := state.webAuthn.CreateCredential(profile, *localData.WebAuthLogin, parsedResponse)
 	if err != nil {
 		state.logger.Println(err)
@@ -286,15 +320,18 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	state.logger.Debugf(2, "new credential=%+v\n", *credential)
 	// CreateCredential has already verified the attestation signature, here
 	// we verify the x5c chain (if any) including the FIDO metadata.
-	err = verifyAttestationX5C(parsedResponse, credential.Attestation.ClientDataHash,
-		state.fidoMDS, state.webAuthn.Config.Attestation,
-		state.webAuthn.Config.Signature, time.Now())
+	attestationCN, fidoValidated, err := verifyAttestationX5C(parsedResponse,
+		credential.Attestation.ClientDataHash, state.fidoMDS,
+		state.webAuthn.Config.Attestation, state.webAuthn.Config.Signature,
+		time.Now())
 	if err != nil {
-		state.logger.Printf("webauthnFinishRegistration: x5c verification failed for %s: %s",
+		state.logger.Printf("webauthnFinishRegistration: x5c verification error for %s: %s",
 			assumedUser, err)
-		webauthnJsonResponse(w, "invalid attestation certificate", http.StatusBadRequest)
+		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+	state.logger.Debugf(2, "webauthnFinishRegistration: user=%s attestation cn=%q fidoValidated=%t",
+		assumedUser, attestationCN, fidoValidated)
 
 	err = profile.AddWebAuthnCredential(*credential)
 	if err != nil {

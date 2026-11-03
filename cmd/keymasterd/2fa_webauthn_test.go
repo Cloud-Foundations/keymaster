@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cloud-Foundations/keymaster/lib/attest/fido"
 	"github.com/Cloud-Foundations/keymaster/lib/webapi/v0/proto"
+	"github.com/cviecco/webauthn-mds/fido"
 	"github.com/stretchr/testify/require"
 	"github.com/tstranex/u2f"
 
@@ -998,22 +998,41 @@ func TestVerifyX5CChain(t *testing.T) {
 	require.Error(t, verifyX5CChain([]any{leaf.Raw, root.Raw}, now.Add(-2*time.Hour)))
 
 	// Attestation statement level checks
+	noPolicy := protocol.AttestationPolicy{}
+	noSignature := protocol.SignaturePolicy{}
 	parsed := &protocol.ParsedCredentialCreationData{}
-	require.NoError(t, verifyAttestationX5C(parsed, nil, nil,
-		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	cn, validated, err := verifyAttestationX5C(parsed, nil, nil, noPolicy,
+		noSignature, now)
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, "", cn)
+	// Valid chain, but no metadata so not validated
 	parsed.Response.AttestationObject.AttStatement = map[string]any{
 		"x5c": []any{leaf.Raw, root.Raw}}
-	require.NoError(t, verifyAttestationX5C(parsed, nil, nil,
-		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	cn, validated, err = verifyAttestationX5C(parsed, nil, nil, noPolicy,
+		noSignature, now)
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, leaf.Subject.CommonName, cn)
 	parsed.Response.AttestationObject.AttStatement["x5c"] = "notanarray"
-	require.Error(t, verifyAttestationX5C(parsed, nil, nil,
-		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	cn, validated, err = verifyAttestationX5C(parsed, nil, nil, noPolicy,
+		noSignature, now)
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, "", cn)
+	// Invalid chain still returns the common name
 	parsed.Response.AttestationObject.AttStatement = nil
 	parsed.Response.AttestationObject.SubStatements = []protocol.NonCompoundAttestationObject{
 		{AttStatement: map[string]any{"x5c": []any{leaf.Raw, otherRoot.Raw}}},
 	}
-	require.Error(t, verifyAttestationX5C(parsed, nil, nil,
-		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, now))
+	cn, validated, err = verifyAttestationX5C(parsed, nil, nil, noPolicy,
+		noSignature, now)
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, leaf.Subject.CommonName, cn)
+	// Internal error
+	_, _, err = verifyAttestationX5C(nil, nil, nil, noPolicy, noSignature, now)
+	require.Error(t, err)
 }
 
 // makeTestPackedAttestationResponse builds a credential creation response
@@ -1109,9 +1128,12 @@ func TestVerifyAttestationX5CWithMetadata(t *testing.T) {
 	require.NoError(t, err)
 	clientDataHash := sha256.Sum256(parsed.Raw.AttestationResponse.ClientDataJSON)
 
-	// Without metadata the (self consistent) chain is accepted
-	require.NoError(t, verifyAttestationX5C(parsed, clientDataHash[:], nil,
-		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, time.Now()))
+	// Without metadata the (self consistent) chain is not validated
+	cn, validated, err := verifyAttestationX5C(parsed, clientDataHash[:], nil,
+		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, time.Now())
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, "test attestation", cn)
 
 	// The signature is valid, so a metadata failure is due to the
 	// authenticator not being known to the FIDO MDS
@@ -1120,8 +1142,9 @@ func TestVerifyAttestationX5CWithMetadata(t *testing.T) {
 		protocol.SignaturePolicy{}))
 	mds, err := fido.GetProvider()
 	require.NoError(t, err)
-	err = verifyAttestationX5C(parsed, clientDataHash[:], mds,
+	cn, validated, err = verifyAttestationX5C(parsed, clientDataHash[:], mds,
 		protocol.AttestationPolicy{}, protocol.SignaturePolicy{}, time.Now())
-	require.Error(t, err)
-	t.Logf("expected metadata error: %s", err)
+	require.NoError(t, err)
+	require.False(t, validated)
+	require.Equal(t, "test attestation", cn)
 }
