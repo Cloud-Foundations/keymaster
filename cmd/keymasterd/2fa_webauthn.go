@@ -119,6 +119,7 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 
 const webAutnRegististerFinishPath = "/webauthn/RegisterFinish/"
 
+// This function was written by Claude (opus 5.5)
 // verifyX5CChain checks an x5c array as found in an attestation statement.
 // x5c[0] is the attestation certificate and each following element is
 // expected to be the issuer of the previous one. All certificates must
@@ -157,6 +158,7 @@ func verifyX5CChain(x5c []any, now time.Time) error {
 	return nil
 }
 
+// This function was written by Claude (opus 5.5)
 // x5cCommonName returns the subject common name of the first certificate of
 // an x5c array, or the empty string if it cannot be parsed.
 func x5cCommonName(x5c []any) string {
@@ -174,6 +176,7 @@ func x5cCommonName(x5c []any) string {
 	return cert.Subject.CommonName
 }
 
+// This function was written by Claude (opus 5.5)
 // verifyAttestationX5C verifies any x5c data present in the attestation
 // statement (or in the sub statements of a compound attestation) of a
 // credential creation response. When mds is not nil the attestation is also
