@@ -40,6 +40,7 @@ function webAuthnRegisterUser() {
 		  console.log(credentialCreationOptions);
 		  credentialCreationOptions.publicKey.challenge = bufferDecode(credentialCreationOptions.publicKey.challenge);
                   credentialCreationOptions.publicKey.user.id = bufferDecode(credentialCreationOptions.publicKey.user.id);
+                  credentialCreationOptions.publicKey.attestation = "direct";
                   // TODO: the next line was breaking Firefox. We need to investigate JS flags on issue 311
                   // For now we cooment this as does not affect functionality
                   //credentialCreationOptions.publicKey.authenticatorSelection.userVerification="discouraged";

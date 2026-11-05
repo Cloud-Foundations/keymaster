@@ -13,6 +13,7 @@ import (
 	compatprotocol "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/protocol"
 	compatwebauthn "github.com/Cloud-Foundations/keymaster/lib/compat/webauthn/webauthn"
 	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol/webauthncbor"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -332,4 +333,45 @@ func DeserializeProfile(profileBytes []byte) (*userProfile, error) {
 		loadedProfile.TOTPAuthData = make(map[int64]*totpAuthData)
 	}
 	return &loadedProfile, nil
+}
+
+// Written by claude (opus 5.5)
+// getWebauthnCredentialLabel returns a human readable label for a
+// credential. If the stored attestation object has an x5c chain, the label
+// is the subject common name of the first certificate of the chain,
+// otherwise it is the attestation type (or format) of the credential.
+func getWebauthnCredentialLabel(cred webauthn.Credential) string {
+	if len(cred.Attestation.Object) == 0 {
+		return webauthnAttestationLabel(cred)
+	}
+	var attObj protocol.AttestationObject
+	if err := webauthncbor.Unmarshal(cred.Attestation.Object, &attObj); err != nil {
+		logger.Debugf(1, "getWebauthnCredentialLabel: cannot parse attestation object: %s", err)
+		return webauthnAttestationLabel(cred)
+	}
+	statements := []map[string]any{attObj.AttStatement}
+	for _, sub := range attObj.SubStatements {
+		statements = append(statements, sub.AttStatement)
+	}
+	for _, stmt := range statements {
+		x5c, ok := stmt["x5c"].([]any)
+		if !ok {
+			continue
+		}
+		if commonName := x5cCommonName(x5c); commonName != "" {
+			return commonName
+		}
+	}
+	return webauthnAttestationLabel(cred)
+}
+
+// Written by claude (opus 5.5)
+// webauthnAttestationLabel returns the attestation type of a credential, or
+// its attestation format when the type is unknown, as is the case for
+// credentials converted from the compat format without a stored attestation.
+func webauthnAttestationLabel(cred webauthn.Credential) string {
+	if cred.AttestationType != "" {
+		return cred.AttestationType
+	}
+	return cred.AttestationFormat
 }

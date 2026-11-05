@@ -30,6 +30,8 @@ import (
 	texttemplate "text/template"
 	"time"
 
+	"github.com/cviecco/webauthn-mds/fido"
+
 	"github.com/Cloud-Foundations/golib/pkg/auth/userinfo/gitdb"
 	"github.com/Cloud-Foundations/golib/pkg/communications/configuredemail"
 	acmecfg "github.com/Cloud-Foundations/golib/pkg/crypto/certmanager/config"
@@ -105,6 +107,7 @@ type baseConfig struct {
 	WebauthTokenForCliLifetime      time.Duration        `yaml:"webauth_token_for_cli_lifetime"`
 	PasswordAttemptGlobalBurstLimit uint                 `yaml:"password_attempt_global_burst_limit"`
 	PasswordAttemptGlobalRateLimit  rate.Limit           `yaml:"password_attempt_global_rate_limit"`
+	FidoMDSJWTPath                  string               `yaml:"fido_mds_jwt_path"`
 	SSHCertConfig                   sshCertConfig        `yaml:"ssh_cert_config"`
 	ExternalSignerConf              ExternalSignerConfig `yaml:"external_signer_config"`
 }
@@ -609,6 +612,26 @@ func loadVerifyConfigFile(configFilename string,
 	})
 	if err != nil {
 		return nil, err
+	}
+	// If there is a speficied file we use that as the filemds data
+	// if not we
+	var fidoMDSReader io.Reader
+	if runtimeState.Config.Base.FidoMDSJWTPath != "" {
+		fidoMDSFile, err := os.Open(runtimeState.Config.Base.FidoMDSJWTPath)
+		if err != nil {
+			return nil, err
+		}
+		defer fidoMDSFile.Close()
+		fidoMDSReader = fidoMDSFile
+	} else {
+		fidoMDSReader, err = fido.GetJWTReader()
+		if err != nil {
+			return nil, err
+		}
+	}
+	runtimeState.fidoMDS, err = fido.GetProviderFromMetadataReader(fidoMDSReader)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load FIDO metadata: %s", err)
 	}
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {

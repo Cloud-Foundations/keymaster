@@ -59,6 +59,7 @@ import (
 	"github.com/Cloud-Foundations/tricorder/go/tricorder/units"
 	"github.com/Cloud-Foundations/webauth-sshcert/lib/server/sshcertauth"
 	"github.com/cloudflare/cfssl/revoke"
+	"github.com/go-webauthn/webauthn/metadata"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -237,6 +238,7 @@ type RuntimeState struct {
 	textTemplates                *texttemplate.Template
 	awsCertIssuer                *aws_identity_cert.Issuer
 	webAuthn                     *webauthn.WebAuthn
+	fidoMDS                      metadata.Provider
 	totpLocalRateLimit           map[string]totpRateLimitInfo
 	totpLocalTateLimitMutex      sync.Mutex
 	websshauthenticator          *sshcertauth.Authenticator
@@ -1566,8 +1568,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	// TODO: make some difference
 	// also add the webauthn devices...
 	for i, tokenInfo := range profile.WebauthnData {
+		label := tokenInfo.Credential.AttestationType
+		newCred, err := compatToNew(tokenInfo.Credential)
+		if err == nil {
+			//good case
+			label = getWebauthnCredentialLabel(newCred)
+		}
 		deviceData := registeredU2FTokenDisplayInfo{
-			DeviceData: fmt.Sprintf("webauthn-%s", tokenInfo.Credential.AttestationType), // TODO: replace by some other per cred data
+			DeviceData: fmt.Sprintf("webauthn-%s", label),
 			Enabled:    tokenInfo.Enabled,
 			Name:       tokenInfo.Name, //Display name?
 			Index:      i,

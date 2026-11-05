@@ -1,6 +1,6 @@
 module github.com/Cloud-Foundations/keymaster
 
-go 1.27
+go 1.27.3
 
 replace github.com/bearsh/hid v1.3.0 => github.com/bearsh/hid v1.5.0
 
@@ -67,6 +67,7 @@ require (
 	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.5 // indirect
+	github.com/cviecco/webauthn-mds v0.0.0-20261031165158-abb45f3d4a8f // indirect
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/flynn/hid v0.0.0-20190502022136-f1b9b6cc019a // indirect
