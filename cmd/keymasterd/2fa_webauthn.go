@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/tstranex/u2f"
 
 	oldproto "github.com/duo-labs/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/metadata"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
@@ -101,8 +104,9 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 		ExpiresAt:    time.Now().Add(maxAgeU2FVerifySeconds * time.Second),
 	}
 
+	localDataIndex := localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}
 	state.Mutex.Lock()
-	state.localAuthData[localDataKey{username: assumedUser, dataType: localAuthTypeWebAuthRegistration}] = localAuth
+	state.localAuthData[localDataIndex] = localAuth
 	state.Mutex.Unlock()
 	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
@@ -114,6 +118,127 @@ func (state *RuntimeState) webauthnBeginRegistration(w http.ResponseWriter, r *h
 }
 
 const webAutnRegististerFinishPath = "/webauthn/RegisterFinish/"
+
+// This function was written by Claude (opus 5.5)
+// verifyX5CChain checks an x5c array as found in an attestation statement.
+// x5c[0] is the attestation certificate and each following element is
+// expected to be the issuer of the previous one. All certificates must
+// parse and be within their validity period at time now.
+// This only verifies the internal consistency of the provided chain, trust
+// anchors are checked by verifyAttestationX5C using the FIDO metadata.
+func verifyX5CChain(x5c []any, now time.Time) error {
+	if len(x5c) == 0 {
+		return fmt.Errorf("x5c is present but empty")
+	}
+	certs := make([]*x509.Certificate, 0, len(x5c))
+	for i, entry := range x5c {
+		raw, ok := entry.([]byte)
+		if !ok {
+			return fmt.Errorf("x5c[%d] is not a byte string", i)
+		}
+		cert, err := x509.ParseCertificate(raw)
+		if err != nil {
+			return fmt.Errorf("x5c[%d] parse error: %s", i, err)
+		}
+		logger.Printf("verifyChain cert[%i]=%+v", i, cert)
+		if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+			return fmt.Errorf("x5c[%d] (%s) is not valid at %s (valid %s to %s)",
+				i, cert.Subject, now.Format(time.RFC3339),
+				cert.NotBefore.Format(time.RFC3339),
+				cert.NotAfter.Format(time.RFC3339))
+		}
+		certs = append(certs, cert)
+	}
+	for i := 0; i < len(certs)-1; i++ {
+		if err := certs[i].CheckSignatureFrom(certs[i+1]); err != nil {
+			return fmt.Errorf("x5c[%d] (%s) not signed by x5c[%d] (%s): %s",
+				i, certs[i].Subject, i+1, certs[i+1].Subject, err)
+		}
+	}
+	return nil
+}
+
+// This function was written by Claude (opus 5.5)
+// x5cCommonName returns the subject common name of the first certificate of
+// an x5c array, or the empty string if it cannot be parsed.
+func x5cCommonName(x5c []any) string {
+	if len(x5c) == 0 {
+		return ""
+	}
+	raw, ok := x5c[0].([]byte)
+	if !ok {
+		return ""
+	}
+	cert, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return ""
+	}
+	return cert.Subject.CommonName
+}
+
+// This function was written by Claude (opus 5.5)
+// verifyAttestationX5C verifies any x5c data present in the attestation
+// statement (or in the sub statements of a compound attestation) of a
+// credential creation response. When mds is not nil the attestation is also
+// verified against the FIDO metadata, which checks the x5c chain against the
+// trust anchors of the authenticator and its status reports.
+// It returns the common name of the attestation certificate (x5c[0]) of the
+// first statement that has one, even if the chain does not validate, and
+// whether the attestation was validated against the FIDO metadata. Responses
+// with no x5c data, or when mds is nil, are never validated. The returned
+// error is only non nil on internal errors, invalid attestations are
+// reported by returning false.
+func verifyAttestationX5C(parsedResponse *protocol.ParsedCredentialCreationData,
+	clientDataHash []byte, mds metadata.Provider,
+	policy protocol.AttestationPolicy, signature protocol.SignaturePolicy,
+	now time.Time) (string, bool, error) {
+	if parsedResponse == nil {
+		return "", false, fmt.Errorf("nil credential creation response")
+	}
+	attObj := &parsedResponse.Response.AttestationObject
+	statements := []map[string]any{attObj.AttStatement}
+	for _, sub := range attObj.SubStatements {
+		statements = append(statements, sub.AttStatement)
+	}
+	var commonName string
+	hasX5C := false
+	chainsValid := true
+	for _, stmt := range statements {
+		rawX5C, ok := stmt["x5c"]
+		if !ok {
+			continue
+		}
+		hasX5C = true
+		x5c, ok := rawX5C.([]any)
+		if !ok {
+			logger.Printf("verifyAttestationX5C: x5c is not an array")
+			chainsValid = false
+			continue
+		}
+		if commonName == "" {
+			commonName = x5cCommonName(x5c)
+		}
+		if err := verifyX5CChain(x5c, now); err != nil {
+			logger.Printf("verifyAttestationX5C: %s", err)
+			chainsValid = false
+		}
+	}
+	if !hasX5C || !chainsValid || mds == nil {
+		return commonName, false, nil
+	}
+	if err := attObj.VerifyAttestation(clientDataHash, mds, policy, signature); err != nil {
+		var protoErr *protocol.Error
+		if !errors.As(err, &protoErr) {
+			return commonName, false,
+				fmt.Errorf("metadata verification error: %s", err)
+		}
+		logger.Printf("verifyAttestationX5C: metadata verification failed: %s (%s)",
+			protoErr.Details, protoErr.DevInfo)
+		return commonName, false, nil
+	}
+	logger.Debugf(1, "verifyAttestationX5C: verification succeeded")
+	return commonName, true, nil
+}
 
 func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *http.Request) {
 	state.logger.Debugf(3, "top of webauthnFinishRegistration")
@@ -160,7 +285,6 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
-
 	// load the session data
 	// we use pair wise lock/unlocks as there could be long running
 	// functions sucha as db updates and http responses.
@@ -182,13 +306,35 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 		return
 
 	}
-	credential, err := state.webAuthn.FinishRegistration(profile, *localData.WebAuthLogin, r)
+	parsedResponse, err := protocol.ParseCredentialCreationResponse(r)
+	if err != nil {
+		state.logger.Println(err)
+		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	state.logger.Debugf(2, "parsed reg response=%+v", parsedResponse)
+
+	credential, err := state.webAuthn.CreateCredential(profile, *localData.WebAuthLogin, parsedResponse)
 	if err != nil {
 		state.logger.Println(err)
 		webauthnJsonResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	state.logger.Debugf(2, "new credential=%+v\n", *credential)
+	// CreateCredential has already verified the attestation signature, here
+	// we verify the x5c chain (if any) including the FIDO metadata.
+	attestationCN, fidoValidated, err := verifyAttestationX5C(parsedResponse,
+		credential.Attestation.ClientDataHash, state.fidoMDS,
+		state.webAuthn.Config.Attestation, state.webAuthn.Config.Signature,
+		time.Now())
+	if err != nil {
+		state.logger.Printf("webauthnFinishRegistration: x5c verification error for %s: %s",
+			assumedUser, err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	state.logger.Debugf(2, "webauthnFinishRegistration: user=%s attestation cn=%q fidoValidated=%t",
+		assumedUser, attestationCN, fidoValidated)
 
 	err = profile.AddWebAuthnCredential(*credential)
 	if err != nil {
@@ -305,8 +451,9 @@ func (state *RuntimeState) webauthnAuthLogin(w http.ResponseWriter, r *http.Requ
 	localAuth.U2fAuthChallenge = c
 	localAuth.WebAuthnChallenge = sessionData
 	localAuth.ExpiresAt = time.Now().Add(maxAgeU2FVerifySeconds * time.Second)
+	localDataIndex := localDataKey{username: authData.Username, dataType: localAuthTypeWebAuthLogin}
 	state.Mutex.Lock()
-	state.localAuthData[localDataKey{username: authData.Username, dataType: localAuthTypeWebAuthLogin}] = localAuth
+	state.localAuthData[localDataIndex] = localAuth
 	state.Mutex.Unlock()
 	compatOptions, err := state.webauthAuthBeginResponseToOldProto(*options)
 	if err != nil {
