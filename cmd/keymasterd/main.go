@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
@@ -19,7 +20,6 @@ import (
 	texttemplate "text/template"
 	"time"
 
-	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 
 	"github.com/Cloud-Foundations/Dominator/lib/log/serverlogger"

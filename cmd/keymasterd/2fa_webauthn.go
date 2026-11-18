@@ -335,6 +335,11 @@ func (state *RuntimeState) webauthnFinishRegistration(w http.ResponseWriter, r *
 	}
 	state.logger.Debugf(2, "webauthnFinishRegistration: user=%s attestation cn=%q fidoValidated=%t",
 		assumedUser, attestationCN, fidoValidated)
+	if state.Config.Base.FidoAttestationConfig.AttestationMode == FidoAttestationRequired &&
+		!fidoValidated {
+		http.Error(w, "Fido credential attestestation Failed", http.StatusBadRequest)
+		return
+	}
 
 	err = profile.AddWebAuthnCredential(*credential)
 	if err != nil {
