@@ -73,6 +73,17 @@ type sshCertConfig struct {
 	Extensions []sshExtension `yaml:"extensions"`
 }
 
+const (
+	FidoAttestationPermisive = iota
+	FidoAttestationRequired
+)
+
+type fidoVerifyConfig struct {
+	AttestationMode int
+	FidoMDSJWTPath  string `yaml:"mds_jwt_path"`
+	MaxAgeDays      int
+}
+
 type baseConfig struct {
 	HttpAddress                     string `yaml:"http_address"`
 	AdminAddress                    string `yaml:"admin_address"`
@@ -107,9 +118,9 @@ type baseConfig struct {
 	WebauthTokenForCliLifetime      time.Duration        `yaml:"webauth_token_for_cli_lifetime"`
 	PasswordAttemptGlobalBurstLimit uint                 `yaml:"password_attempt_global_burst_limit"`
 	PasswordAttemptGlobalRateLimit  rate.Limit           `yaml:"password_attempt_global_rate_limit"`
-	FidoMDSJWTPath                  string               `yaml:"fido_mds_jwt_path"`
 	SSHCertConfig                   sshCertConfig        `yaml:"ssh_cert_config"`
 	ExternalSignerConf              ExternalSignerConfig `yaml:"external_signer_config"`
+	FidoAttestationConfig           fidoVerifyConfig     `yaml:"fido_attest_config"`
 }
 
 type awsCertsConfig struct {
@@ -616,8 +627,8 @@ func loadVerifyConfigFile(configFilename string,
 	// If there is a speficied file we use that as the filemds data
 	// if not we
 	var fidoMDSReader io.Reader
-	if runtimeState.Config.Base.FidoMDSJWTPath != "" {
-		fidoMDSFile, err := os.Open(runtimeState.Config.Base.FidoMDSJWTPath)
+	if runtimeState.Config.Base.FidoAttestationConfig.FidoMDSJWTPath != "" {
+		fidoMDSFile, err := os.Open(runtimeState.Config.Base.FidoAttestationConfig.FidoMDSJWTPath)
 		if err != nil {
 			return nil, err
 		}
