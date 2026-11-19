@@ -74,13 +74,15 @@ function checkError(resp) {
 
 function webAuthnAuthenticateUser2() {
   console.log("top of webAuthnAuthenticateUser2");
-  $.get(
-    '/webauthn/AuthBegin/',
-    null,
-    function (data) {
-      return data
-    },
-    'json')
+  fetch('/webauthn/AuthBegin/', {
+    headers: { 'Accept': 'application/json' }
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error('Server returned HTTP ' + response.status);
+      }
+      return response.json();
+    })
     .then((credentialRequestOptions) => {
       credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
       credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
@@ -98,9 +100,13 @@ function webAuthnAuthenticateUser2() {
       let rawId = assertion.rawId;
       let sig = assertion.response.signature;
       let userHandle = assertion.response.userHandle;
-      $.post(
-        '/webauthn/AuthFinish/',
-        JSON.stringify({
+      return fetch('/webauthn/AuthFinish/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
           id: assertion.id,
           rawId: bufferEncode(rawId),
           type: assertion.type,
@@ -110,14 +116,15 @@ function webAuthnAuthenticateUser2() {
             signature: bufferEncode(sig),
             userHandle: bufferEncode(userHandle),
           },
-        }),
-        function (data) {
-	  console.log("on post with some data " + data)
-	  var destination = document.getElementById("login_destination_input").getAttribute("value");
-          window.location.href = destination;
-          return data;
-        },
-        'json')
+        })
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error('Server returned HTTP ' + response.status);
+        }
+        var destination = document.getElementById("login_destination_input").getAttribute("value");
+        window.location.href = destination;
+        return response.json();
+      });
     })
     .then((success) => {
       console.log("successfully pressed button");
