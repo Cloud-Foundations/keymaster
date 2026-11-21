@@ -11,6 +11,21 @@ function bufferEncode(value) {
     .replace(/=/g, "");;
 }
 
+function getSafeLoginDestination() {
+  var input = document.getElementById("login_destination_input");
+  var rawDest = input ? input.getAttribute("value") : "";
+  try {
+    var parsed = new URL(rawDest, window.location.origin);
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        parsed.origin === window.location.origin) {
+      return parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch (e) {
+    // Fall back on parse error
+  }
+  return "/profile/";
+}
+
 function serverError(data) {
     console.log(data);
     alert('Server error code ' + data.status + ': ' + data.responseText);
@@ -58,8 +73,7 @@ function checkError(resp) {
     }
     $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
       //alert('Success');
-      var destination = document.getElementById("login_destination_input").getAttribute("value");
-      window.location.href = destination;
+      window.location.href = getSafeLoginDestination();
     }).fail(serverError);
   }
   function sign() {
@@ -121,8 +135,7 @@ function webAuthnAuthenticateUser2() {
         if (!response.ok) {
           throw new Error('Server returned HTTP ' + response.status);
         }
-        var destination = document.getElementById("login_destination_input").getAttribute("value");
-        window.location.href = destination;
+        window.location.href = getSafeLoginDestination();
         return response.json();
       });
     })
