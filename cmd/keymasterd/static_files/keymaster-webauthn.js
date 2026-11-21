@@ -1,6 +1,5 @@
 
 // cviecco notes: this comes inspired from https://www.herbie.dev/blog/webauthn-basic-web-client-server/
-// and requires jquery... we should be thinking on removing jquery dependency
 
 
 // Base64 to ArrayBuffer
@@ -27,13 +26,15 @@ function bufferEncode(value) {
 function webAuthnRegisterUser() {
 
 	var username = document.getElementById('username').textContent;
-	$.get(
-	  '/webauthn/RegisterRequest/' + username,
-	  null,
-	  function (data) {
-		return data
-	  },
-	  'json')
+	fetch('/webauthn/RegisterRequest/' + encodeURIComponent(username), {
+		headers: { 'Accept': 'application/json' }
+	})
+	  .then((response) => {
+		  if (!response.ok) {
+			  throw new Error('Server returned HTTP ' + response.status);
+		  }
+		  return response.json();
+	  })
 	  .then((credentialCreationOptions) => {
 		  // TODO
 		  //alert(credentialCreationOptions);
@@ -55,21 +56,27 @@ function webAuthnRegisterUser() {
                   let clientDataJSON = credential.response.clientDataJSON;
                   let rawId = credential.rawId;
 
-                  $.post(
-                    '/webauthn/RegisterFinish/' + username,
-                    JSON.stringify({
-                       id: credential.id,
-                       rawId: bufferEncode(rawId),
-                       type: credential.type,
-                       response: {
-                          attestationObject: bufferEncode(attestationObject),
-                          clientDataJSON: bufferEncode(clientDataJSON),
-                       },
-                    }),
-                    function (data) {
-                        return data
+                  return fetch('/webauthn/RegisterFinish/' + encodeURIComponent(username), {
+                     method: 'POST',
+                     headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                      },
-                    'json')
+                     body: JSON.stringify({
+                        id: credential.id,
+                        rawId: bufferEncode(rawId),
+                        type: credential.type,
+                        response: {
+                           attestationObject: bufferEncode(attestationObject),
+                           clientDataJSON: bufferEncode(clientDataJSON),
+                        },
+                     })
+                  }).then((response) => {
+                     if (!response.ok) {
+                        throw new Error('Server returned HTTP ' + response.status);
+                     }
+                     return response.json();
+                  });
 
           })
           .then((success) => {
@@ -87,13 +94,15 @@ function webAuthnAuthenticateUser() {
 
   var username = document.getElementById('username').textContent;
 
-  $.get(
-    '/webauthn/AuthBegin/' + username,
-    null,
-    function (data) {
-      return data
-    },
-    'json')
+  fetch('/webauthn/AuthBegin/' + encodeURIComponent(username), {
+    headers: { 'Accept': 'application/json' }
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error('Server returned HTTP ' + response.status);
+      }
+      return response.json();
+    })
     .then((credentialRequestOptions) => {
 
       credentialRequestOptions.publicKey.challenge = bufferDecodeB64(credentialRequestOptions.publicKey.challenge);
@@ -114,9 +123,13 @@ function webAuthnAuthenticateUser() {
       let sig = assertion.response.signature;
       let userHandle = assertion.response.userHandle;
 
-      $.post(
-        '/webauthn/AuthFinish/' + username,
-        JSON.stringify({
+      return fetch('/webauthn/AuthFinish/' + encodeURIComponent(username), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
           id: assertion.id,
           rawId: bufferEncode(rawId),
           type: assertion.type,
@@ -126,13 +139,14 @@ function webAuthnAuthenticateUser() {
             signature: bufferEncode(sig),
             userHandle: bufferEncode(userHandle),
           },
-        }),
-        function (data) {
-	  console.log("Authnenticated: " + data);
-          alert("successfully authenticated " + username + "!");
-          return data
-        },
-        'json')
+        })
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error('Server returned HTTP ' + response.status);
+        }
+        alert("successfully authenticated " + username + "!");
+        return response.json();
+      });
     })
     .then((success) => {
       console.log("button pressed")

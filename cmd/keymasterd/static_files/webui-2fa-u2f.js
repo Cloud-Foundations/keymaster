@@ -11,6 +11,45 @@ function bufferEncode(value) {
     .replace(/=/g, "");;
 }
 
+function getSafeLoginDestination() {
+  var input = document.getElementById("login_destination_input");
+  var rawDest = input ? input.getAttribute("value") : "";
+  if (!rawDest) {
+    return "/profile/";
+  }
+  try {
+    var parsed = new URL(rawDest, window.location.origin);
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        parsed.origin === window.location.origin) {
+      var segments = parsed.pathname.split("/");
+      var safeSegments = [];
+      for (var i = 0; i < segments.length; i++) {
+        safeSegments.push(encodeURIComponent(decodeURIComponent(segments[i])));
+      }
+      var safePath = safeSegments.join("/");
+      if (!safePath.startsWith("/") || safePath.startsWith("//")) {
+        return "/profile/";
+      }
+
+      var queryParts = [];
+      parsed.searchParams.forEach(function (val, key) {
+        queryParts.push(encodeURIComponent(key) + "=" + encodeURIComponent(val));
+      });
+      var safeSearch = queryParts.length > 0 ? "?" + queryParts.join("&") : "";
+
+      var safeHash = "";
+      if (parsed.hash && parsed.hash.length > 1) {
+        safeHash = "#" + encodeURIComponent(decodeURIComponent(parsed.hash.slice(1)));
+      }
+
+      return safePath + safeSearch + safeHash;
+    }
+  } catch (e) {
+    // Fall back on parse error
+  }
+  return "/profile/";
+}
+
 function serverError(data) {
     console.log(data);
     alert('Server error code ' + data.status + ': ' + data.responseText);
@@ -58,8 +97,7 @@ function checkError(resp) {
     }
     $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
       //alert('Success');
-      var destination = document.getElementById("login_destination_input").getAttribute("value");
-      window.location.href = destination;
+      window.location.href = getSafeLoginDestination();
     }).fail(serverError);
   }
   function sign() {
@@ -74,13 +112,15 @@ function checkError(resp) {
 
 function webAuthnAuthenticateUser2() {
   console.log("top of webAuthnAuthenticateUser2");
-  $.get(
-    '/webauthn/AuthBegin/',
-    null,
-    function (data) {
-      return data
-    },
-    'json')
+  fetch('/webauthn/AuthBegin/', {
+    headers: { 'Accept': 'application/json' }
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error('Server returned HTTP ' + response.status);
+      }
+      return response.json();
+    })
     .then((credentialRequestOptions) => {
       credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
       credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
@@ -98,9 +138,13 @@ function webAuthnAuthenticateUser2() {
       let rawId = assertion.rawId;
       let sig = assertion.response.signature;
       let userHandle = assertion.response.userHandle;
-      $.post(
-        '/webauthn/AuthFinish/',
-        JSON.stringify({
+      return fetch('/webauthn/AuthFinish/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
           id: assertion.id,
           rawId: bufferEncode(rawId),
           type: assertion.type,
@@ -110,14 +154,14 @@ function webAuthnAuthenticateUser2() {
             signature: bufferEncode(sig),
             userHandle: bufferEncode(userHandle),
           },
-        }),
-        function (data) {
-	  console.log("on post with some data " + data)
-	  var destination = document.getElementById("login_destination_input").getAttribute("value");
-          window.location.href = destination;
-          return data;
-        },
-        'json')
+        })
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error('Server returned HTTP ' + response.status);
+        }
+        window.location.href = getSafeLoginDestination();
+        return response.json();
+      });
     })
     .then((success) => {
       console.log("successfully pressed button");
