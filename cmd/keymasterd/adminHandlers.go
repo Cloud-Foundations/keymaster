@@ -97,7 +97,6 @@ func (state *RuntimeState) usersHandler(w http.ResponseWriter,
 		return
 	}
 	JSSources := []string{
-		"/static/jquery-3.7.1.min.js",
 		"/static/compiled/session.js",
 	}
 	displayData := usersPageTemplateData{

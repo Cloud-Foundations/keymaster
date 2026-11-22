@@ -1,6 +1,42 @@
 function serverError(data) {
     console.log(data);
-    alert('Server error code ' + data.status + ': ' + data.responseText);
+    var status = data && data.status ? data.status : 'network';
+    var text = data && data.responseText !== undefined ? data.responseText : data;
+    alert('Server error code ' + status + ': ' + text);
+  }
+
+function fetchGetJSON(url, onSuccess) {
+    fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.text().then(function(text) {
+            throw { status: response.status, responseText: text };
+          });
+        }
+        return response.json();
+      })
+      .then(onSuccess)
+      .catch(serverError);
+  }
+
+function fetchPostJSON(url, bodyObj, onSuccess) {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyObj)
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.text().then(function(text) {
+            throw { status: response.status, responseText: text };
+          });
+        }
+        return response;
+      })
+      .then(onSuccess)
+      .catch(serverError);
   }
 
 function checkError(resp) {
@@ -31,21 +67,21 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/RegisterResponse/' + username, JSON.stringify(resp)).done(function() {
+    fetchPostJSON('/u2f/RegisterResponse/' + encodeURIComponent(username), resp, function() {
       alert('Success');
       location.reload();
-    }).fail(serverError);
+    });
   }
   function register() {
     var username = document.getElementById('username').textContent;
     document.getElementById('register_action_text').style.display="block";
-    $.getJSON('/u2f/RegisterRequest/' + username).done(function(req) {
+    fetchGetJSON('/u2f/RegisterRequest/' + encodeURIComponent(username), function(req) {
       console.log(req);
       if (req.registeredKeys == null) {
 	      req.registeredKeys = [];
       }
       u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
-    }).fail(serverError);
+    });
   }
   function u2fSigned(resp) {
     document.getElementById('auth_action_text').style.display="none";
@@ -53,16 +89,16 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
+    fetchPostJSON('/u2f/SignResponse', resp, function() {
       alert('Success');
-    }).fail(serverError);
+    });
   }
   function sign() {
      document.getElementById('auth_action_text').style.display="block";
-    $.getJSON('/u2f/SignRequest').done(function(req) {
+    fetchGetJSON('/u2f/SignRequest', function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
-    }).fail(serverError);
+    });
   }
 
 document.addEventListener('DOMContentLoaded', function () {

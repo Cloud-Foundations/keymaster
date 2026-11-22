@@ -52,7 +52,43 @@ function getSafeLoginDestination() {
 
 function serverError(data) {
     console.log(data);
-    alert('Server error code ' + data.status + ': ' + data.responseText);
+    var status = data && data.status ? data.status : 'network';
+    var text = data && data.responseText !== undefined ? data.responseText : data;
+    alert('Server error code ' + status + ': ' + text);
+  }
+
+function fetchGetJSON(url, onSuccess) {
+    fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.text().then(function(text) {
+            throw { status: response.status, responseText: text };
+          });
+        }
+        return response.json();
+      })
+      .then(onSuccess)
+      .catch(serverError);
+  }
+
+function fetchPostJSON(url, bodyObj, onSuccess) {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyObj)
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.text().then(function(text) {
+            throw { status: response.status, responseText: text };
+          });
+        }
+        return response;
+      })
+      .then(onSuccess)
+      .catch(serverError);
   }
 
 function checkError(resp) {
@@ -95,17 +131,17 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
+    fetchPostJSON('/u2f/SignResponse', resp, function() {
       //alert('Success');
       window.location.href = getSafeLoginDestination();
-    }).fail(serverError);
+    });
   }
   function sign() {
      document.getElementById('auth_action_text').style.display="block";
-    $.getJSON('/u2f/SignRequest').done(function(req) {
+    fetchGetJSON('/u2f/SignRequest', function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 45);
-    }).fail(serverError);
+    });
   }
 
 
